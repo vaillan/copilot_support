@@ -1,0 +1,15 @@
+python-dotenv
+pydantic
+pdfplumber
+Pillow
+pytesseract
+openpyxl
+python-docx
+defusedxml 
+opencv-python
+pdf2image
+langgraph
+langchain-google-genai
+sentence-transformers
+langchain-community
+chromadb
