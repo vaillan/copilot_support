@@ -70,6 +70,7 @@ class UIOchestrationAgent:
                 "text_search": state["new_ticket_description"]
             })
             
+            
             if extracted_data_json_str.startswith("[") or extracted_data_json_str.startswith("{"):
                 raw_resolved_items = json.loads(extracted_data_json_str)
             else:
@@ -80,6 +81,7 @@ class UIOchestrationAgent:
                 print(f"No se encontraron tickets relevantes en el tablero '{state['board_name']}' para la búsqueda '{state['new_ticket_description']}'.")
                 return {"error_message": f"No se encontraron tickets relevantes en el tablero '{state['board_name']}'.", "similar_tickets_found": []}
 
+            print('Data',raw_resolved_items)
             print(f"Se encontraron {len(raw_resolved_items)} tickets relevantes.")
             return {"similar_tickets_found": raw_resolved_items}
         except json.JSONDecodeError as e:

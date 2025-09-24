@@ -1,5 +1,5 @@
 import json
-from typing import List, Dict, Any
+from typing import List
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -63,7 +63,7 @@ class KnowledgeDistillationAgent:
         ])
         self.distillation_chain = self.prompt | self.llm | self.parser
 
-    def distill_and_store_knowledge(self, raw_tickets: List[Dict[str, Any]], board_name: str) -> Dict[str, Any]:
+    def distill_and_store_knowledge(self, raw_tickets: List[dict], board_name: str) -> dict:
         """
         Procesa una lista de tickets crudos, destila la información usando un LLM
         y la almacena en la base de conocimiento CSV si cumple los criterios de calidad.

@@ -1,11 +1,8 @@
 import os
 from typing import List, Dict, Any, Optional
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings # Solo importamos HuggingFaceEmbeddings
+from langchain_chroma import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings # Solo importamos HuggingFaceEmbeddings
 from langchain_core.documents import Document
-from dotenv import load_dotenv
-
-load_dotenv() # Cargar variables de entorno
 
 # --- Configuración de Embeddings y Vector Store para ejecución local ---
 # Utilizaremos un modelo de HuggingFace que se descarga y ejecuta localmente.
@@ -71,7 +68,7 @@ class KnowledgeBaseAgent:
         # Chroma maneja la deduplicación si se usa un ID, pero aquí simplemente añadimos.
         # Para una actualización más robusta, se podría borrar y re-añadir o usar IDs específicos.
         self.vectorstore.add_documents(documents)
-        self.vectorstore.persist() # Guardar los cambios en disco
+        self.vectorstore.persist() # type: ignore # Guardar los cambios en disco
         print("Base de conocimiento vectorial actualizada y persistida.")
 
     def retrieve_similar_tickets(self, query_text: str, k: int = 3) -> List[Dict[str, Any]]:
