@@ -119,8 +119,8 @@ class ExtractData(Settings):
                 permissions
                 items_page(limit: 10, query_params: {rules: [
                             {column_id: "name", compare_value: $text_search, operator:contains_text}
-                            {column_id: "estatius", compare_value: [11]}
-                        ]operator:and
+
+                        ]
                 }) {
                     cursor
                     items {
@@ -561,8 +561,8 @@ class ExtractData(Settings):
                 items_page(limit: 10, query_params: {
                             rules: [
                                 {column_id: "fecha", compare_value: $text_search, operator: between}
-                                {column_id: "estatius", compare_value: [11]}
-                            ]operator:and
+
+                            ]
                         }
                     ) {
                     cursor

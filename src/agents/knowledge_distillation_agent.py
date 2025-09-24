@@ -1,5 +1,5 @@
 import json
-from typing import List
+from typing import List, Dict, Any, Optional
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -12,7 +12,7 @@ settings = Settings()
 
 LLM = ChatGoogleGenerativeAI(
         model= "gemini-2.5-flash-lite",
-        temperature=1.0,
+        temperature=0,
         max_retries=2,
         google_api_key=settings.GEMINI_API_KEY,
     )
@@ -27,25 +27,23 @@ class KnowledgeDistillationAgent:
         self.parser = JsonOutputParser()
         self.prompt = ChatPromptTemplate.from_messages([
             ("system",
-             "Eres un experto en análisis de tickets de soporte y gestión de conocimiento. "
-             "Tu tarea es destilar información clave de tickets históricos de monday.com. "
-             "Debes ser extremadamente fiel a los datos proporcionados y NO inventar información. "
-             "Si no puedes determinar un campo con certeza, indícalo explícitamente. "
-             "La salida debe ser un objeto JSON con los campos especificados."),
+             "Eres un analista de soporte técnico senior. Tu tarea es analizar en profundidad los datos de un ticket resuelto para destilar la causa raíz y la solución, incluso si no están explícitamente declaradas. "
+             "Debes actuar como un detective, conectando las pistas disponibles. "
+             "Tu objetivo final es generar un objeto JSON estructurado con tu análisis."),
             ("human",
-             "Procesa CADA UNO de los ítems en la lista de datos históricos proporcionada.\n"
-             "**Tu principal directiva es la FIDELIDAD a los datos de entrada. NO debes inventar, suponer o inferir información que no pueda ser respaldada directamente por el texto proporcionado.**\n\n"
-             "Datos del ítem:\n"
+             "Analiza el siguiente ítem de datos históricos de un ticket resuelto. Sigue un proceso de razonamiento paso a paso antes de generar la salida final.\n\n"
+             "**Datos del Ítem:**\n"
              "```json\n{item_data}\n```\n\n"
-             "Para cada ítem, sigue estas reglas para destilar la información:\n"
-             "1.  **Campos Directos (`item_id`, `board_name`, `item_name`, `source_date`):** Cópialos exactamente como vienen.\n"
-             "2.  **`problem_summary`:** Crea un resumen conciso, pero utiliza únicamente frases y conceptos presentes en la `description` o en la `resolution` del ítem. Si no es claro, escribe 'No es posible determinar con la información proporcionada'.\n"
-             "3.  **`root_cause` y `solution_applied` (Los más importantes):**\n"
-             "    -   Busca evidencia explícita en la `resolution` o `description`.\n"
-             "    -   Si el texto no lo declara explícitamente, puedes hacer una inferencia LÓGICA y CONSERVADORA basada en pistas fuertes (ej. si la descripción menciona 'error de configuración' y la resolución 'se ajustó la configuración', es razonable inferir una 'corrección de configuración').\n"
-             "    -   **REGLA DE ORO:** Si después de analizar las pistas, la causa o la solución no son claras o requieren una suposición grande, DEBES escribir en el campo correspondiente: **'No es posible determinar con la información proporcionada'**.\n"
-             "4.  **`keywords`:** Extrae términos y frases directamente de los campos `item_name`, `description`, `resolution`, `status`. No inventes palabras clave. Genera una lista de 3-5 palabras clave relevantes, separadas por comas.\n\n"
-             "Formato de salida JSON esperado:\n"
+             "**Proceso de Razonamiento (piensa paso a paso):**\n"
+             "1.  **Identifica el Problema Principal:** Lee `item_name`, `descripcion_completa` y los primeros `item_updates_details` para entender claramente cuál fue el problema reportado por el usuario.\n"
+             "2.  **Busca Pistas de la Solución:** Analiza TODOS los `item_updates_details` en orden cronológico. Presta especial atención a los comentarios de los `responsable_desarrollo` o `responsable_soporte`. Busca frases como 'se corrigió', 'se ajustó', 'se implementó', 'el problema era', 'la causa fue'. Analiza también el `all_attached_files_extracted_text_summary` en busca de pistas.\n"
+             "3.  **Infiere la Causa Raíz y la Solución:** Basado en tu análisis de las pistas, formula una hipótesis sobre la causa raíz (`root_cause`) y la solución aplicada (`solution_applied`).\n"
+             "    -   **Ejemplo de Inferencia:** Si el problema era un 'error al guardar' y un desarrollador comenta 'se ajustó el endpoint de guardado', la causa raíz fue 'un error en el endpoint' y la solución fue 'ajuste del código del endpoint'.\n"
+             "    -   **Ejemplo de Inferencia 2:** Si el problema es un error de cálculo y el `estatus` cambia a 'Terminado' después de la intervención de un desarrollador, pero no hay comentarios, puedes inferir que la solución fue una 'corrección de código no especificada'.\n"
+             "4.  **Aplica la REGLA DE ORO:** Si después de tu análisis exhaustivo, no hay absolutamente ninguna pista (ni comentarios, ni cambios de estado relevantes, ni adjuntos útiles) que te permita formular una hipótesis razonable, y solo en ese caso, DEBES escribir en los campos `root_cause` y `solution_applied`: **'No es posible determinar con la información proporcionada'**.\n\n"
+             "**Generación de Salida:**\n"
+             "Después de tu razonamiento, genera un único objeto JSON con la información destilada. NO incluyas tu razonamiento en el JSON final.\n\n"
+             "**Formato de salida JSON esperado:**\n"
              "```json\n"
              "{{\n"
              "  \"item_id\": \"string\",\n"
@@ -57,13 +55,12 @@ class KnowledgeDistillationAgent:
              "  \"keywords\": \"string, string, string\",\n"
              "  \"source_date\": \"YYYY-MM-DD\"\n"
              "}}\n"
-             "```\n"
-             "Asegúrate de que 'keywords' sea una cadena de texto separada por comas."
+             "```"
             )
         ])
         self.distillation_chain = self.prompt | self.llm | self.parser
 
-    def distill_and_store_knowledge(self, raw_tickets: List[dict], board_name: str) -> dict:
+    def distill_and_store_knowledge(self, raw_tickets: List[Dict[str, Any]], board_name: str) -> Dict[str, Any]:
         """
         Procesa una lista de tickets crudos, destila la información usando un LLM
         y la almacena en la base de conocimiento CSV si cumple los criterios de calidad.
@@ -80,46 +77,51 @@ class KnowledgeDistillationAgent:
                 "processed_count": 0,
                 "added_to_csv_count": 0,
                 "omitted_count": 0,
-                "distilled_tickets": [] # Devolver tickets destilados para el vector store
+                "distilled_tickets": []
             }
 
         distilled_tickets_for_vector_store = []
 
         for i, ticket in enumerate(raw_tickets):
             processed_count += 1
-            print(f"\n[Agente de Generación de Retroalimentación]: Destilando ticket {i+1}/{len(raw_tickets)} (ID: {ticket.get('id', 'N/A')})...")
+            print(f"\n[Agente de Destilación de Conocimiento]: Analizando y destilando ticket {i+1}/{len(raw_tickets)} (ID: {ticket.get('item_id', 'N/A')})...")
             
-            # Añadir board_name y source_date al ticket para el LLM
+            # Pre-procesamiento para simplificar la entrada al LLM
+            # Un resumen de los updates puede ser más útil que el texto completo si es muy largo
+            updates_summary = "\n".join([f"- {update['created_at']} por {update['creator_name']}: {update['body_cleaned'][:200]}..." for update in ticket.get('item_updates_details', [])])
+
             ticket_with_context = {
-                **ticket,
+                "item_id": ticket.get("item_id", "N/A"),
                 "board_name": board_name,
-                "source_date": datetime.date.today().isoformat() # Usar la fecha actual como fecha de origen
+                "item_name": ticket.get("item_name", "N/A"),
+                "descripcion_completa": ticket.get("descripcion_completa", ""),
+                "responsable_desarrollo": ticket.get("responsable_desarrollo", ""),
+                "estatus": ticket.get("estatus", ""),
+                "item_updates_summary": updates_summary, # Pasamos un resumen de los updates
+                "all_attached_files_extracted_text_summary": ticket.get("all_attached_files_extracted_text_summary", "")[:1000], # Truncamos para no exceder el límite de tokens
+                "source_date": ticket.get('fecha_real_post_servicio', datetime.date.today().isoformat())
             }
 
             try:
-                # Invocar la cadena de destilación
                 distilled_data = self.distillation_chain.invoke({"item_data": json.dumps(ticket_with_context, indent=2, ensure_ascii=False)})
                 
-                # Validar los campos clave según la REGLA DE ORO
-                if (distilled_data.get('problem_summary') == 'No es posible determinar con la información proporcionada' or
-                    distilled_data.get('root_cause') == 'No es posible determinar con la información proporcionada' or
+                if (distilled_data.get('root_cause') == 'No es posible determinar con la información proporcionada' or
                     distilled_data.get('solution_applied') == 'No es posible determinar con la información proporcionada'):
                     
                     omitted_count += 1
-                    report_messages.append(f"Ticket ID {ticket.get('id', 'N/A')} omitido del CSV: Campos clave no determinados.")
-                    print(f"  - Omitido: Campos clave no determinados para el ticket ID {ticket.get('id', 'N/A')}.")
+                    report_messages.append(f"Ticket ID {ticket.get('item_id', 'N/A')} omitido del CSV: Causa/Solución no inferida.")
+                    print(f"  - Omitido: Causa/Solución no inferida para el ticket ID {ticket.get('item_id', 'N/A')}.")
                 else:
-                    # Si los campos clave son válidos, intentar añadir al CSV
                     csv_tool_result = append_to_knowledge_csv_tool.invoke({"data": distilled_data})
-                    report_messages.append(f"Ticket ID {ticket.get('id', 'N/A')} - CSV Tool: {csv_tool_result}")
+                    report_messages.append(f"Ticket ID {ticket.get('item_id', 'N/A')} - CSV Tool: {csv_tool_result}")
                     print(f"  - CSV Tool: {csv_tool_result}")
                     if "añadido exitosamente" in csv_tool_result or "ya existe" in csv_tool_result:
                         added_to_csv_count += 1
-                        distilled_tickets_for_vector_store.append(distilled_data) # Añadir a la lista para el vector store
+                        distilled_tickets_for_vector_store.append(distilled_data)
             except Exception as e:
                 omitted_count += 1
-                report_messages.append(f"Error al destilar/añadir ticket ID {ticket.get('id', 'N/A')}: {e}")
-                print(f"  - Error: {e} para el ticket ID {ticket.get('id', 'N/A')}.")
+                report_messages.append(f"Error al destilar/añadir ticket ID {ticket.get('item_id', 'N/A')}: {e}")
+                print(f"  - Error: {e} para el ticket ID {ticket.get('item_id', 'N/A')}.")
 
         final_report = (
             f"Informe de Destilación de Conocimiento:\n"
@@ -135,5 +137,5 @@ class KnowledgeDistillationAgent:
             "processed_count": processed_count,
             "added_to_csv_count": added_to_csv_count,
             "omitted_count": omitted_count,
-            "distilled_tickets": distilled_tickets_for_vector_store # Pasar tickets destilados para el vector store
+            "distilled_tickets": distilled_tickets_for_vector_store
         }

@@ -30,12 +30,11 @@ class KnowledgeBaseAgent:
         if not os.path.exists(self.persist_directory):
             os.makedirs(self.persist_directory)
             print(f"Directorio de base de conocimiento vectorial creado: {self.persist_directory}")
-            # Si el directorio es nuevo, inicializamos una Chroma vacía
-            return Chroma(embedding_function=self.embedding_model, persist_directory=self.persist_directory)
-        else:
-            # Si el directorio ya existe, cargamos la base de datos existente
-            print(f"Cargando base de conocimiento vectorial desde: {self.persist_directory}")
-            return Chroma(persist_directory=self.persist_directory, embedding_function=self.embedding_model)
+
+        return Chroma(
+            persist_directory=self.persist_directory,
+            embedding_function=self.embedding_model
+        )
 
     def update_knowledge_base(self, processed_tickets: List[Dict[str, Any]]):
         """
@@ -48,8 +47,6 @@ class KnowledgeBaseAgent:
 
         documents = []
         for ticket in processed_tickets:
-            # Combinamos problem_summary y solution_applied para el contenido del documento
-            # Estos campos vienen del LLM de destilación y son de alta calidad.
             content = f"Resumen del problema: {ticket['problem_summary']}\nSolución aplicada: {ticket['solution_applied']}"
             metadata = {
                 "item_id": ticket["item_id"],
@@ -64,12 +61,11 @@ class KnowledgeBaseAgent:
             documents.append(Document(page_content=content, metadata=metadata))
         
         print(f"Añadiendo {len(documents)} documentos a la base de conocimiento vectorial...")
-        # Añadir documentos a la base de datos vectorial
-        # Chroma maneja la deduplicación si se usa un ID, pero aquí simplemente añadimos.
-        # Para una actualización más robusta, se podría borrar y re-añadir o usar IDs específicos.
+        # Añadir documentos a la base de datos vectorial.
+        # ChromaDB guardará automáticamente los cambios en el disco.
         self.vectorstore.add_documents(documents)
-        self.vectorstore.persist() # type: ignore # Guardar los cambios en disco
-        print("Base de conocimiento vectorial actualizada y persistida.")
+
+        print("Base de conocimiento vectorial actualizada.")
 
     def retrieve_similar_tickets(self, query_text: str, k: int = 3) -> List[Dict[str, Any]]:
         """
@@ -80,13 +76,10 @@ class KnowledgeBaseAgent:
             return []
 
         print(f"Buscando {k} tickets similares en la base vectorial para la consulta: '{query_text}'...")
-        # El retriever devuelve una lista de Documentos de LangChain
         similar_docs = self.vectorstore.similarity_search(query_text, k=k)
         
         similar_tickets = []
         for doc in similar_docs:
-            # Convertimos el Documento de nuevo a nuestro formato de diccionario de ticket
-            # Los metadatos ya contienen la información destilada
             ticket_data = {
                 "item_id": doc.metadata.get("item_id"),
                 "board_name": doc.metadata.get("board_name"),
@@ -96,8 +89,6 @@ class KnowledgeBaseAgent:
                 "solution_applied": doc.metadata.get("solution_applied"),
                 "keywords": doc.metadata.get("keywords"),
                 "source_date": doc.metadata.get("source_date"),
-                # 'score' no se incluye por defecto con similarity_search,
-                # si se necesita, usar similarity_search_with_score y extraerlo.
             }
             similar_tickets.append(ticket_data)
         

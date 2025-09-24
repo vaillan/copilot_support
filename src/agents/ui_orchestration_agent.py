@@ -6,6 +6,7 @@ from agents.knowledge_distillation_agent import KnowledgeDistillationAgent
 from agents.knowledge_base_agent import KnowledgeBaseAgent
 from agents.final_feedback_agent import FinalFeedbackAgent
 from langgraph.graph import StateGraph, END
+
 class UIOchestrationAgent:
     def __init__(self):
         self.workflow = StateGraph(AgentState)
@@ -81,7 +82,7 @@ class UIOchestrationAgent:
                 print(f"No se encontraron tickets relevantes en el tablero '{state['board_name']}' para la búsqueda '{state['new_ticket_description']}'.")
                 return {"error_message": f"No se encontraron tickets relevantes en el tablero '{state['board_name']}'.", "similar_tickets_found": []}
 
-            print('Data',raw_resolved_items)
+            # print('Data',raw_resolved_items)
             print(f"Se encontraron {len(raw_resolved_items)} tickets relevantes.")
             return {"similar_tickets_found": raw_resolved_items}
         except json.JSONDecodeError as e:
