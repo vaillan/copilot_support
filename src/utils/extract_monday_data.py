@@ -1,6 +1,6 @@
 from typing import Any
 from .text_cleaner import AdvancedFileCleaner
-from src.settings.settings import Settings
+from settings.settings import Settings
 import requests
 import json
 from bs4 import BeautifulSoup, Comment # type: ignore # Importar BeautifulSoup para limpiar HTML
@@ -531,7 +531,7 @@ class ExtractData(Settings):
 
             # Añadir el texto resumido de todos los archivos adjuntos a la descripción completa
             if item_attached_files_summary_text:
-                full_description_parts.append("\n\n--- ARCHIVOS ADJUNTOS (TEXTO EXTRAÍDO) ---\\n" + "\n\n".join(item_attached_files_summary_text))
+                full_description_parts.append("\n\n--- ARCHIVOS ADJUNTOS (TEXTO EXTRAÍDO) ---\n" + "\n\n".join(item_attached_files_summary_text))
 
             transformed_item['descripcion_completa'] = "\n\n".join([p for p in full_description_parts if p.strip()]).strip()
             if not transformed_item['descripcion_completa']:

@@ -1,12 +1,11 @@
-from langgraph.graph import StateGraph, END
-from typing import List, Dict, Any, TypedDict, Optional
-from ..utils.state import AgentState
 import json
-from ..tools.monday_tools import extract_board_data_by_timeline_tool, data_extractor_board_tool
-from data_preprocessing_agent import DataPreprocessingAgent
-from src.agents.knowledge_distillation_agent import KnowledgeDistillationAgent
-from knowledge_base_agent import KnowledgeBaseAgent
-from final_feedback_agent import FinalFeedbackAgent
+from utils.state import AgentState
+from tools.monday_tools import data_extractor_board_tool
+from agents.data_preprocessing_agent import DataPreprocessingAgent
+from agents.knowledge_distillation_agent import KnowledgeDistillationAgent
+from agents.knowledge_base_agent import KnowledgeBaseAgent
+from agents.final_feedback_agent import FinalFeedbackAgent
+from langgraph.graph import StateGraph, END
 class UIOchestrationAgent:
     def __init__(self):
         self.workflow = StateGraph(AgentState)
@@ -187,10 +186,10 @@ class UIOchestrationAgent:
             "board_name": "",
             "new_ticket_description": "",
             "similar_tickets_found": [],
-            "generated_feedback": None,
-            "user_confirmation": None,
-            "ticket_created_status": None,
-            "error_message": None
+            "generated_feedback": "",
+            "user_confirmation": False,
+            "ticket_created_status": "",
+            "error_message": ""
         }
         
         print("Iniciando el proceso de gestión de tickets...")

@@ -4,9 +4,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI
 import datetime
-from ..settings.settings import Settings
+from settings.settings import Settings
 # Importar la herramienta CSV
-from ..tools.csv_knowledge_tools import append_to_knowledge_csv_tool
+from tools.csv_knowledge_tools import append_to_knowledge_csv_tool
 
 settings = Settings()
 

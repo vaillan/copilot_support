@@ -2,7 +2,7 @@ import json
 from typing import List, Dict, Any, Optional
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser # Usaremos un parser de cadena simple para la retroalimentación
-from ..settings.settings import Settings
+from settings.settings import Settings
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 settings = Settings()

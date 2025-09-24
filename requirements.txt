@@ -13,3 +13,6 @@ langchain-google-genai
 sentence-transformers
 langchain-community
 chromadb
+langchain-core
+beautifulsoup4
+pandas
