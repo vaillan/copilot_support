@@ -1,4 +1,4 @@
-from typing import Any
+# from typing import Any
 from .text_cleaner import AdvancedFileCleaner
 from settings.settings import Settings
 import requests
@@ -65,7 +65,7 @@ class ExtractData(Settings):
 
         return text
     
-    def _extract_all_boards(self):
+    def _extract_all_boards(self) -> list[dict]:
         gql_query = """
         query {
             boards(limit: 500) {
@@ -77,16 +77,20 @@ class ExtractData(Settings):
         headers = {"Authorization" : self.MONDAY_API_KEY, "API-Version" : "2023-04"}
         data = {'query' : gql_query}
         response = requests.post(url=self.MONDAY_API_URL, json=data, headers=headers)
-        boards = None
+        boards = []
         if 'data' in response.json():
             boards = response.json()['data']['boards']
         return boards
     
-    def _get_board_id(self, boards: list, board_name: str):
+    def _get_board_id(self, boards, board_name: str):
+        palabras_a_buscar = board_name.lower().split()
+        tableros_encontrados = []
         for board in boards:
-            if board['name'].lower() == board_name.lower():
-                return board['id']
-        return None
+            nombre_tablero_minusculas = board['name'].lower()
+            # 4. Comprobar si TODAS las palabras a buscar están en el nombre del tablero
+            if all(palabra in nombre_tablero_minusculas for palabra in palabras_a_buscar):
+                tableros_encontrados.append(int(board['id']))
+        return tableros_encontrados
 
     def _get_file_content_as_text(self, public_url: str, file_name: str) -> str:
         """
@@ -119,7 +123,6 @@ class ExtractData(Settings):
                 permissions
                 items_page(limit: 10, query_params: {rules: [
                             {column_id: "name", compare_value: $text_search, operator:contains_text}
-
                         ]
                 }) {
                     cursor
@@ -274,10 +277,10 @@ class ExtractData(Settings):
         """
 
         if boards is not None:
-            board_id = self._get_board_id(boards=boards, board_name=board_name)
-            if board_id is not None:
+            board_ids = self._get_board_id(boards=boards, board_name=board_name)
+            if board_ids is not None:
                 return self.pre_processor_cleaner_data(self._process_board_items(
-                    board_id=board_id,
+                    board_ids=board_ids,
                     text_search=text_search,
                     initial_gql_query=initial_gql_query,
                     next_page_gql_query=next_page_gql_query
@@ -325,50 +328,50 @@ class ExtractData(Settings):
             datos_limpios.append(item_limpio)
         return datos_limpios
 
-    def _process_board_items(self, board_id: str, text_search: Any, initial_gql_query: str, next_page_gql_query: str):
+    def _process_board_items(self, board_ids: list, text_search, initial_gql_query: str, next_page_gql_query: str):
         all_items = []
-        current_cursor = None
-        current_board_name = ""
-        
         headers = {"Authorization" : self.MONDAY_API_KEY, "API-Version" : "2023-04"}
 
-        # --- Primera consulta ---
-        variables = {"board_id": [board_id]}
-        if text_search is not None:
-            variables['text_search']=text_search
-        data = {'query' : initial_gql_query, "variables": variables}
-        response = requests.post(url=self.MONDAY_API_URL, json=data, headers=headers)
-        response_data = response.json()
-        # print(response_data)
+        for board_id in board_ids:
+            current_cursor = None
+            # current_board_name = ""
 
-        if 'data' in response_data and response_data['data']['boards']:
-            board_info = response_data['data']['boards'][0]
-            current_board_name = board_info['name']
-            
-            if board_info['items_page']['items']:
-                all_items.extend(board_info['items_page']['items'])
-            current_cursor = board_info['items_page']['cursor']
-        
-        # --- Consultas de paginación ---
-        while current_cursor:
-            variables = {"board_id": [board_id], "cursor": current_cursor}
-            data = {'query' : next_page_gql_query, "variables": variables}
+            # --- Primera consulta ---
+            variables = {"board_id": [board_id]}
+            if text_search is not None:
+                variables['text_search']=text_search
+            data = {'query' : initial_gql_query, "variables": variables}
             response = requests.post(url=self.MONDAY_API_URL, json=data, headers=headers)
             response_data = response.json()
-            
+            # print(response_data)
+
             if 'data' in response_data and response_data['data']['boards']:
-                next_items_page = response_data['data']['boards'][0]['items_page']
-                if next_items_page['items']:
-                    all_items.extend(next_items_page['items'])
-                current_cursor = next_items_page['cursor'] # Actualiza el cursor para la siguiente iteración
-            else:
-                current_cursor = None # No hay más datos o error, termina el bucle
+                board_info = response_data['data']['boards'][0]
+                # current_board_name = board_info['name']
+                if board_info['items_page']['items']:
+                    all_items.extend(board_info['items_page']['items'])
+                current_cursor = board_info['items_page']['cursor']
+            
+            # --- Consultas de paginación ---
+            while current_cursor:
+                variables = {"board_id": [board_id], "cursor": current_cursor}
+                data = {'query' : next_page_gql_query, "variables": variables}
+                response = requests.post(url=self.MONDAY_API_URL, json=data, headers=headers)
+                response_data = response.json()
+                
+                if 'data' in response_data and response_data['data']['boards']:
+                    next_items_page = response_data['data']['boards'][0]['items_page']
+                    if next_items_page['items']:
+                        all_items.extend(next_items_page['items'])
+                    current_cursor = next_items_page['cursor'] # Actualiza el cursor para la siguiente iteración
+                else:
+                    current_cursor = None # No hay más datos o error, termina el bucle
 
         # --- Transformación de los datos completos ---
         transformed_items = []
         for item in all_items:
             transformed_item = {
-                "board_name": current_board_name,
+                # "board_name": item['board_name'],
                 "item_id": item['id'],
                 "item_name": item['name']
             }
@@ -547,10 +550,9 @@ class ExtractData(Settings):
 
 
             transformed_items.append(transformed_item)
-                
         return transformed_items
 
-    def extract_board_data_by_timeline(self, board_name: str, timeline: Any | None):
+    def extract_board_data_by_timeline(self, board_name: str, timeline):
         boards = self._extract_all_boards()
         initial_gql_query = """
         query($board_id: [ID!], $text_search: CompareValue!) {
@@ -717,10 +719,10 @@ class ExtractData(Settings):
         """
 
         if boards is not None:
-            board_id = self._get_board_id(boards=boards, board_name=board_name)
-            if board_id is not None:
+            board_ids = self._get_board_id(boards=boards, board_name=board_name)
+            if board_ids is not None:
                 return self.pre_processor_cleaner_data(self._process_board_items(
-                    board_id=board_id,
+                    board_ids=board_ids,
                     text_search=timeline,
                     initial_gql_query=initial_gql_query,
                     next_page_gql_query=next_page_gql_query
