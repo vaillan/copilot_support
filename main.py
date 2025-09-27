@@ -34,7 +34,7 @@ app = FastAPI(
 
 # Creamos una única instancia del agente cuando el servidor arranca
 executor = Executor()
-agent_executor = executor.main()
+agent_executor = executor.main
 
 # --- Definición del Endpoint de la API ---
 @app.post("/invoke", response_model=InvokeResponse)
@@ -59,13 +59,17 @@ async def invoke_agent(request: InvokeRequest):
         final_state = await agent_executor.ainvoke(initial_state)
         
         # Extraemos la última respuesta del agente
-        agent_last_response = final_state['messages'][-1][1] # (type, content)
+        agent_last_response = final_state['messages'][-1]
 
         # Preparamos la respuesta para el cliente
-        updated_messages = [ChatMessage(type=msg[0], content=msg[1]) for msg in final_state['messages']]
+        updated_messages = [
+            ChatMessage(type=msg[0], content=msg[1]) if isinstance(msg, tuple) 
+            else ChatMessage(type=msg.type, content=msg.content) 
+            for msg in final_state['messages']
+        ]
         
         return InvokeResponse(
-            agent_response=agent_last_response,
+            agent_response=agent_last_response.content,
             messages=updated_messages
         )
 

@@ -1,23 +1,29 @@
 from langgraph.graph import StateGraph, END
 from .utils.state import GraphState
-from .agents.supervisor_agent_node import supervisor_agent_node
-from .agents.search_agent_node import search_agent_node
-from .agents.report_agent_node import report_agent_node
+from .agents.supervisor_agent_node import SupervisorAgentNode
+from .agents.search_agent_node import SearchAgentNode
+from .agents.report_agent_node import ReportAgentNode
 
 class Executor:
 
-    def _router(self, state: GraphState):
+    def __init__(self):
+        self.supervisor_agent = SupervisorAgentNode()
+        self.search_agent = SearchAgentNode()
+        self.report_agent = ReportAgentNode()
+
+    def router(self, state: GraphState):
         return state["next_agent"]
 
+    @property
     def main(self):
         workflow = StateGraph(GraphState)
-        workflow.add_node("Supervisor", supervisor_agent_node)
-        workflow.add_node("SearchAgent", search_agent_node)
-        workflow.add_node("ReportAgent", report_agent_node) # No necesitamos el ActionAgent para este ejemplo
+        workflow.add_node("Supervisor", self.supervisor_agent.supervisor_agent_node)
+        workflow.add_node("SearchAgent", self.search_agent.search_agent_node)
+        workflow.add_node("ReportAgent", self.report_agent.report_agent_node) # No necesitamos el ActionAgent para este ejemplo
         workflow.set_entry_point("Supervisor")
-        workflow.add_conditional_edges("Supervisor", self._router, {"SearchAgent": "SearchAgent", "ReportAgent": "ReportAgent", "FINISH": END})
+        workflow.add_conditional_edges("Supervisor", self.router, {"SearchAgent": "SearchAgent", "ReportAgent": "ReportAgent", "FINISH": END})
         workflow.add_edge("SearchAgent", "Supervisor")
-        workflow.add_edge("ReportAgent", END)
+        workflow.add_edge("ReportAgent", "Supervisor")
         return workflow.compile()
 
 
