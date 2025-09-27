@@ -11,17 +11,26 @@ Copilot Support es un sistema inteligente de gestión de tickets diseñado para 
 - **Procesamiento de Lenguaje Natural**: Utiliza modelos de lenguaje para destilar conocimiento de tickets existentes y generar retroalimentación.
 - **Arquitectura Basada en Agentes**: Construido con LangGraph, el sistema orquesta una serie de agentes para manejar el flujo de trabajo de gestión de tickets.
 - **Extracción de Datos**: Capaz de extraer texto de varios tipos de archivos, incluyendo PDFs, imágenes y documentos de Office.
+- **API con FastAPI**: Expone la funcionalidad del agente a través de una API web robusta y fácil de usar.
 
 ## Cómo Funciona
 
-El sistema sigue un flujo de trabajo orquestado por el `UIOchestrationAgent`:
+El sistema está orquestado por un grafo de estados (`StateGraph`) de LangGraph que gestiona el flujo de trabajo entre diferentes agentes especializados. La interacción se realiza a través de una API creada con FastAPI.
 
-1.  **Entrada del Usuario**: El sistema solicita al usuario el nombre de un tablero de monday.com y la descripción de un nuevo ticket.
-2.  **Recuperación de Datos**: Busca tickets similares en el tablero de monday.com especificado.
-3.  **Destilación de Conocimiento**: Los tickets recuperados son procesados por un `KnowledgeDistillationAgent` para extraer información clave, que luego se almacena en un archivo CSV.
-4.  **Búsqueda y Generación de Retroalimentación**: El sistema actualiza una base de conocimiento vectorial con la información destilada. Luego, busca tickets similares a la descripción del nuevo ticket del usuario en la base de conocimiento vectorial. Basado en los tickets similares encontrados, un `FinalFeedbackAgent` genera retroalimentación para el usuario.
-5.  **Confirmación del Usuario**: Se presenta al usuario la retroalimentación generada y se le pregunta si desea crear un nuevo ticket en monday.com.
-6.  **Creación de Ticket**: Si el usuario confirma, se crea un nuevo ticket en monday.com.
+1.  **Entrada del Usuario**: El usuario envía una consulta a través del endpoint `/invoke` de la API, especificando su pregunta y el historial de la conversación.
+2.  **Supervisor (`supervisor_agent_node`)**: Este agente es el punto de entrada. Analiza la consulta del usuario y decide qué agente debe actuar a continuación.
+    -   Si la consulta requiere una búsqueda, enruta al `SearchAgent`.
+    -   Si ya se ha realizado una búsqueda y hay resultados, pasa el control al `ReportAgent`.
+    -   Si la conversación parece haber terminado, finaliza el flujo.
+3.  **Agente de Búsqueda (`search_agent_node`)**:
+    -   Su objetivo es utilizar la herramienta `similarity_search` para encontrar ítems relevantes en monday.com.
+    -   Si el usuario no ha especificado un tablero (`board_name`), primero utiliza la herramienta `list_boards` para obtener una lista de los tableros disponibles y se la presenta al usuario.
+    -   Una vez que tiene el tablero y la consulta, realiza la búsqueda semántica y guarda los resultados en el estado del grafo.
+4.  **Agente de Reporte (`report_agent_node`)**:
+    -   Toma los resultados de la búsqueda (ítems de monday.com).
+    -   Utiliza un modelo de lenguaje para generar un resumen estructurado y claro de cada ítem encontrado, en formato Markdown.
+    -   Presenta un reporte final al usuario con los hallazgos.
+5.  **Respuesta al Usuario**: El resultado final del `ReportAgent` se devuelve como respuesta de la API.
 
 ## Instalación
 
@@ -50,43 +59,41 @@ El sistema sigue un flujo de trabajo orquestado por el `UIOchestrationAgent`:
 
 ## Uso
 
-Para ejecutar la aplicación, ejecuta el siguiente comando desde la raíz del proyecto:
+La aplicación se ejecuta como un servidor web gracias a FastAPI. Para iniciarla, ejecuta el siguiente comando desde la raíz del proyecto:
 
 ```bash
-python -m src.main
+uvicorn main:app --reload
 ```
 
-El sistema te guiará a través del proceso de gestión de tickets.
+El servidor estará disponible en `http://127.0.0.1:8000`. Puedes interactuar con la API a través de la documentación interactiva que se genera automáticamente en `http://127.0.0.1:8000/docs`.
 
 ## Estructura del Proyecto
 
 ```
 /
 ├── .gitignore
+├── main.py
 ├── README.md
 ├── requirements.txt
-└── src/
+└── app/
     ├── __init__.py
     ├── main.py
     ├── agents/
     │   ├── __init__.py
-    │   ├── data_preprocessing_agent.py
-    │   ├── final_feedback_agent.py
-    │   ├── knowledge_base_agent.py
-    │   ├── knowledge_distillation_agent.py
-    │   └── ui_orchestration_agent.py
-    ├── knowledge_base/
-    │   └── knowledge_base.csv
+    │   ├── report_agent_node.py
+    │   ├── search_agent_node.py
+    │   └── supervisor_agent_node.py
     ├── settings/
     │   ├── __init__.py
     │   └── settings.py
     ├── tools/
     │   ├── __init__.py
-    │   ├── csv_knowledge_tools.py
-    │   └── monday_tools.py
+    │   ├── list_boards_tool.py
+    │   └── similarity_search_tool.py
     └── utils/
+        ├── __init__.py
         ├── extract_monday_data.py
-        ├── llm_provider.py
+        ├── model_provider.py
         ├── state.py
         └── text_cleaner.py
 ```
@@ -95,6 +102,8 @@ El sistema te guiará a través del proceso de gestión de tickets.
 
 - **langgraph**: Para construir la arquitectura basada en agentes.
 - **langchain-google-genai**: Para la integración con los modelos de IA generativa de Google.
+- **fastapi**: Para crear la API web.
+- **uvicorn**: Para ejecutar el servidor ASGI.
 - **sentence-transformers**: Para la creación de embeddings de texto.
 - **chromadb**: Para la base de datos vectorial.
 - **pdfplumber**, **Pillow**, **pytesseract**, **openpyxl**, **python-docx**, **opencv-python**, **pdf2image**: Para la extracción de datos de varios formatos de archivo.
