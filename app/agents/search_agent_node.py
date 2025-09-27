@@ -2,10 +2,10 @@ from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 
-from utils.state import GraphState
-from tools.list_boards_tool import list_boards
-from tools.similarity_search_tool import similarity_search
-from utils.model_provider import llm
+from ..utils.state import GraphState
+from ..tools.list_boards_tool import list_boards
+from ..tools.similarity_search_tool import similarity_search
+from ..utils.model_provider import llm
 
 search_tools = [list_boards, similarity_search]
 

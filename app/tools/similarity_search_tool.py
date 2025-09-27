@@ -1,4 +1,4 @@
-from utils.extract_monday_data import ExtractData
+from ..utils.extract_monday_data import ExtractData
 from langchain_core.tools import tool
 
 extractData = ExtractData()

@@ -2,8 +2,8 @@
 from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-from utils.model_provider import llm
-from utils.state import GraphState
+from ..utils.model_provider import llm
+from ..utils.state import GraphState
 
 
 class SupervisorResponse(BaseModel):

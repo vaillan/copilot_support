@@ -1,6 +1,6 @@
 # from typing import Any
 from .text_cleaner import AdvancedFileCleaner
-from settings.settings import Settings
+from ..settings.settings import Settings
 import requests
 import json
 from bs4 import BeautifulSoup, Comment # type: ignore # Importar BeautifulSoup para limpiar HTML

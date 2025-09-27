@@ -2,8 +2,8 @@ from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate
 import json
 
-from utils.model_provider import llm
-from utils.state import GraphState
+from ..utils.model_provider import llm
+from ..utils.state import GraphState
 
 def report_agent_node(state: GraphState):
     print("--- Ejecutando Nodo: Generación de Reportes ---")

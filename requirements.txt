@@ -10,10 +10,8 @@ opencv-python
 pdf2image
 langgraph
 langchain-google-genai
-sentence-transformers
+beautifulsoup4
 langchain-community
 langchain-core
-beautifulsoup4
-pandas
-langchain-huggingface
-langchain-chroma
+fastapi[standard]
+uvicorn[standard]

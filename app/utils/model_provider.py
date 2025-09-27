@@ -1,4 +1,4 @@
-from settings.settings import Settings
+from ..settings.settings import Settings
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 settings = Settings()
