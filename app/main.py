@@ -1,35 +1,8 @@
-from langgraph.graph import StateGraph, END
-from .utils.state import GraphState
-from .agents.supervisor_agent_node import SupervisorAgentNode
-from .agents.search_agent_node import SearchAgentNode
-from .agents.report_agent_node import ReportAgentNode
-
-class Executor:
-
-    def __init__(self):
-        self.supervisor_agent = SupervisorAgentNode()
-        self.search_agent = SearchAgentNode()
-        self.report_agent = ReportAgentNode()
-
-    def router(self, state: GraphState):
-        return state["next_agent"]
-
-    @property
-    def main(self):
-        workflow = StateGraph(GraphState)
-        workflow.add_node("Supervisor", self.supervisor_agent.supervisor_agent_node)
-        workflow.add_node("SearchAgent", self.search_agent.search_agent_node)
-        workflow.add_node("ReportAgent", self.report_agent.report_agent_node) # No necesitamos el ActionAgent para este ejemplo
-        workflow.set_entry_point("Supervisor")
-        workflow.add_conditional_edges("Supervisor", self.router, {"SearchAgent": "SearchAgent", "ReportAgent": "ReportAgent", "FINISH": END})
-        workflow.add_edge("SearchAgent", "Supervisor")
-        workflow.add_edge("ReportAgent", "Supervisor")
-        return workflow.compile()
-
+# from .agents.coordination import Coordination
 
 # # --- NUEVO BLOQUE PARA GENERAR LA IMAGEN DEL GRAFO ---
-# executor = Executor()
-# app = executor.main()
+# executor = Coordination()
+# app = executor.supervisor_general_graph
 # print("\n--- Compilando la imagen del grafo ---")
 # try:
 #     # Obtiene el grafo en un formato dibujable
@@ -48,3 +21,4 @@ class Executor:
 #     print("Consulta las instrucciones de instalación para tu sistema operativo.")
 # except Exception as e:
 #     print(f"❌ Ocurrió un error inesperado al generar la imagen: {e}")
+#     print("Si el error persiste, asegúrate de haber ejecutado 'pip install pyppeteer' y 'python -m pyppeteer.install' en tu entorno.")

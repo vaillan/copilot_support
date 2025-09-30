@@ -1,4 +1,4 @@
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage # type: ignore
 from typing import TypedDict, Annotated, List
 import operator
 
@@ -12,7 +12,7 @@ class GraphState(TypedDict):
         next_agent: El nombre del siguiente agente que el orquestador ha decidido ejecutar.
         search_results: Los resultados de la búsqueda por similitud.
     """
-    user_query: str
+    # user_query: str
     messages: Annotated[List[BaseMessage], operator.add]
     next_agent: str
     search_results: List[dict]

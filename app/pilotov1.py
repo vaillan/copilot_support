@@ -1,17 +1,17 @@
 from typing import TypedDict, Annotated, List
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage # type: ignore
 import operator
-from langchain_core.tools import tool
+from langchain_core.tools import tool # type: ignore
 from settings.settings import Settings
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field # type: ignore
 from utils.extract_monday_data import ExtractData
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI # type: ignore
 
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.tools import tool
-from langchain.agents import AgentExecutor, create_tool_calling_agent
-from langgraph.graph import StateGraph, END
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage # type: ignore
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder # type: ignore
+from langchain_core.tools import tool # type: ignore
+from langchain.agents import AgentExecutor, create_tool_calling_agent # type: ignore
+from langgraph.graph import StateGraph, END # type: ignore
 import json
 
 settings = Settings()
@@ -245,7 +245,7 @@ def report_agent_node(state: GraphState):
     return {"messages": [AIMessage(content=final_report)]}
 
 # ORQUESTADOR Y GRAFO
-from langchain_core.pydantic_v1 import BaseModel, Field
+from pydantic import BaseModel, Field # type: ignore
 
 class SupervisorResponse(BaseModel):
     next_agent: str = Field(description="El nombre del agente a llamar a continuación. Debe ser uno de: ['SearchAgent', 'ReportAgent', 'FINISH']")

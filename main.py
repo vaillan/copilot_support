@@ -1,80 +1,77 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from app.tools.mcp_client import CLIENT
+from fastapi import FastAPI, HTTPException # type: ignore
+from pydantic import BaseModel # type: ignore
 from typing import List
+from contextlib import asynccontextmanager
 
-# Importamos la función que crea nuestro agente desde agent.py
-from app.utils.state import GraphState
-from app.main import Executor
+# 1. Importación corregida: Asume que tu script se ejecuta desde el directorio raíz del proyecto.
+from app.agents.coordination import Coordination
+from langchain_core.messages import HumanMessage, AIMessage # type: ignore
+from langgraph.graph import MessagesState # type: ignore
+from langchain_core.runnables.graph_mermaid import MermaidDrawMethod # type: ignore
+import logging
+from pathlib import Path
+# Configuración de logging profesional
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- Modelos de Datos Pydantic para la API ---
-# LangChain tiene sus propios modelos, pero es mejor definir los nuestros para la API
-# para desacoplar el frontend del backend.
-
+# --- Modelos de Datos Pydantic (sin cambios) ---
 class ChatMessage(BaseModel):
-    """Representa un mensaje en la conversación (humano o de la IA)."""
-    type: str  # 'human' o 'ai'
+    type: str
     content: str
 
 class InvokeRequest(BaseModel):
-    """El cuerpo de la petición que el cliente enviará."""
-    user_query: str
     messages: List[ChatMessage]
 
 class InvokeResponse(BaseModel):
-    """La respuesta que el servidor devolverá."""
-    agent_response: str
     messages: List[ChatMessage]
 
-# --- Inicialización de la App y el Agente ---
+# 2. Variable global para mantener la instancia del agente ejecutor.
+#    Se inicializará de forma asíncrona durante el arranque en el 'lifespan'.
+agent_executor = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Gestiona el ciclo de vida del agente. Se ejecuta al iniciar y finalizar el servidor.
+    """
+    global agent_executor    
+    # Usamos la fábrica asíncrona que definimos en el paso anterior
+    tools = await CLIENT.get_tools()
+    coordinator = Coordination(tools=tools)
+
+    agent_executor = coordinator.supervisor_general_graph 
+    yield  # La aplicación se ejecuta aquí
+    agent_executor = None
+
+# 3. Creamos la aplicación FastAPI UNA SOLA VEZ, pasándole el lifespan.
 app = FastAPI(
-    title="Monday.com Agent Server",
+    lifespan=lifespan,
+    title="Hierarchical Monday.com Agent Server",
     description="Un backend para interactuar con un agente de LangGraph para Monday.com",
     version="1.0.0",
 )
 
-# Creamos una única instancia del agente cuando el servidor arranca
-executor = Executor()
-agent_executor = executor.main
-
-# --- Definición del Endpoint de la API ---
+# --- Endpoints de la API ---
 @app.post("/invoke", response_model=InvokeResponse)
 async def invoke_agent(request: InvokeRequest):
-    """
-    Recibe una consulta y el historial de la conversación, ejecuta el agente y devuelve la respuesta.
-    """
-    # Convertimos nuestros mensajes Pydantic al formato que LangChain espera
-    # (Esta es una simplificación, en un caso real necesitarías importar HumanMessage, AIMessage)
-    langchain_messages = [(msg.type, msg.content) for msg in request.messages]
-    
-    # Creamos el estado inicial para el grafo
-    initial_state: GraphState = {
-        "user_query": request.user_query,
-        "messages": langchain_messages, # type: ignore
-        "next_agent": "",  # El orquestador decidirá
-        "search_results": [],
-    }
+    if agent_executor is None:
+        raise HTTPException(status_code=503, detail="El agente no está disponible o inicializado. Inténtalo de nuevo en unos segundos.")
+    # Convertimos los mensajes de la API al formato de LangChain
+    langchain_messages = []
+    for msg in request.messages:
+        if msg.type == "human":
+            langchain_messages.append(HumanMessage(content=msg.content))
+        elif msg.type == "ai":
+            langchain_messages.append(AIMessage(content=msg.content))
+
+    initial_state: MessagesState = {"messages": langchain_messages}
 
     try:
-        # Usamos `ainvoke` para una ejecución asíncrona, ideal para FastAPI
         final_state = await agent_executor.ainvoke(initial_state)
-        
-        # Extraemos la última respuesta del agente
-        agent_last_response = final_state['messages'][-1]
-
-        # Preparamos la respuesta para el cliente
-        updated_messages = [
-            ChatMessage(type=msg[0], content=msg[1]) if isinstance(msg, tuple) 
-            else ChatMessage(type=msg.type, content=msg.content) 
-            for msg in final_state['messages']
-        ]
-        
-        return InvokeResponse(
-            agent_response=agent_last_response.content,
-            messages=updated_messages
-        )
+        response_messages = [ChatMessage(type=msg.type, content=str(msg.content)) for msg in final_state['messages']]
+        return InvokeResponse(messages=response_messages)
 
     except Exception as e:
-        # Si algo sale mal dentro del agente, devolvemos un error 500
         raise HTTPException(status_code=500, detail=f"Error en la ejecución del agente: {str(e)}")
 
 @app.get("/")
