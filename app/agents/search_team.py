@@ -19,7 +19,6 @@ class SupervisorSearchResponse(BaseModel):
 class SearchTeam:
 
     def __init__(self):
-        self.structured_llm = llm.with_structured_output(SupervisorSearchResponse) # type: ignore
         search_tools = [list_boards, similarity_search]
         search_prompt = ChatPromptTemplate.from_messages([
                 ("system", """
@@ -69,22 +68,25 @@ class SearchTeam:
             ("system", "Eres un asistente de productividad experto en analizar y resumir información. Tu objetivo es transformar los datos en un resumen claro y accionable. Usa formato Markdown. Si un campo no existe en el JSON, omítelo."),
             ("human", "Resume el siguiente ítem de monday.com, extrayendo la información más crítica. Datos del Ítem (JSON): {item_data}. Sigue esta estructura flexible: ### 📌 {item_name} (ID: {item_id})\n- **Tablero**: {board_name}\n- **Información Clave**: [Extrae dinámicamente 2-4 campos importantes como Estatus, Prioridad, etc.]\n\n#### Resumen Principal:\n[Describe el propósito central del ítem.]\n\n#### Última Actividad Relevante:\n[Describe la actualización más reciente.]\n\n#### Análisis y Próximos Pasos:\n[Ofrece un breve análisis y sugiere el siguiente paso lógico.]")
         ])
-        self.supervisor_search_prompt = ChatPromptTemplate.from_messages([
+        supervisor_search_prompt = ChatPromptTemplate.from_messages([
             ("system", 
             """
-            Eres el supervisor de un equipo de agentes. Tu trabajo es enrutar la consulta al agente más adecuado o finalizar la conversación.
-            **Agentes disponibles para tu decisión de enrutamiento:**
-            *   **search_agent_node**: Enruta aquí si la consulta del usuario requiere buscar información, listar tableros o realizar una búsqueda de similitud. Este es el agente principal para la recuperación de datos.
-            *   **report_agent_node**: Enruta aquí *únicamente* si la intención del usuario es generar un reporte o resumen a partir de **resultados de búsqueda que ya han sido obtenidos y están presentes en el estado de la conversación**. No elijas este agente si no hay resultados de búsqueda previos para procesar.
-            *   **FINISH**: Responde 'FINISH' si la conversación ha terminado, la consulta del usuario ha sido completamente atendida, o no hay más acciones pendientes para satisfacer la solicitud.
+            Tu única función es actuar como un enrutador JSON. Basándote en el último mensaje del usuario, debes decidir cuál es el siguiente paso.
 
-            **Consideraciones importantes:**
-            *   Tu objetivo es guiar la conversación hacia la resolución de la consulta del usuario.
-            *   Prioriza el `search_agent_node` si la intención del usuario es obtener o explorar nueva información.
-            *   Si la conversación parece haber llegado a una conclusión natural o la pregunta ha sido respondida, finaliza.
-            """), 
+            **DEBES responder invocando la herramienta 'SupervisorSearchResponse' con el campo 'next_agent' rellenado.**
+
+            Las únicas opciones válidas para 'next_agent' son:
+            - "search_agent_node": Si el usuario quiere buscar o listar información.
+            - "report_agent_node": Si ya hay resultados de búsqueda en el historial y el usuario quiere un resumen.
+            - "FINISH": Si la tarea está completa.
+
+            **NO respondas con texto, explicaciones o markdown. Tu única salida DEBE ser la llamada a la herramienta 'SupervisorSearchResponse'.**
+            """),
             MessagesPlaceholder(variable_name="messages")
         ])
+        structured_llm_search = llm.with_structured_output(SupervisorSearchResponse)
+        self.supervisor_search_chain = supervisor_search_prompt | structured_llm_search
+
         search_agent_runnable = create_tool_calling_agent(llm, search_tools, search_prompt)
         self.search_agent_executor = AgentExecutor(agent=search_agent_runnable, tools=search_tools, verbose=True)
 
@@ -111,15 +113,15 @@ class SearchTeam:
 
     def supervisor_search_agent_node(self, state: GraphState) -> Command[Literal["search_agent_node", "report_agent_node", END]]: # type: ignore
         # print("--- Ejecutando Nodo: Orquestador ---")
-        if 'search_results' in state and state["search_results"]:
+        if state.get("search_results"):
             return Command(goto="report_agent_node")
 
         if isinstance(state["messages"][-1], AIMessage):
-            return Command(goto=END) # type: ignore
+            return Command(goto=END)
 
-        chain = self.supervisor_search_prompt | self.structured_llm
-        response = chain.invoke({"messages": state["messages"]})
-        return Command(goto=response.next_agent)
+        response = self.supervisor_search_chain.invoke({"messages": state["messages"]})
+
+        return Command(goto=response.next_agent) # type: ignore
 
     @property
     def supervisor_search_graph(self):
@@ -127,6 +129,7 @@ class SearchTeam:
         workflow.add_node("supervisor_search_agent_node", self.supervisor_search_agent_node)
         workflow.add_node("search_agent_node", self.search_agent_node)
         workflow.add_node("report_agent_node", self.report_agent_node)
+        
         workflow.add_edge("search_agent_node", "supervisor_search_agent_node")
         workflow.add_edge("report_agent_node", "supervisor_search_agent_node")
         workflow.add_edge(START, "supervisor_search_agent_node")

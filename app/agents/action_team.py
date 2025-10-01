@@ -1,6 +1,3 @@
-# Asegúrate de que asyncio esté importado al principio del archivo
-import asyncio
-
 from langchain_core.messages import AIMessage # type: ignore
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder # type: ignore
 from langchain.agents import AgentExecutor, create_tool_calling_agent # type: ignore
@@ -14,10 +11,10 @@ from langgraph.types import Command # type: ignore
 class ActionTeam:
     def __init__(self, tools: List) -> None:
 
-        print("\nHerramientas descubiertas automáticamente:")
-        for tool in tools: # type: ignore
-            print(f"- Nombre: {tool.name}")
-            print(f"  Descripción: {tool.description}\n")
+        # print("\nHerramientas descubiertas automáticamente:")
+        # for tool in tools: # type: ignore
+        #     print(f"- Nombre: {tool.name}")
+        #     print(f"  Descripción: {tool.description}\n")
         prompt = ChatPromptTemplate.from_messages([
             ("system", "Eres un agente que ejecuta acciones..."),
             MessagesPlaceholder(variable_name="messages"),
@@ -31,20 +28,21 @@ class ActionTeam:
                 verbose=True
             )
 
-    def action_agent_node(self, state: MessagesState) -> Command[Literal["SupervisorAction"]]:
+    def action_agent_node(self, state: MessagesState) -> Command[Literal["supervisor_action_agent_node"]]:
         result = self.action_agent_executor.invoke({"messages": state["messages"]})
-        return Command(goto="SupervisorAction", update={"messages": [AIMessage(content=result['output'])]})
+        return Command(goto="supervisor_action_agent_node", update={"messages": [AIMessage(content=result['output'])]})
 
-    def supervisor_action_agent_node(self, state: MessagesState) -> Command[Literal["ActionAgent", END]]: # type: ignore
+    def supervisor_action_agent_node(self, state: MessagesState) -> Command[Literal["action_agent_node", END]]: # type: ignore
         if isinstance(state["messages"][-1], AIMessage):
             return Command(goto=END)
-        return Command(goto="ActionAgent")
+        return Command(goto="action_agent_node")
     
     @property
     def supervisor_action_graph(self):
         workflow = StateGraph(MessagesState)
-        workflow.add_node("SupervisorAction", self.supervisor_action_agent_node)
-        workflow.add_node("ActionAgent", self.action_agent_node)
-        workflow.add_edge("ActionAgent", "SupervisorAction")
-        workflow.add_edge(START, "SupervisorAction")
+        workflow.add_node("supervisor_action_agent_node", self.supervisor_action_agent_node)
+        workflow.add_node("action_agent_node", self.action_agent_node)
+        
+        workflow.add_edge("action_agent_node", "supervisor_action_agent_node")
+        workflow.add_edge(START, "supervisor_action_agent_node")
         return workflow.compile()
