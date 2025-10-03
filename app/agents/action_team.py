@@ -7,16 +7,19 @@ from ..utils.model_provider import llm
 from ..tools.mcp_client import CLIENT
 from langgraph.graph import StateGraph, MessagesState, START, END # type: ignore
 from langgraph.types import Command # type: ignore
+from ..utils.files import File
 
-class ActionTeam:
+class ActionTeam(File):
     def __init__(self, tools: List) -> None:
+        super().__init__(directory="prompts")
+        action_prompt_content = self.get_file_content(file_name="action_prompt.md")
 
         # print("\nHerramientas descubiertas automáticamente:")
         # for tool in tools: # type: ignore
         #     print(f"- Nombre: {tool.name}")
         #     print(f"  Descripción: {tool.description}\n")
         prompt = ChatPromptTemplate.from_messages([
-            ("system", "Eres un agente que ejecuta acciones..."),
+            ("system", action_prompt_content),
             MessagesPlaceholder(variable_name="messages"),
             MessagesPlaceholder(variable_name="agent_scratchpad"),
         ])
@@ -40,9 +43,9 @@ class ActionTeam:
     @property
     def supervisor_action_graph(self):
         workflow = StateGraph(MessagesState)
-        workflow.add_node("supervisor_action_agent_node", self.supervisor_action_agent_node)
-        workflow.add_node("action_agent_node", self.action_agent_node)
+        workflow.add_node(node="supervisor_action_agent_node", action=self.supervisor_action_agent_node)
+        workflow.add_node(node="action_agent_node", action=self.action_agent_node)
         
-        workflow.add_edge("action_agent_node", "supervisor_action_agent_node")
-        workflow.add_edge(START, "supervisor_action_agent_node")
+        workflow.add_edge(start_key=START, end_key="supervisor_action_agent_node")
+        # workflow.add_edge(start_key="action_agent_node", end_key="supervisor_action_agent_node")
         return workflow.compile()

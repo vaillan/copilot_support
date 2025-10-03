@@ -29,28 +29,27 @@ async def lifespan(app: FastAPI):
     Gestiona el ciclo de vida del agente. Se ejecuta al iniciar y finalizar el servidor.
     """
     global agent_executor
-    # Usamos la fábrica asíncrona que definimos en el paso anterior
     tools = await CLIENT.get_tools()
     coordinator = Coordination(tools=tools)
     agent_executor = coordinator.supervisor_general_graph
-    graph = agent_executor
-    graph_search_team = coordinator.team_search
-    graph_action_team = coordinator.team_action
-    try:
-        display(Image(graph.get_graph().draw_mermaid_png(output_file_path="flujo_del_agente_general.png")))
-        display(Image(graph_search_team.supervisor_search_graph.get_graph().draw_mermaid_png(output_file_path="flujo_del_agente_busqueda.png")))
-        display(Image(graph_action_team.supervisor_action_graph.get_graph().draw_mermaid_png(output_file_path="flujo_del_agente_accion.png")))
+    # graph = agent_executor
+    # graph_search_team = coordinator.team_search
+    # graph_action_team = coordinator.team_action
+    # try:
+    #     display(Image(graph.get_graph().draw_mermaid_png(output_file_path="flujo_del_agente_general.png")))
+    #     display(Image(graph_search_team.supervisor_search_graph.get_graph().draw_mermaid_png(output_file_path="flujo_del_agente_busqueda.png")))
+    #     display(Image(graph_action_team.supervisor_action_graph.get_graph().draw_mermaid_png(output_file_path="flujo_del_agente_accion.png")))
         
-    except Exception:
-        pass
+    # except Exception:
+    #     pass
 
     yield  # La aplicación se ejecuta aquí
     agent_executor = None
 
 app = FastAPI(
     lifespan=lifespan,
-    title="Hierarchical Monday.com Agent Server",
-    description="Un backend para interactuar con un agente de LangGraph para Monday.com",
+    title="Hierarchical Agent Server",
+    description="Un backend para interactuar con sistema multiagente con un supervisor de supervisores",
     version="1.0.0",
 )
 

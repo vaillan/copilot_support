@@ -8,29 +8,22 @@ from langchain_core.messages import AIMessage # type: ignore # NUEVO: Importar A
 from ..utils.model_provider import llm
 from .search_team import SearchTeam
 from .action_team import ActionTeam
+from ..utils.files import File
 
 class SupervisorGeneralResponse(BaseModel):
     """La decisión del supervisor de alto nivel."""
     next_agent: Literal["supervisor_search_agent", "supervisor_action_agent", "FINISH"] = Field(description="La decisión sobre a qué equipo enrutar la conversación o si finalizar.")
 
+class Coordination(File):
 
-class Coordination:
-    
     def __init__(self, tools) -> None:
+        super().__init__(directory="prompts")
         self.team_search = SearchTeam()
         self.team_action = ActionTeam(tools=tools)
+        supervisor_general_prompt_content = self.get_file_content(file_name="supervisor_general_prompt.md")
 
         top_level_prompt = ChatPromptTemplate.from_messages([
-            ("system", """
-            Eres el supervisor de un equipo de agentes. Tu trabajo es enrutar la consulta del usuario al equipo correcto basándote en el último mensaje.
-            Las únicas opciones válidas para el siguiente agente son: 'supervisor_search_agent', 'supervisor_action_agent', o 'FINISH'.
-
-            - 'supervisor_search_agent': Úsalo para preguntas, búsquedas de información, reportes o consultas sobre datos existentes.
-            - 'supervisor_action_agent': Úsalo para peticiones explícitas de crear, modificar o actualizar algo (ej. "crea una tarea", "cambia el estado").
-            - 'FINISH': Úsalo si la conversación parece haber terminado o si el usuario se está despidiendo.
-
-            Responde únicamente con el objeto JSON que se ajuste al esquema 'SupervisorGeneralResponse' y nada más. No incluyas explicaciones ni texto adicional.
-            """),
+            ("system", supervisor_general_prompt_content),
             MessagesPlaceholder(variable_name="messages"),
         ])
         structured_llm = llm.with_structured_output(SupervisorGeneralResponse)
@@ -38,7 +31,7 @@ class Coordination:
 
     def supervisor_general_agent_node(self, state: MessagesState) -> Command[Literal["supervisor_search_agent", "supervisor_action_agent", END]]: # type: ignore
 
-        if isinstance(state["messages"][len(state["messages"]) - 1], AIMessage):
+        if isinstance(state["messages"][-1], AIMessage):
             return Command(goto=END) # type: ignore
 
         response = self.supervisor_general_chain.invoke({"messages": state["messages"]})
@@ -46,7 +39,6 @@ class Coordination:
         if response.next_agent == "FINISH": # type: ignore
             return Command(goto=END)
 
-        # Usamos getattr para acceder al atributo de forma segura, aunque con Pydantic no es estrictamente necesario aquí.
         return Command(goto=response.next_agent) # type: ignore
     
     @property
