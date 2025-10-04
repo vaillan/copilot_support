@@ -4,11 +4,10 @@ from langchain.agents import AgentExecutor, create_tool_calling_agent # type: ig
 from langgraph.types import Command # type: ignore
 from typing import Literal, List
 from ..utils.model_provider import llm
-from ..tools.mcp_client import CLIENT
 from langgraph.graph import StateGraph, MessagesState, START, END # type: ignore
 from langgraph.types import Command # type: ignore
 from ..utils.files import File
-
+from ..tools.list_boards_tool import list_boards
 class ActionTeam(File):
     def __init__(self, tools: List) -> None:
         super().__init__(directory="prompts")
@@ -31,8 +30,8 @@ class ActionTeam(File):
                 verbose=True
             )
 
-    def action_agent_node(self, state: MessagesState) -> Command[Literal["supervisor_action_agent_node"]]:
-        result = self.action_agent_executor.invoke({"messages": state["messages"]})
+    async def action_agent_node(self, state: MessagesState) -> Command[Literal["supervisor_action_agent_node"]]:
+        result = await self.action_agent_executor.ainvoke({"messages": state["messages"]})
         return Command(goto="supervisor_action_agent_node", update={"messages": [AIMessage(content=result['output'])]})
 
     def supervisor_action_agent_node(self, state: MessagesState) -> Command[Literal["action_agent_node", END]]: # type: ignore
@@ -47,5 +46,5 @@ class ActionTeam(File):
         workflow.add_node(node="action_agent_node", action=self.action_agent_node)
         
         workflow.add_edge(start_key=START, end_key="supervisor_action_agent_node")
-        # workflow.add_edge(start_key="action_agent_node", end_key="supervisor_action_agent_node")
+        workflow.add_edge(start_key="action_agent_node", end_key="supervisor_action_agent_node")
         return workflow.compile()

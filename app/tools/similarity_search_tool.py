@@ -131,8 +131,6 @@ def similarity_search(board_name: str, query: str):
 
     all_boards = extractData._extract_all_boards()
     boarsd = extractData._get_board_id(boards=all_boards, board_name=board_name)
-    # print('search_similar_items_in_board: ', f"Board: {board_name}", f"Query: {query}")
-    # boarsd = next((b for b in all_boards if b['name'].lower() == board_name.lower()), None)
     if not boarsd:
         board_names = ", ".join([f"'{b['name']}'" for b in all_boards])
         return f"Error: No se encontraron tableros similares a '{board_name}'. Los tableros disponibles son: {board_names}."

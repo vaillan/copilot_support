@@ -2,7 +2,7 @@ from langchain_core.messages import AIMessage # type: ignore
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder # type: ignore
 from langchain.agents import AgentExecutor, create_tool_calling_agent # type: ignore
 from langgraph.types import Command # type: ignore
-from typing import Literal
+from typing import List, Literal
 from pydantic import BaseModel, Field # type: ignore
 from ..utils.state import GraphState
 from ..tools.list_boards_tool import list_boards
@@ -18,15 +18,33 @@ class SupervisorSearchResponse(BaseModel):
     next_agent: str = Field(description="El nombre del agente a llamar a continuación. Debe ser uno de: ['search_agent_node', 'report_agent_node', 'FINISH']")
 class SearchTeam(File):
 
-    def __init__(self):
+    def __init__(self, tools: List) -> None:
         super().__init__(directory="prompts")
         search_prompt_content = self.get_file_content(file_name="search_prompt.md")
         
         report_prompt_content = self.get_file_content(file_name="report_prompt.md")
 
         supervisor_search_prompt_content = self.get_file_content(file_name="supervisor_search_prompt.md")
-
         search_tools = [list_boards, similarity_search]
+        search_mcp_tools = [
+            "get_board_items_by_name",
+            "get_board_schema",
+            "get_board_activity",
+            "get_board_info",
+            "get_users_by_name",
+            "list_users_and_teams",
+            "get_form",
+            "get_column_type_info",
+            "fetch_custom_activity",
+            "read_docs",
+            "workspace_info",
+            "list_workspaces",
+            "all_widgets_schema"
+        ]
+        for tool in tools:
+            if tool.name in search_mcp_tools:
+                search_tools.append(tool)
+            
         search_prompt = ChatPromptTemplate.from_messages([
             ("system", search_prompt_content),
             MessagesPlaceholder(variable_name="messages"),
@@ -48,9 +66,8 @@ class SearchTeam(File):
         search_agent_runnable = create_tool_calling_agent(llm, search_tools, search_prompt)
         self.search_agent_executor = AgentExecutor(agent=search_agent_runnable, tools=search_tools, verbose=True)
 
-    def search_agent_node(self, state: GraphState) -> Command[Literal["supervisor_search_agent_node", "report_agent_node"]]:
-        # print("--- Ejecutando Nodo: Agente de Búsqueda ---")
-        result = self.search_agent_executor.invoke({"messages": state["messages"]})
+    async def search_agent_node(self, state: GraphState) -> Command[Literal["supervisor_search_agent_node", "report_agent_node"]]:
+        result = await self.search_agent_executor.ainvoke({"messages": state["messages"]})
         agent_output = result.get("output")
 
         try:
@@ -62,7 +79,8 @@ class SearchTeam(File):
                 json_string_content = agent_output.strip() # type: ignore
             
             if not json_string_content:
-                return ValueError("Error Contenido vacio") # type: ignore
+                result_data = {"messages": [AIMessage(content="El agente de búsqueda no devolvió ningún resultado.")]}
+                return Command(goto="supervisor_search_agent_node", update=result_data)
 
             json_object = json.loads(json_string_content)
     
@@ -72,17 +90,17 @@ class SearchTeam(File):
             result_data = {"messages": [AIMessage(content=agent_output)]} # type: ignore
             return Command(goto="supervisor_search_agent_node", update=result_data)
 
-    def report_agent_node(self, state: GraphState) -> Command[Literal["supervisor_search_agent_node"]]:
+    async def report_agent_node(self, state: GraphState) -> Command[Literal["supervisor_search_agent_node"]]:
         # print("--- Ejecutando Nodo: Generación de Reportes ---")
         final_report = f"Reporte ejecutivo:\n\n"
         search_results = state['search_results'] # type: ignore
         report_chain = self.report_prompt | llm
-        if(len(search_results[0]['results']) == 0):
+        if not search_results or not search_results[0].get('results'):
             return Command(goto=END, update={"messages": [AIMessage(content="No se encontraron datos en el tablero ingresado")]}) # type: ignore
 
         for item in search_results[0]['results']: # type: ignore
             # Esta invocación ahora funciona perfectamente con el nuevo prompt
-            item_summary = report_chain.invoke({
+            item_summary = await report_chain.ainvoke({
                 "item_data": json.dumps(item, indent=2, ensure_ascii=False),
                 "item_name": search_results[0].get('item_name', 'N/A'),
                 "item_id": search_results[0].get('item_id', 'N/A'),
@@ -93,7 +111,7 @@ class SearchTeam(File):
         
         return Command(goto="supervisor_search_agent_node", update={"messages": [AIMessage(content=final_report)]}) # type: ignore
 
-    def supervisor_search_agent_node(self, state: GraphState) -> Command[Literal["search_agent_node", "report_agent_node", END]]: # type: ignore
+    async def supervisor_search_agent_node(self, state: GraphState) -> Command[Literal["search_agent_node", "report_agent_node", END]]: # type: ignore
         # print("--- Ejecutando Nodo: Orquestador ---")
         if isinstance(state["messages"][-1], AIMessage):
             return Command(goto=END)
@@ -101,7 +119,7 @@ class SearchTeam(File):
         if state.get("search_results"):
             return Command(goto="report_agent_node")
 
-        response = self.supervisor_search_chain.invoke({"messages": state["messages"]})
+        response = await self.supervisor_search_chain.ainvoke({"messages": state["messages"]})
 
         return Command(goto=response.next_agent) # type: ignore
 
@@ -113,6 +131,6 @@ class SearchTeam(File):
         workflow.add_node(node="report_agent_node", action=self.report_agent_node)
         
         workflow.add_edge(start_key=START, end_key="supervisor_search_agent_node")
-        #workflow.add_edge(start_key="search_agent_node", end_key="supervisor_search_agent_node")
-        #workflow.add_edge(start_key="report_agent_node", end_key="supervisor_search_agent_node")
+        # workflow.add_edge(start_key="search_agent_node", end_key="supervisor_search_agent_node")
+        # workflow.add_edge(start_key="report_agent_node", end_key="supervisor_search_agent_node")
         return workflow.compile()
