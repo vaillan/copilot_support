@@ -24,12 +24,12 @@ class HierarchyTeam:
         self.research_agent = research_executor.research_graph
         self.document_writer_agent = document_writer_executor.document_writer_graph
         
-        self.llm_gemini_flash_lite = ChatGoogleGenerativeAI(
+        self.llm_gemini_flash = ChatGoogleGenerativeAI(
             model="models/gemini-flash-latest",
             google_api_key=settings.GEMINI_API_KEY,
-            temperature=0.8,
+            temperature=0.5,
             top_p=0.9,
-            max_retries=30,
+            max_retries=10,
             timeout=15,
             transport='grpc_asyncio',
         )
@@ -71,7 +71,7 @@ class HierarchyTeam:
     
     @property
     def hierarchy_graph(self):
-        teams_supervisor_node = make_supervisor_node(self.llm_gemini_flash_lite, ["research_team", "writing_team"])
+        teams_supervisor_node = make_supervisor_node(self.llm_gemini_flash, ["research_team", "writing_team"])
         hierarchy_team_builder = StateGraph(HierarchyTeamState)
         hierarchy_team_builder.add_node("supervisor", teams_supervisor_node) # type: ignore
         hierarchy_team_builder.add_node("research_team", self.call_research_team)

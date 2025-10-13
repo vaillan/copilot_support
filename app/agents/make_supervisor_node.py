@@ -5,16 +5,13 @@ from langgraph.graph import END
 from langgraph.types import Command
 
 from app.utils.state import ResearchState
+from app.utils.files import File
 
 def make_supervisor_node(llm: BaseChatModel, members: list[str]) -> Callable:
+    file = File(directory="prompts")
+    supervisor_prompt_content = file.get_file_content(file_name="supervisor_general_prompt.md")
     options = ["FINISH"] + members
-    system_prompt = (
-        "You are a supervisor tasked with managing a conversation between the"
-        f" following workers: {members}. Given the following user request,"
-        " respond with the worker to act next. Each worker will perform a"
-        " task and respond with their results and status. When finished,"
-        " respond with FINISH."
-    )
+    system_prompt = (supervisor_prompt_content)
 
     class Router(TypedDict):
         """Worker to route to next. If no workers needed, route to FINISH."""

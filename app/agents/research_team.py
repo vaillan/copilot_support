@@ -52,9 +52,9 @@ class ResearchTeam(File):
         self.llm_gemini_flash_lite = ChatGoogleGenerativeAI(
             model="models/gemini-flash-lite-latest",
             google_api_key=settings.GEMINI_API_KEY,
-            temperature=1.0,
+            temperature=0.5,
             top_p=0.9,
-            max_retries=30,
+            max_retries=10,
             timeout=15,
             transport='grpc_asyncio',
         )
@@ -72,7 +72,7 @@ class ResearchTeam(File):
             google_api_key=settings.GEMINI_API_KEY,
             temperature=0.9,
             top_p=0.9,
-            max_retries=30,
+            max_retries=10,
             timeout=15,
             transport='grpc_asyncio',
         )
@@ -89,7 +89,7 @@ class ResearchTeam(File):
         self.search_agent = create_react_agent(model=self.llm_gemini_flash, tools=search_tools, prompt=search_prompt_content)
         self.report_agent = create_react_agent(model=self.llm_gemini_flash_lite, tools=[], prompt=report_prompt_content)
 
-    async def search_node(self, state: ResearchState) -> Command[Literal["supervisor"]]:
+    async def search_node(self, state: ResearchState) -> Command[Literal["supervisor_research_team"]]:
         result = await self.search_agent.ainvoke(state)
         return Command(
             update={
@@ -97,10 +97,10 @@ class ResearchTeam(File):
                     HumanMessage(content=result["messages"][-1].content, name="search")
                 ]
             },
-            goto="supervisor",
+            goto="supervisor_research_team",
         )
 
-    async def report_node(self, state: ResearchState) -> Command[Literal["supervisor"]]:
+    async def report_node(self, state: ResearchState) -> Command[Literal["supervisor_research_team"]]:
         result = await self.report_agent.ainvoke(state)
         return Command(
             update={
@@ -108,7 +108,7 @@ class ResearchTeam(File):
                     HumanMessage(content=result["messages"][-1].content, name="report")
                 ]
             },
-            goto="supervisor",
+            goto="supervisor_research_team",
         )
 
     @property
@@ -116,10 +116,10 @@ class ResearchTeam(File):
         research_supervisor_node = make_supervisor_node(llm=self.llm_gemini_flash, members=["search", "report"])
 
         research_builder = StateGraph(ResearchState)
-        research_builder.add_node(node="supervisor", action=research_supervisor_node) # type: ignore
+        research_builder.add_node(node="supervisor_research_team", action=research_supervisor_node) # type: ignore
         research_builder.add_node(node="search", action=self.search_node)
         research_builder.add_node(node="report", action=self.report_node)
 
-        research_builder.add_edge(start_key=START, end_key="supervisor")
+        research_builder.add_edge(start_key=START, end_key="supervisor_research_team")
         graph = research_builder.compile()
         return graph

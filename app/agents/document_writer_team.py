@@ -23,7 +23,7 @@ class DocumentWriterTeam(File):
             google_api_key=settings.GEMINI_API_KEY,
             temperature=0.8,
             top_p=0.9,
-            max_retries=30,
+            max_retries=10,
             timeout=15,
             transport='grpc_asyncio',
         )
@@ -45,8 +45,8 @@ class DocumentWriterTeam(File):
             self.llm_gemini_flash_lite,
             tools=[create_outline, read_document],
             prompt=(
-                "You can read documents and create outlines for the document writer. "
-                "Don't ask follow-up questions."
+                "Puedes leer documentos y crear esquemas para el redactor de documentos. "
+                "No hagas preguntas de seguimiento."
             ),
         )
 
@@ -54,12 +54,12 @@ class DocumentWriterTeam(File):
             self.llm_gemini_flash_lite,
             tools=[write_document, edit_document, read_document],
             prompt=(
-                "You can read, write and edit documents based on note-taker's outlines. "
-                "Don't ask follow-up questions."
+                "Puedes leer, escribir y editar documentos basándote en los esquemas del tomador de notas. "
+                "No hagas preguntas de seguimiento."
             ),
         )
     
-    async def doc_writing_node(self, state: DocumentWritingState) -> Command[Literal["supervisor"]]:
+    async def doc_writing_node(self, state: DocumentWritingState) -> Command[Literal["supervisor_doc_writing_team"]]:
         result = await self.doc_writer_agent.ainvoke(state)
         return Command(
             update={
@@ -68,10 +68,10 @@ class DocumentWriterTeam(File):
                 ]
             },
             # We want our workers to ALWAYS "report back" to the supervisor when done
-            goto="supervisor",
+            goto="supervisor_doc_writing_team",
         )
 
-    async def note_taking_node(self, state: DocumentWritingState) -> Command[Literal["supervisor"]]:
+    async def note_taking_node(self, state: DocumentWritingState) -> Command[Literal["supervisor_doc_writing_team"]]:
         result = await self.note_taking_agent.ainvoke(state)
         return Command(
             update={
@@ -79,11 +79,11 @@ class DocumentWriterTeam(File):
                     HumanMessage(content=result["messages"][-1].content, name="note_taking")
                 ]
             },
-            # We want our workers to ALWAYS "report back" to the supervisor when done
-            goto="supervisor",
+            # We want our workers to ALWAYS "report back" to the supervisor_doc_writing_team when done
+            goto="supervisor_doc_writing_team",
         )
 
-    async def chart_generating_node(self, state: DocumentWritingState) -> Command[Literal["supervisor"]]:
+    async def chart_generating_node(self, state: DocumentWritingState) -> Command[Literal["supervisor_doc_writing_team"]]:
         result = await self.chart_generating_agent.ainvoke(state)
         return Command(
             update={
@@ -94,18 +94,18 @@ class DocumentWriterTeam(File):
                 ]
             },
             # We want our workers to ALWAYS "report back" to the supervisor when done
-            goto="supervisor",
+            goto="supervisor_doc_writing_team",
         )
     
     @property
     def document_writer_graph(self):
         doc_writing_supervisor_node = make_supervisor_node(llm=self.llm_gemini_flash_lite, members=["doc_writer", "note_taker", "chart_generator"])
         paper_writing_builder = StateGraph(DocumentWritingState)
-        paper_writing_builder.add_node("supervisor", doc_writing_supervisor_node) # type: ignore
+        paper_writing_builder.add_node("supervisor_doc_writing_team", doc_writing_supervisor_node) # type: ignore
         paper_writing_builder.add_node("doc_writer", self.doc_writing_node)
         paper_writing_builder.add_node("note_taker", self.note_taking_node)
         paper_writing_builder.add_node("chart_generator", self.chart_generating_node)
 
-        paper_writing_builder.add_edge(START, "supervisor")
+        paper_writing_builder.add_edge(START, "supervisor_doc_writing_team")
         graph = paper_writing_builder.compile()
         return graph
