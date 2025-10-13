@@ -1,5 +1,5 @@
 from langchain_mcp_adapters.client import MultiServerMCPClient # type: ignore
-from ..settings.settings import Settings
+from app.settings.settings import Settings
 settings = Settings()
 
 CLIENT = MultiServerMCPClient(

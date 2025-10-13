@@ -5,16 +5,14 @@ from langgraph.types import Command
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage
 
-from ..agents.make_supervisor_node import make_supervisor_node
-from ..utils.state import DocumentWritingState, HierarchyTeamState, ResearchState # type: ignore
+from app.agents.make_supervisor_node import make_supervisor_node
+from app.utils.state import DocumentWritingState, HierarchyTeamState, ResearchState # type: ignore
 
-from ..tools.doc_tools import *
-from ..settings.settings import Settings
-from .research_team import ResearchTeam
-from .document_writer_team import DocumentWriterTeam
+from app.settings.settings import Settings
+from app.agents.research_team import ResearchTeam
+from app.agents.document_writer_team import DocumentWriterTeam
 
 settings = Settings()
-
 
 class HierarchyTeam:
 
@@ -49,7 +47,7 @@ class HierarchyTeam:
             update={
                 "messages": [
                     AIMessage(
-                        content=response["messages"][-1].content, name="research_team"
+                        content=response["messages"][-1].content, name="supervisor_research_team"
                     )
                 ]
             },
@@ -62,7 +60,7 @@ class HierarchyTeam:
             update={
                 "messages": [
                     AIMessage(
-                        content=response["messages"][-1].content, name="writing_team"
+                        content=response["messages"][-1].content, name="supervisor_doc_writing_team"
                     )
                 ]
             },
@@ -71,12 +69,13 @@ class HierarchyTeam:
     
     @property
     def hierarchy_graph(self):
-        teams_supervisor_node = make_supervisor_node(self.llm_gemini_flash, ["research_team", "writing_team"])
+        teams_supervisor_node = make_supervisor_node(self.llm_gemini_flash, ["supervisor_research_team", "supervisor_doc_writing_team"])
         hierarchy_team_builder = StateGraph(HierarchyTeamState)
-        hierarchy_team_builder.add_node("supervisor", teams_supervisor_node) # type: ignore
-        hierarchy_team_builder.add_node("research_team", self.call_research_team)
-        hierarchy_team_builder.add_node("writing_team", self.call_paper_writing_team)
+        hierarchy_team_builder.add_node(node="supervisor", action=teams_supervisor_node) # type: ignore
+        hierarchy_team_builder.add_node(node="supervisor_research_team", action=self.call_research_team)
+        hierarchy_team_builder.add_node(node="supervisor_doc_writing_team", action=self.call_paper_writing_team)
 
-        hierarchy_team_builder.add_edge(START, "supervisor")
+        hierarchy_team_builder.add_edge(start_key=START, end_key="supervisor")
+
         graph = hierarchy_team_builder.compile()
         return graph

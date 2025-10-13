@@ -1,9 +1,8 @@
-from app.tools.mcp_client import CLIENT
 from fastapi import FastAPI, HTTPException # type: ignore
 from pydantic import BaseModel # type: ignore
 from typing import List
 from contextlib import asynccontextmanager
-from IPython.display import Image, display
+# from IPython.display import Image, display
 
 # from app.agents.coordination import Coordination
 from langchain_core.messages import HumanMessage, AIMessage # type: ignore
@@ -12,6 +11,7 @@ from langgraph.graph import MessagesState # type: ignore
 # from app.agents.research_team import ResearchTeam
 # from app.agents.document_writer_team import DocumentWriterTeam
 from app.agents.hierarchy_team import HierarchyTeam
+from app.tools.mcp_client import CLIENT
 
 class ChatMessage(BaseModel):
     type: str
@@ -30,19 +30,20 @@ async def lifespan(app: FastAPI):
     """
     Gestiona el ciclo de vida del agente. Se ejecuta al iniciar y finalizar el servidor.
     """
-    # global agent_executor
     global agent_executor
-    # global agent_research_executor
     tools = await CLIENT.get_tools()
     executor = HierarchyTeam(tools=tools)
     agent_executor = executor.hierarchy_graph
+    # research_agent_executor = executor.research_agent
+    # doc_writer_executor = executor.document_writer_agent
     # try:
+    #     display(Image(research_agent_executor.get_graph().draw_mermaid_png(output_file_path="agent_research_team.png")))
+    #     display(Image(doc_writer_executor.get_graph().draw_mermaid_png(output_file_path="agent_document_writer_team.png")))
     #     display(Image(agent_executor.get_graph().draw_mermaid_png(output_file_path="agent_hierarchy_team.png")))
     # except Exception:
     #     pass
 
     yield  # La aplicación se ejecuta aquí
-    # agent_executor = None
     agent_executor = None
 
 app = FastAPI(
@@ -79,4 +80,4 @@ async def invoke_agent(request: InvokeRequest):
 
 @app.get("/")
 def read_root():
-    return {"message": "El servidor del agente de Monday.com está en funcionamiento. Usa el endpoint /invoke para interactuar."}
+    return {"message": "El servidor del agente Hierarchical RAG está en funcionamiento."}

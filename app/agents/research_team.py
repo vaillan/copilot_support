@@ -1,5 +1,3 @@
-import os
-os.environ['GRPC_VERBOSITY'] = 'ERROR'
 from typing import Literal
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, START
@@ -8,11 +6,12 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, AIMessage # type: ignore
 
-from ..utils.files import File
-from ..settings.settings import Settings
-from .make_supervisor_node import make_supervisor_node
-from ..utils.monday_client import fetch_all_items_by_board_id, fetch_columns_by_board_id, fetch_item_by_board_id_by_update_date, fetch_items_by_column_value, find_boards_like_name
-from ..utils.state import ResearchState
+from app.utils.files import File
+from app.settings.settings import Settings
+from app.agents.make_supervisor_node import make_supervisor_node
+from app.utils.monday_client import fetch_all_items_by_board_id, fetch_columns_by_board_id, fetch_item_by_board_id_by_update_date, fetch_items_by_column_value, find_boards_like_name
+from app.utils.state import ResearchState
+
 settings = Settings()
 
 class ResearchTeam(File):

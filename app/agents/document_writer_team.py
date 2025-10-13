@@ -101,11 +101,12 @@ class DocumentWriterTeam(File):
     def document_writer_graph(self):
         doc_writing_supervisor_node = make_supervisor_node(llm=self.llm_gemini_flash_lite, members=["doc_writer", "note_taker", "chart_generator"])
         paper_writing_builder = StateGraph(DocumentWritingState)
-        paper_writing_builder.add_node("supervisor_doc_writing_team", doc_writing_supervisor_node) # type: ignore
-        paper_writing_builder.add_node("doc_writer", self.doc_writing_node)
-        paper_writing_builder.add_node("note_taker", self.note_taking_node)
-        paper_writing_builder.add_node("chart_generator", self.chart_generating_node)
+        paper_writing_builder.add_node(node="supervisor_doc_writing_team", action=doc_writing_supervisor_node) # type: ignore
+        paper_writing_builder.add_node(node="doc_writer", action=self.doc_writing_node)
+        paper_writing_builder.add_node(node="note_taker", action=self.note_taking_node)
+        paper_writing_builder.add_node(node="chart_generator", action=self.chart_generating_node)
 
-        paper_writing_builder.add_edge(START, "supervisor_doc_writing_team")
+        paper_writing_builder.add_edge(start_key=START, end_key="supervisor_doc_writing_team")
+
         graph = paper_writing_builder.compile()
         return graph
