@@ -18,3 +18,8 @@ uvicorn[standard]
 langchain-mcp-adapters
 pyppeteer
 nest-asyncio
+langchain-deepseek
+langchain-openai
+httpx
+langchain_experimental
+monday-api-python-sdk

@@ -4,7 +4,7 @@ settings = Settings()
 
 CLIENT = MultiServerMCPClient(
     {
-        # Servidor de Monday.com añadido aquí
+        # Servidor de Monday.com
         "monday": {
             "command": "npx",
             "args": [

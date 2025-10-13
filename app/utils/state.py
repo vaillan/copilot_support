@@ -1,6 +1,7 @@
 from langchain_core.messages import BaseMessage # type: ignore
 from typing import TypedDict, Annotated, List
 import operator
+from langgraph.graph import MessagesState
 
 class GraphState(TypedDict):
     """
@@ -14,3 +15,12 @@ class GraphState(TypedDict):
     messages: Annotated[List[BaseMessage], operator.add]
     next_agent: str
     search_results: List[dict]
+
+class ResearchState(MessagesState):
+    next: str
+
+class DocumentWritingState(MessagesState):
+    next: str
+
+class HierarchyTeamState(MessagesState):
+    next: str
