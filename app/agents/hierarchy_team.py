@@ -7,7 +7,6 @@ from langchain_core.messages import AIMessage
 
 from app.agents.make_supervisor_node import make_supervisor_node
 from app.utils.state import DocumentWritingState, HierarchyTeamState, ResearchState # type: ignore
-
 from app.settings.settings import Settings
 from app.agents.research_team import ResearchTeam
 from app.agents.document_writer_team import DocumentWriterTeam

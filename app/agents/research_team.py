@@ -120,5 +120,6 @@ class ResearchTeam(File):
         research_builder.add_node(node="report", action=self.report_node)
 
         research_builder.add_edge(start_key=START, end_key="supervisor_research_team")
+
         graph = research_builder.compile()
         return graph
