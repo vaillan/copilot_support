@@ -3,10 +3,10 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, START
 from langgraph.types import Command
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from app.agents.make_supervisor_node import make_supervisor_node
-from app.utils.state import DocumentWritingState, HierarchyTeamState, ResearchState # type: ignore
+from app.utils.state import BaseState
 from app.settings.settings import Settings
 from app.agents.research_team import ResearchTeam
 from app.agents.document_writer_team import DocumentWriterTeam
@@ -40,26 +40,26 @@ class HierarchyTeam:
         #     timeout=15,
         # )
     
-    async def call_research_team(self, state: ResearchState) -> Command[Literal["supervisor"]]:
+    async def call_research_team(self, state: BaseState) -> Command[Literal["supervisor"]]:
         response = await self.research_agent.ainvoke({"messages": state["messages"][-1]}) # type: ignore
         return Command(
             update={
                 "messages": [
-                    AIMessage(
-                        content=response["messages"][-1].content, name="supervisor_research_team"
+                    HumanMessage(
+                        content=response["messages"][-1].content, name="research_team"
                     )
                 ]
             },
             goto="supervisor",
         )
     
-    async def call_paper_writing_team(self, state: DocumentWritingState) -> Command[Literal["supervisor"]]:
-        response = await self.document_writer_agent.ainvoke({"messages": state["messages"][-1]}) # type: ignore
+    async def call_paper_writing_team(self, state: BaseState) -> Command[Literal["supervisor"]]:
+        response = await self.document_writer_agent.ainvoke({"messages": state["messages"]}) # type: ignore
         return Command(
             update={
                 "messages": [
-                    AIMessage(
-                        content=response["messages"][-1].content, name="supervisor_doc_writing_team"
+                    HumanMessage(
+                        content=response["messages"][-1].content, name="doc_writing_team"
                     )
                 ]
             },
@@ -68,11 +68,11 @@ class HierarchyTeam:
     
     @property
     def hierarchy_graph(self):
-        teams_supervisor_node = make_supervisor_node(self.llm_gemini_flash, ["supervisor_research_team", "supervisor_doc_writing_team"])
-        hierarchy_team_builder = StateGraph(HierarchyTeamState)
+        teams_supervisor_node = make_supervisor_node(self.llm_gemini_flash, ["research_team", "doc_writing_team"])
+        hierarchy_team_builder = StateGraph(BaseState)
         hierarchy_team_builder.add_node(node="supervisor", action=teams_supervisor_node) # type: ignore
-        hierarchy_team_builder.add_node(node="supervisor_research_team", action=self.call_research_team)
-        hierarchy_team_builder.add_node(node="supervisor_doc_writing_team", action=self.call_paper_writing_team)
+        hierarchy_team_builder.add_node(node="research_team", action=self.call_research_team)
+        hierarchy_team_builder.add_node(node="doc_writing_team", action=self.call_paper_writing_team)
 
         hierarchy_team_builder.add_edge(start_key=START, end_key="supervisor")
 

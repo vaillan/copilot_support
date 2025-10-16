@@ -1,13 +1,18 @@
 from pathlib import Path
-from tempfile import TemporaryDirectory
+import os
 from typing import Annotated, Dict, List, Optional
 
+import docx
+import openpyxl
+from langchain_core.tools import tool  # type: ignore
 from langchain_experimental.utilities import PythonREPL
+from pptx import Presentation
 from typing_extensions import TypedDict
-from langchain_core.tools import tool # type: ignore
 
-_TEMP_DIRECTORY = TemporaryDirectory()
-WORKING_DIRECTORY = Path(_TEMP_DIRECTORY.name)
+# Define a permanent directory for output files
+WORKING_DIRECTORY = Path.cwd() / "generated_documents"
+# Ensure the directory exists
+os.makedirs(WORKING_DIRECTORY, exist_ok=True)
 
 
 @tool
@@ -89,4 +94,63 @@ def python_repl_tool(
         result = repl.run(code)
     except BaseException as e:
         return f"Failed to execute. Error: {repr(e)}"
-    return f"Successfully executed:\n\`\`\`python\n{code}\n\`\`\`\nStdout: {result}" # type: ignore
+    return f"Successfully executed:\n```python{code}```\nStdout: {result}"  # type: ignore
+
+
+@tool
+def create_word_document(
+    file_name: Annotated[str, "File path to save the document. Should end with .docx"],
+    content: Annotated[str, "Text content to be written into the document."],
+) -> Annotated[str, "Path of the saved document file."]:
+    """Create and save a Word document."""
+    if not file_name.endswith(".docx"):
+        return "Error: File name must end with .docx"
+    doc = docx.Document()
+    doc.add_paragraph(content)
+    doc.save(WORKING_DIRECTORY / file_name) # type: ignore
+    return f"Word document saved to {file_name}"
+
+
+@tool
+def create_excel_spreadsheet(
+    file_name: Annotated[
+        str, "File path to save the spreadsheet. Should end with .xlsx"
+    ],
+    data: Annotated[
+        List[List[str]], "A list of lists representing rows and columns."
+    ],
+) -> Annotated[str, "Path of the saved spreadsheet file."]:
+    """Create and save an Excel spreadsheet."""
+    if not file_name.endswith(".xlsx"):
+        return "Error: File name must end with .xlsx"
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    for row_data in data:
+        sheet.append(row_data) # type: ignore
+    workbook.save(WORKING_DIRECTORY / file_name)
+    return f"Excel spreadsheet saved to {file_name}"
+
+
+@tool
+def create_powerpoint_presentation(
+    file_name: Annotated[
+        str, "File path to save the presentation. Should end with .pptx"
+    ],
+    slides_data: Annotated[
+        List[Dict[str, str]],
+        "A list of dictionaries, where each dictionary has a 'title' and 'content' key.",
+    ],
+) -> Annotated[str, "Path of the saved presentation file."]:
+    """Create and save a PowerPoint presentation."""
+    if not file_name.endswith(".pptx"):
+        return "Error: File name must end with .pptx"
+    prs = Presentation()
+    for slide_info in slides_data:
+        slide_layout = prs.slide_layouts[1]  # Title and Content layout
+        slide = prs.slides.add_slide(slide_layout)
+        title = slide.shapes.title
+        body = slide.placeholders[1]
+        title.text = slide_info.get("title", "") # type: ignore
+        body.text = slide_info.get("content", "") # type: ignore
+    prs.save(WORKING_DIRECTORY / file_name) # type: ignore
+    return f"PowerPoint presentation saved to {file_name}"

@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, APIRouter # type: ignore
 from pydantic import BaseModel # type: ignore
 from typing import List
 from contextlib import asynccontextmanager
-
+from IPython.display import Image, display
 
 # from app.agents.coordination import Coordination
 from langchain_core.messages import HumanMessage, AIMessage # type: ignore

@@ -5,6 +5,7 @@ Pillow
 pytesseract
 openpyxl
 python-docx
+python-pptx
 defusedxml 
 opencv-python
 pdf2image

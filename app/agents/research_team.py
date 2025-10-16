@@ -10,7 +10,7 @@ from app.utils.files import File
 from app.settings.settings import Settings
 from app.agents.make_supervisor_node import make_supervisor_node
 from app.utils.monday_client import fetch_all_items_by_board_id, fetch_columns_by_board_id, fetch_item_by_board_id_by_update_date, fetch_items_by_column_value, find_boards_like_name
-from app.utils.state import ResearchState
+from app.utils.state import BaseState
 
 settings = Settings()
 
@@ -88,38 +88,38 @@ class ResearchTeam(File):
         self.search_agent = create_react_agent(model=self.llm_gemini_flash, tools=search_tools, prompt=search_prompt_content)
         self.report_agent = create_react_agent(model=self.llm_gemini_flash_lite, tools=[], prompt=report_prompt_content)
 
-    async def search_node(self, state: ResearchState) -> Command[Literal["supervisor_research_team"]]:
+    async def search_node(self, state: BaseState) -> Command[Literal["supervisor"]]:
         result = await self.search_agent.ainvoke(state)
         return Command(
             update={
                 "messages": [
-                    HumanMessage(content=result["messages"][-1].content, name="search")
+                    HumanMessage(content=result["messages"][-1].content, name="research_agent_node")
                 ]
             },
-            goto="supervisor_research_team",
+            goto="supervisor",
         )
 
-    async def report_node(self, state: ResearchState) -> Command[Literal["supervisor_research_team"]]:
+    async def report_node(self, state: BaseState) -> Command[Literal["supervisor"]]:
         result = await self.report_agent.ainvoke(state)
         return Command(
             update={
                 "messages": [
-                    HumanMessage(content=result["messages"][-1].content, name="report")
+                    HumanMessage(content=result["messages"][-1].content, name="report_agent_node")
                 ]
             },
-            goto="supervisor_research_team",
+            goto="supervisor",
         )
 
     @property
     def research_graph(self):
-        research_supervisor_node = make_supervisor_node(llm=self.llm_gemini_flash, members=["search", "report"])
+        research_supervisor_node = make_supervisor_node(llm=self.llm_gemini_flash, members=["research_agent_node", "report_agent_node"])
 
-        research_builder = StateGraph(ResearchState)
-        research_builder.add_node(node="supervisor_research_team", action=research_supervisor_node) # type: ignore
-        research_builder.add_node(node="search", action=self.search_node)
-        research_builder.add_node(node="report", action=self.report_node)
+        research_builder = StateGraph(BaseState)
+        research_builder.add_node(node="supervisor", action=research_supervisor_node) # type: ignore
+        research_builder.add_node(node="research_agent_node", action=self.search_node)
+        research_builder.add_node(node="report_agent_node", action=self.report_node)
 
-        research_builder.add_edge(start_key=START, end_key="supervisor_research_team")
+        research_builder.add_edge(start_key=START, end_key="supervisor")
 
         graph = research_builder.compile()
         return graph
