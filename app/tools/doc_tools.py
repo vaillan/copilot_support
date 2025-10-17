@@ -10,7 +10,7 @@ from pptx import Presentation
 from typing_extensions import TypedDict
 
 # Define a permanent directory for output files
-WORKING_DIRECTORY = Path.cwd() / "generated_documents"
+WORKING_DIRECTORY = Path.cwd() / "media"
 # Ensure the directory exists
 os.makedirs(WORKING_DIRECTORY, exist_ok=True)
 

@@ -2,8 +2,8 @@ from typing import Literal
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, START
 from langgraph.types import Command
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import AIMessage, HumanMessage
+# from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage
 
 from app.agents.make_supervisor_node import make_supervisor_node
 from app.utils.state import BaseState

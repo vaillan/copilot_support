@@ -3,9 +3,9 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, START
 from langgraph.types import Command
 from langchain_core.messages import HumanMessage
-from langchain_openai import ChatOpenAI
+# from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
-from langchain_core.messages import AIMessage
+# from langchain_core.messages import AIMessage
 
 from ..agents.make_supervisor_node import make_supervisor_node
 from ..utils.state import BaseState
@@ -124,21 +124,6 @@ class DocumentWriterTeam(File):
         doc_writing_supervisor_node = make_supervisor_node(
             llm=self.llm_gemini_flash,
             members=["doc_writer", "note_taker", "chart_generator"],
-            # system_prompt_input=(
-            #     "Eres el supervisor de un equipo de redacción de documentos. Tu equipo está compuesto por los siguientes agentes: {members}. "
-            #     "Se te proporcionará un informe de investigación y tu trabajo es gestionar a tu equipo para crear un documento final basado en ese informe."
-            #     "Sigue estos pasos:"
-            #     "1. **Creación del Esquema:** Primero, dirige al `note_taker` para que cree un esquema detallado a partir del informe de investigación. "
-            #     "El esquema debe ser claro y estructurado para guiar la redacción del documento."
-            #     "2. **Redacción del Documento:** Una vez que el esquema esté listo, encarga al `doc_writer` que escriba el documento basándose en el esquema. "
-            #     "El `doc_writer` debe ampliar los puntos del esquema para crear un borrador completo y coherente."
-            #     "3. **Generación de Gráficos (si es necesario):** Si el documento requiere gráficos o visualizaciones de datos, dirige al `chart_generator` para crearlos. "
-            #     "Asegúrate de que los gráficos sean precisos y relevantes para el contenido."
-            #     "4. **Revisión y Finalización:** Revisa el trabajo de todos los agentes y coordina las revisiones necesarias. "
-            #     "Asegúrate de que el documento final esté bien redactado, sea preciso y esté completo."
-            #     "5. **Aprobación Final:** Una vez que estés satisfecho con el documento, da tu aprobación final y termina el proceso."
-            #     "Revisa el historial de la conversación y dirige al agente apropiado para continuar con el trabajo, siguiendo el plan paso a paso."
-            # ),
         )
         paper_writing_builder = StateGraph(BaseState)
         paper_writing_builder.add_node(node="supervisor", action=doc_writing_supervisor_node) # type: ignore

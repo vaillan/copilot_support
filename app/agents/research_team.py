@@ -2,9 +2,9 @@ from typing import Literal
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, START
 from langgraph.types import Command
-from langchain_openai import ChatOpenAI
+# from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
-from langchain_core.messages import HumanMessage, AIMessage # type: ignore
+from langchain_core.messages import HumanMessage
 
 from app.utils.files import File
 from app.settings.settings import Settings
