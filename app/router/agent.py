@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, APIRouter # type: ignore
+from fastapi import FastAPI, HTTPException, APIRouter, Depends # type: ignore
 from pydantic import BaseModel # type: ignore
 from typing import List
 from contextlib import asynccontextmanager
@@ -13,6 +13,8 @@ from  app.models.models import (
     InvokeRequest, 
     InvokeResponse
 )
+from app.auth.auth import get_current_active_user
+from app.database.tables import User
 
 router = APIRouter()
 agent_executor = None
@@ -43,7 +45,7 @@ async def lifespan(app: FastAPI):
     connection = None
 
 @router.post("/invoke", response_model=InvokeResponse)
-async def invoke_agent(request: InvokeRequest):
+async def invoke_agent(request: InvokeRequest, current_user: User = Depends(get_current_active_user)):
     if agent_executor is None:
         raise HTTPException(status_code=503, detail="El agente no está disponible o inicializado. Inténtalo de nuevo en unos segundos.")
     # Convertimos los mensajes de la API al formato de LangChain
@@ -56,7 +58,8 @@ async def invoke_agent(request: InvokeRequest):
 
     initial_state: MessagesState = {"messages": langchain_messages}
     try:
-        final_state = await agent_executor.ainvoke(initial_state, config={'recursion_limit': 100}) # type: ignore
+        user = current_user
+        final_state = await agent_executor.ainvoke(initial_state, config={'recursion_limit': 150}) # type: ignore
         
         if final_state is None:
             raise HTTPException(status_code=500, detail="Agent execution resulted in no output.")

@@ -8,9 +8,9 @@ from jwt.exceptions import InvalidTokenError
 from pwdlib import PasswordHash
 
 from app.models.models import (
-    TokenData,
-    User
+    TokenData
 )
+from app.database.tables import User
 
 from app.settings.settings import Settings
 from app.database.connection import SessionDep
@@ -35,8 +35,8 @@ def get_password_hash(password):
     return password_hash.hash(password)
 
 
-def get_user(session: SessionDep, user_id: int): # type: ignore
-    user = session.get(User, user_id)
+def get_user(session: SessionDep, username: str): # type: ignore
+    user = session.query(User).where(User.username == username).first() # type: ignore
     if not user:
         raise HTTPException(status_code=404, detail="Hero not found")
     return user
@@ -53,7 +53,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     return encoded_jwt
 
 
-async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
+async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], session: SessionDep):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -67,7 +67,7 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
         token_data = TokenData(username=username)
     except InvalidTokenError:
         raise credentials_exception
-    user = get_user(User, username=token_data.username) # type: ignore
+    user = get_user(session, username=token_data.username) # type: ignore
     if user is None:
         raise credentials_exception
     return user
