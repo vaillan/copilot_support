@@ -1,4 +1,10 @@
+# For a new installation, running `pip install -r requirements.txt` will install the latest versions of the packages listed below.
+# If you want to upgrade existing packages to their latest versions, run:
+# pip install --upgrade -r requirements.txt
+
 python-dotenv
+fastapi[standard]
+uvicorn[standard]
 pydantic
 pdfplumber
 Pillow
@@ -6,23 +12,25 @@ pytesseract
 openpyxl
 python-docx
 python-pptx
-defusedxml 
+defusedxml
 opencv-python
 pdf2image
-langgraph
-langchain-google-genai
 beautifulsoup4
-langchain-community
-langchain-core
-fastapi[standard]
-uvicorn[standard]
+langchain>=0.1 # Force LangChain 1.0+
+langgraph>=0.1 # Ensure langgraph is updated for LangChain 1.0
+langchain-google-genai>=0.0.10 # Ensure this is compatible with LangChain 1.0
 langchain-mcp-adapters
 pyppeteer
 nest-asyncio
-langchain-deepseek
-langchain-openai
 httpx
-langchain_experimental
 monday-api-python-sdk
 sqlmodel
-pymysql
+psycopg2-binary
+pgvector
+ipython
+langchain-core>=0.1 # Force langchain-core 1.0+
+langchain-community>=0.0.10 # Force langchain-community 1.0+
+# psycopg[binary,pool]
+langgraph-checkpoint-postgres
+pyjwt
+pwdlib[argon2]

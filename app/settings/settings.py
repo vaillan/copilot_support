@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
     HF_API_KEY: str = os.getenv("HF_API_KEY", "")
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "")
+    ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
+    ACCESS_TOKEN_EXPIRE_MINUTES: float | str  = os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30.0)
+    
     DB_CONFIG: DBCONFIG = DBCONFIG(
         user=os.getenv("DB_USER", "valentin"),
         host=os.getenv("DB_HOST", "localhost"),

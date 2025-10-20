@@ -2,8 +2,9 @@ from typing import Literal
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import StateGraph, START
 from langgraph.types import Command
-# from langchain_openai import ChatOpenAI
+from app.utils.checkpointer import get_checkpointer
 from langchain_core.messages import HumanMessage
+from langgraph.store.postgres.aio import AsyncPostgresStore
 
 from app.agents.make_supervisor_node import make_supervisor_node
 from app.utils.state import BaseState
@@ -15,7 +16,7 @@ settings = Settings()
 
 class HierarchyTeam:
 
-    def __init__(self, tools: list) -> None:
+    def __init__(self, tools: list):
         research_executor = ResearchTeam(tools=tools)
         document_writer_executor = DocumentWriterTeam()
         self.research_agent = research_executor.research_graph
@@ -30,15 +31,6 @@ class HierarchyTeam:
             timeout=15,
             transport='grpc_asyncio',
         )
-        # self.llm_gemini_flash_lite = ChatOpenAI(
-        #     model_name="models/gemini-flash-latest", # type: ignore
-        #     base_url="https://generativelanguage.googleapis.com/v1beta",
-        #     api_key=settings.GEMINI_API_KEY,
-        #     temperature=0.8,
-        #     top_p=0.9,
-        #     max_retries=30,
-        #     timeout=15,
-        # )
     
     async def call_research_team(self, state: BaseState) -> Command[Literal["supervisor"]]:
         response = await self.research_agent.ainvoke({"messages": state["messages"][-1]}) # type: ignore
@@ -74,7 +66,11 @@ class HierarchyTeam:
         hierarchy_team_builder.add_node(node="research_team", action=self.call_research_team)
         hierarchy_team_builder.add_node(node="doc_writing_team", action=self.call_paper_writing_team)
 
+        hierarchy_team_builder.add_edge(start_key="research_team", end_key="supervisor")
+        hierarchy_team_builder.add_edge(start_key="doc_writing_team", end_key="supervisor")
         hierarchy_team_builder.add_edge(start_key=START, end_key="supervisor")
 
+        checkpointer = get_checkpointer()
+        # graph = hierarchy_team_builder.compile(checkpointer=checkpointer)
         graph = hierarchy_team_builder.compile()
         return graph

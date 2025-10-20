@@ -1,22 +1,27 @@
-from sqlmodel import Field, SQLModel, Relationship
-from typing import Optional, List
+from pydantic import BaseModel # type: ignore
+from typing import List
 
-class User(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    name: str = Field(index=True)
-    email: str = Field(default=None)
-    hashed_password: str = Field(default=None)
-    disabled: bool = Field(default=False)
+class ChatMessage(BaseModel):
+    type: str
+    content: str
 
-class Thread(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    name: str | None = Field(default=None, index=True)
-    description: str | None = Field(default=None, index=True)
-    messages: List["Messages"] = Relationship(back_populates="thread")
+class InvokeRequest(BaseModel):
+    messages: List[ChatMessage]
 
-class Messages(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    type: Optional[str] = Field(default=None)
-    content: Optional[str] = Field(default=None)
-    thread_id: Optional[int] = Field(default=None, foreign_key="thread.id")
-    thread: Optional["Thread"] = Relationship(back_populates="messages")
+class InvokeResponse(BaseModel):
+    messages: List[ChatMessage]
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: str | None = None
+
+class User(BaseModel):
+    name: str
+    email: str | None = None
+    disabled: bool | None = None
+
+class UserInDB(User):
+    hashed_password: str

@@ -118,3 +118,10 @@ El servidor estará disponible en `http://127.0.0.1:8000`. Puedes interactuar co
 - **chromadb**: Para la base de datos vectorial.
 - **pdfplumber**, **Pillow**, **pytesseract**, **openpyxl**, **python-docx**, **opencv-python**, **pdf2image**: Para la extracción de datos de varios formatos de archivo.
 - **monday-tools**: Para la integración con monday.com.
+
+1
+ sudo apt install postgresql-16-pgvector
+ 2
+ sudo -u postgres psql -d copilot
+3
+CREATE EXTENSION vector;

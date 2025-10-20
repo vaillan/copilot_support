@@ -1,5 +1,8 @@
 from fastapi import FastAPI
-from app.router import agent
+from app.router import (
+    agent,
+    auth,
+)
 
 app = FastAPI(
     lifespan=agent.lifespan,
@@ -9,6 +12,7 @@ app = FastAPI(
 )
 
 app.include_router(agent.router, prefix="/agent", tags=["Agent"]) # Incluye el router de agentes
+app.include_router(auth.router, prefix="/auth", tags=["Auth"]) # Incluye el router de agentes
 
 @app.get("/")
 def read_root():

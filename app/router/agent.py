@@ -2,27 +2,17 @@ from fastapi import FastAPI, HTTPException, APIRouter # type: ignore
 from pydantic import BaseModel # type: ignore
 from typing import List
 from contextlib import asynccontextmanager
-from IPython.display import Image, display
-
-# from app.agents.coordination import Coordination
+# from IPython.display import Image, display
 from langchain_core.messages import HumanMessage, AIMessage # type: ignore
 from langgraph.graph import MessagesState # type: ignore
-# from langchain_core.runnables.graph_mermaid import _render_mermaid_using_pyppeteer
-# from app.agents.research_team import ResearchTeam
-# from app.agents.document_writer_team import DocumentWriterTeam
 from app.agents.hierarchy_team import HierarchyTeam
 from app.tools.mcp_client import CLIENT
-from app.database.connection import CONNECTION
-
-class ChatMessage(BaseModel):
-    type: str
-    content: str
-
-class InvokeRequest(BaseModel):
-    messages: List[ChatMessage]
-
-class InvokeResponse(BaseModel):
-    messages: List[ChatMessage]
+from app.database.connection import *
+from  app.models.models import (
+    ChatMessage, 
+    InvokeRequest, 
+    InvokeResponse
+)
 
 router = APIRouter()
 agent_executor = None
@@ -38,14 +28,13 @@ async def lifespan(app: FastAPI):
     tools = await CLIENT.get_tools()
     executor = HierarchyTeam(tools=tools)
     agent_executor = executor.hierarchy_graph
-    connection = CONNECTION()
-    connection.create_db_and_tables()
+    create_db_and_tables()
     # research_agent_executor = executor.research_agent
     # doc_writer_executor = executor.document_writer_agent
     # try:
+    #     display(Image(agent_executor.get_graph().draw_mermaid_png(output_file_path="agent_hierarchy_team.png")))
     #     display(Image(research_agent_executor.get_graph().draw_mermaid_png(output_file_path="agent_research_team.png")))
     #     display(Image(doc_writer_executor.get_graph().draw_mermaid_png(output_file_path="agent_document_writer_team.png")))
-    #     display(Image(agent_executor.get_graph().draw_mermaid_png(output_file_path="agent_hierarchy_team.png")))
     # except Exception:
     #     pass
 
