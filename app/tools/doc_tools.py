@@ -1,17 +1,22 @@
 from pathlib import Path
 import os
 from typing import Annotated, Dict, List, Optional
-
+from tempfile import TemporaryDirectory
 import docx
 import openpyxl
 from langchain_core.tools import tool  # type: ignore
 from pptx import Presentation
-from typing_extensions import TypedDict
+from app.settings.settings import Settings
+import datetime
+import zoneinfo # Requiere Python 3.9+
+# from typing_extensions import TypedDict
 
 # Define a permanent directory for output files
-WORKING_DIRECTORY = Path.cwd() / "media"
-# Ensure the directory exists
-os.makedirs(WORKING_DIRECTORY, exist_ok=True)
+# WORKING_DIRECTORY = Path.cwd() / "media"
+# # Ensure the directory exists
+# os.makedirs(WORKING_DIRECTORY, exist_ok=True)
+settings = Settings()
+WORKING_DIRECTORY = settings.WORKING_DIRECTORY
 
 
 @tool
@@ -135,3 +140,9 @@ def create_powerpoint_presentation(
         body.text = slide_info.get("content", "") # type: ignore
     prs.save(WORKING_DIRECTORY / file_name) # type: ignore
     return f"PowerPoint presentation saved to {file_name}"
+
+@tool
+def get_current_date():
+    """Get the current local datetime"""
+    fecha_hora_local_aware = datetime.datetime.now(zoneinfo.ZoneInfo("localtime"))
+    return fecha_hora_local_aware

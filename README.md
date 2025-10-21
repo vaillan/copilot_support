@@ -17,17 +17,12 @@ Copilot Support es un sistema inteligente de gestión de tickets diseñado para 
 
 El sistema está orquestado por un grafo de estados (`StateGraph`) de LangGraph que gestiona el flujo de trabajo entre diferentes agentes especializados. La interacción se realiza a través de una API creada con FastAPI.
 
-1.  **Entrada del Usuario**: El usuario envía una consulta a través del endpoint `/invoke` de la API, especificando su pregunta y el historial de la conversación.
-2.  **Supervisor de Equipos**: Este agente es el punto de entrada. Analiza la consulta del usuario y decide qué equipo debe actuar a continuación: `research_team` o `doc_writing_team`.
-3.  **Equipo de Investigación (`research_team`)**:
-    -   Este equipo tiene su propio supervisor que orquesta a dos agentes: `research_agent_node` y `report_agent_node`.
-    -   **Agente de Búsqueda (`research_agent_node`)**: Su objetivo es utilizar herramientas para encontrar ítems relevantes en monday.com y otras fuentes de datos.
-    -   **Agente de Reporte (`report_agent_node`)**: Toma los resultados de la búsqueda y genera un resumen estructurado en formato Markdown.
-4.  **Equipo de Redacción de Documentos (`doc_writing_team`)**:
-    -   Este equipo tiene su propio supervisor que orquesta a tres agentes: `doc_writer`, `note_taker` y `chart_generator`.
-    -   **Agente Tomador de Notas (`note_taker`)**: Lee el informe de investigación y crea un esquema detallado.
-    -   **Agente Generador de Gráficos (`chart_generator`)**: Puede generar gráficos a partir de los datos del informe.
-    -   **Agente Escritor de Documentos (`doc_writer`)**: Escribe un documento completo basado en el esquema, pudiendo crear archivos de texto, Word, Excel o PowerPoint.
+El flujo de trabajo se puede resumir en los siguientes pasos:
+
+1.  **Entrada del Usuario**: El usuario envía una consulta a través del endpoint `/invoke` de la API.
+2.  **Supervisor de Equipos**: Un agente supervisor analiza la consulta y la dirige al equipo apropiado: `research_team` o `doc_writing_team`.
+3.  **Equipo de Investigación (`research_team`)**: Busca información relevante en monday.com y otras fuentes de datos, y genera un resumen.
+4.  **Equipo de Redacción de Documentos (`doc_writing_team`)**: Crea documentos detallados, notas o gráficos basados en el informe de investigación.
 5.  **Respuesta al Usuario**: El resultado final se devuelve como respuesta de la API.
 
 ## Instalación
@@ -54,6 +49,12 @@ El sistema está orquestado por un grafo de estados (`StateGraph`) de LangGraph 
     MONDAY_API_KEY="tu_clave_api_de_monday"
     GEMINI_API_KEY="tu_clave_api_de_gemini"
     ```
+5. Configura la base de datos PostgreSQL con la extensión `pgvector`:
+    ```bash
+    sudo apt install postgresql-16-pgvector
+    sudo -u postgres psql -d copilot
+    CREATE EXTENSION vector;
+    ```
 
 ## Uso
 
@@ -73,6 +74,7 @@ El servidor estará disponible en `http://127.0.0.1:8000`. Puedes interactuar co
 ├── main.py
 ├── README.md
 ├── requirements.txt
+├── media/
 └── app/
     ├── agents/
     │   ├── __init__.py
@@ -83,17 +85,18 @@ El servidor estará disponible en `http://127.0.0.1:8000`. Puedes interactuar co
     ├── auth/
     │   └── auth.py
     ├── database/
-    │   └── connection.py
+    │   ├── connection.py
+    │   └── tables.py
     ├── models/
     │   └── models.py
     ├── prompts/
     │   ├── action_prompt.md
     │   ├── report_prompt.md
     │   ├── search_prompt.md
-    │   ├── supervisor_general_prompt.md
-    │   └── supervisor_search_prompt.md
+    │   └── supervisor_general_prompt.md
     ├── router/
-    │   └── agent.py
+    │   ├── agent.py
+    │   └── auth.py
     ├── settings/
     │   ├── __init__.py
     │   └── settings.py
@@ -102,26 +105,20 @@ El servidor estará disponible en `http://127.0.0.1:8000`. Puedes interactuar co
     │   ├── doc_tools.py
     │   └── mcp_client.py
     └── utils/
-        ├── __init__.py
+        ├── checkpointer.py
         ├── files.py
         ├── monday_client.py
-        └── state.py
+        ├── state.py
+        └── vector_store.py
 ```
 
 ## Dependencias Principales
 
-- **langgraph**: Para construir la arquitectura basada en agentes.
-- **langchain-google-genai**: Para la integración con los modelos de IA generativa de Google.
-- **fastapi**: Para crear la API web.
-- **uvicorn**: Para ejecutar el servidor ASGI.
-- **sentence-transformers**: Para la creación de embeddings de texto.
-- **chromadb**: Para la base de datos vectorial.
-- **pdfplumber**, **Pillow**, **pytesseract**, **openpyxl**, **python-docx**, **opencv-python**, **pdf2image**: Para la extracción de datos de varios formatos de archivo.
-- **monday-tools**: Para la integración con monday.com.
-
-1
- sudo apt install postgresql-16-pgvector
- 2
- sudo -u postgres psql -d copilot
-3
-CREATE EXTENSION vector;
+- **langchain**, **langgraph**, **langchain-core**, **langchain-community**, **langchain-google-genai**: Para construir la arquitectura basada en agentes y la integración con los modelos de IA generativa de Google.
+- **fastapi**, **uvicorn**: Para crear la API web y ejecutar el servidor ASGI.
+- **python-dotenv**, **pydantic**: Para la gestión de variables de entorno y la validación de datos.
+- **pdfplumber**, **Pillow**, **pytesseract**, **openpyxl**, **python-docx**, **python-pptx**, **defusedxml**, **opencv-python**, **pdf2image**, **beautifulsoup4**: Para la extracción de datos de varios formatos de archivo.
+- **monday-api-python-sdk**: Para la integración con monday.com.
+- **sqlmodel**, **psycopg2-binary**, **pgvector**, **langgraph-checkpoint-postgres**: Para la conexión, ORM y base de datos PostgreSQL con capacidades vectoriales.
+- **pyppeteer**, **nest-asyncio**, **httpx**: Para la navegación y solicitudes web asíncronas.
+- **pyjwt**, **pwdlib**: Para la autenticación y gestión de contraseñas.

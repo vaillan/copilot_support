@@ -8,8 +8,16 @@ from langchain_core.messages import HumanMessage
 from app.utils.files import File
 from app.settings.settings import Settings
 from app.agents.make_supervisor_node import make_supervisor_node
-from app.utils.monday_client import fetch_all_items_by_board_id, fetch_columns_by_board_id, fetch_item_by_board_id_by_update_date, fetch_items_by_column_value, find_boards_like_name
+from app.utils.monday_client import (
+    fetch_all_items_by_board_id,
+    fetch_columns_by_board_id, 
+    fetch_item_by_board_id_by_update_date, 
+    fetch_items_by_column_value, 
+    find_boards_like_name
+)
+
 from app.utils.state import BaseState
+from app.tools.doc_tools import get_current_date
 
 settings = Settings()
 
@@ -50,6 +58,17 @@ class ResearchTeam(File):
         self.llm_gemini_flash_lite = ChatGoogleGenerativeAI(
             model="models/gemini-flash-lite-latest",
             google_api_key=settings.GEMINI_API_KEY,
+            temperature=0.8,
+            top_p=0.9,
+            max_retries=10,
+            timeout=15,
+            transport='grpc_asyncio',
+            thinking_budget=1000
+        )
+
+        self.llm_gemini_flash = ChatGoogleGenerativeAI(
+            model="models/gemini-flash-latest",
+            google_api_key=settings.GEMINI_API_KEY,
             temperature=0.5,
             top_p=0.9,
             max_retries=10,
@@ -57,18 +76,8 @@ class ResearchTeam(File):
             transport='grpc_asyncio',
         )
 
-        self.llm_gemini_flash = ChatGoogleGenerativeAI(
-            model="models/gemini-flash-lite-latest",
-            google_api_key=settings.GEMINI_API_KEY,
-            temperature=0.9,
-            top_p=0.9,
-            max_retries=10,
-            timeout=15,
-            transport='grpc_asyncio',
-        )
-
-        self.search_agent = create_agent(model=self.llm_gemini_flash, tools=search_tools, system_prompt=search_prompt_content)
-        self.report_agent = create_agent(model=self.llm_gemini_flash_lite, tools=[], system_prompt=report_prompt_content)
+        self.search_agent = create_agent(model=self.llm_gemini_flash_lite, tools=search_tools, system_prompt=search_prompt_content)
+        self.report_agent = create_agent(model=self.llm_gemini_flash_lite, tools=[get_current_date], system_prompt=report_prompt_content)
 
     async def search_node(self, state: BaseState) -> Command[Literal["supervisor"]]:
         result = await self.search_agent.ainvoke(state) # type: ignore

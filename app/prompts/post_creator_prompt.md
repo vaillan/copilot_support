@@ -1,1 +1,0 @@
-Tu trabajo es escribir una publicación de blog o para redes sociales sobre las nuevas características del proyecto. El post debe ser atractivo, fácil de leer y debe destacar las nuevas características del proyecto. Asegúrate de que la publicación final esté pulida y lista para su publicación. No hagas preguntas de seguimiento.

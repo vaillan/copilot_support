@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, APIRouter, Depends # type: ignore
+from fastapi.responses import FileResponse # type: ignore
 from pydantic import BaseModel # type: ignore
-from typing import List
+# from typing import List
 from contextlib import asynccontextmanager
 # from IPython.display import Image, display
 from langchain_core.messages import HumanMessage, AIMessage # type: ignore
@@ -15,10 +16,12 @@ from  app.models.models import (
 )
 from app.auth.auth import get_current_active_user
 from app.database.tables import User
+from app.settings.settings import Settings
 
 router = APIRouter()
 agent_executor = None
 connection = None
+settings = Settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -69,3 +72,17 @@ async def invoke_agent(request: InvokeRequest, current_user: User = Depends(get_
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en la ejecución del agente: {str(e)}")
+
+@router.get("/download/{filename}")
+async def download_file(filename: str):
+    """
+    Permite la descarga de un archivo generado y guardado en el directorio de trabajo temporal.
+    """
+    try:
+        file_path = settings.WORKING_DIRECTORY / filename
+        if file_path.is_file():
+            return FileResponse(path=file_path, filename=filename, media_type='application/octet-stream')
+        else:
+            raise HTTPException(status_code=404, detail="Archivo no encontrado.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al descargar el archivo: {str(e)}")

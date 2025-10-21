@@ -1,11 +1,17 @@
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings # type: ignore
 import os
+from tempfile import TemporaryDirectory
+from pathlib import Path
 
 # Carga automática del archivo .env
 from dotenv import load_dotenv # type: ignore
 
 load_dotenv()
+
+# Crear un único directorio temporal para toda la aplicación
+_TEMP_DIRECTORY = TemporaryDirectory()
+WORKING_DIRECTORY = Path(_TEMP_DIRECTORY.name)
 
 class DBCONFIG(BaseModel):
     host: str
@@ -22,8 +28,9 @@ class Settings(BaseSettings):
     HF_API_KEY: str = os.getenv("HF_API_KEY", "")
     SECRET_KEY: str = os.getenv("SECRET_KEY", "")
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
-    ACCESS_TOKEN_EXPIRE_MINUTES: float | str  = os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30.0)
-    
+    ACCESS_TOKEN_EXPIRE: float | str | int = os.getenv("ACCESS_TOKEN_EXPIRE", 365)
+    WORKING_DIRECTORY: Path = WORKING_DIRECTORY
+
     DB_CONFIG: DBCONFIG = DBCONFIG(
         user=os.getenv("DB_USER", "valentin"),
         host=os.getenv("DB_HOST", "localhost"),

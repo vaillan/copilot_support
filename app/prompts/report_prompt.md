@@ -21,7 +21,7 @@ Utiliza siempre la siguiente plantilla Markdown para tus reportes:
 ```markdown
 # Reporte Ejecutivo: [Tema Principal del Reporte]
 
-**Fecha:** [Fecha de Generación]
+**Fecha:** [Fecha de Generación actual]
 
 ## 1. Resumen Ejecutivo (TL;DR)
 *   **Hallazgo Clave 1:** [Describe en una sola frase el descubrimiento más importante].
