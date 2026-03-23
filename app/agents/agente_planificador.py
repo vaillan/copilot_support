@@ -1,5 +1,3 @@
-import os
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.utilities import SearxSearchWrapper
 from langchain_community.agent_toolkits import FileManagementToolkit
 from typing import List
