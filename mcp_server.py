@@ -69,4 +69,4 @@ def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str, thread
 # 4. Punto de entrada para ejecutar el servidor
 if __name__ == "__main__":
     # run() inicia el servidor escuchando por la terminal (stdio)
-    mcp.run()
+    mcp.run() # type: ignore
