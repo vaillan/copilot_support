@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE: float | str | int = os.getenv("ACCESS_TOKEN_EXPIRE", 365)
     WORKING_DIRECTORY: Path = WORKING_DIRECTORY
+    MICROSOFT_CLIENT_ID: str= os.getenv("MICROSOFT_CLIENT_ID", "")
+    MICROSOFT_CLIENT_SECRET: str= os.getenv("MICROSOFT_CLIENT_SECRET", "")
+    MICROSOFT_TENANT_ID: str = os.getenv("MICROSOFT_TENANT_ID", "")
+    MICROSOFT_REDIRECT_URI: str = "http://localhost:8080/auth/microsoft/callback"
 
     DB_CONFIG: DBCONFIG = DBCONFIG(
         user=os.getenv("DB_USER", "valentin"),

@@ -23,10 +23,8 @@ langchain-mcp-adapters
 pyppeteer
 nest-asyncio
 httpx
-monday-api-python-sdk
 sqlmodel
 psycopg2-binary
-pgvector
 ipython
 langchain-core>=0.1 # Force langchain-core 1.0+
 langchain-community>=0.0.10 # Force langchain-community 1.0+
@@ -34,3 +32,7 @@ langchain-community>=0.0.10 # Force langchain-community 1.0+
 langgraph-checkpoint-postgres
 pyjwt
 pwdlib[argon2]
+deepagents
+itsdangerous
+starlette>=0.30.0
+mcp

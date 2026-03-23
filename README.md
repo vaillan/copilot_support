@@ -64,7 +64,7 @@ La aplicación se ejecuta como un servidor web gracias a FastAPI. Para iniciarla
 uvicorn main:app --reload
 ```
 
-El servidor estará disponible en `http://127.0.0.1:8000`. Puedes interactuar con la API a través de la documentación interactiva que se genera automáticamente en `http://127.0.0.1:8000/docs`.
+El servidor estará disponible en `http://localhost:8000`. Puedes interactuar con la API a través de la documentación interactiva que se genera automáticamente en `http://localhost:8000/docs`.
 
 ## Estructura del Proyecto
 
