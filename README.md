@@ -63,9 +63,9 @@ El sistema utiliza un grafo de estados (`StateGraph` de LangGraph) que gestiona 
 4. **Configurar variables de entorno**:
    Crea un archivo `.env` en la raíz del proyecto basándote en un posible archivo `.env.example`, o configurando al menos:
    ```env
-   GEMINI_API_KEY="tu_clave_api_aqui"
-   # Configuraciones opcionales:
-   # LLM_MODEL="gemini-3.1-pro-preview"
+   LLM_API_KEY="tu_clave_api_aqui"
+   LLM_MODEL="gemini-3.1-pro-preview"
+   LLM_PROVIDER="google-genai" # opciones: google-genai, openai, anthropic
    ```
 
 ## 🔌 Uso como Servidor MCP
