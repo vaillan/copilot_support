@@ -82,15 +82,23 @@ Para integrar este servidor en tu cliente MCP favorito, debes añadir la siguien
 
 ```json
 {
-  "mcpServers": {
-    "equipo-langgraph": {
-      "command": "/ruta/absoluta/al/proyecto/.venv/bin/python",
-      "args": ["/ruta/absoluta/al/proyecto/mcp_server.py"],
-      "env": {
-        "GEMINI_API_KEY": "tu_clave_api_aqui"
-      }
-    }
-  }
+	"mcpServers": {
+		"MiEquipoLangGraph": {
+			"command": "/home/valentin-ortiz/dev/copilot_support/.venv/bin/python",
+			"args": [
+				"/home/valentin-ortiz/dev/copilot_support/mcp_server.py"
+			],
+			"env": {
+				"LLM_API_KEY": "tu_api_key",
+				"LLM_MODEL": "gemini-3.1-pro-preview",
+				"LLM_PROVIDER": "google"
+			},
+			"alwaysAllow": [
+				"delegar_tarea_a_equipo_ia"
+			],
+			"timeout": 900
+		}
+	}
 }
 ```
 *Asegúrate de reemplazar `/ruta/absoluta/al/proyecto/` con la ruta real en tu sistema.*
