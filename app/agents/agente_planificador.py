@@ -15,9 +15,6 @@ from app.utils.files import File
 settings = Settings()
 fileSystem = File(directory="prompts")
 
-# ==========================================
-# 2. LA ESTRUCTURA DEL PLAN (Pydantic)
-# ==========================================
 class Paso(BaseModel):
     archivo: str = Field(description="Ruta relativa del archivo a modificar o crear")
     tarea: str = Field(description="Descripción técnica de lo que el codificador debe programar")
@@ -74,10 +71,7 @@ def agente_planificador(state: ProjectState) -> Command:
         
     # 6. Invocamos al modelo
     respuesta = llm_con_herramientas.invoke(mensajes)
-    
-    # ==========================================
-    # 7. ENRUTAMIENTO DINÁMICO (Command)
-    # ==========================================
+
     # Verificamos si el LLM decidió entregar el plan final
     if respuesta.tool_calls and respuesta.tool_calls[0]["name"] == "PlanDeAccion":
         # Extraemos los argumentos que generó el LLM (que coinciden con nuestro Pydantic)
