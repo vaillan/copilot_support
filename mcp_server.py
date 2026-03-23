@@ -1,13 +1,13 @@
 from mcp.server.fastmcp import FastMCP
 from app.main import crear_grafo
 
-# 1. Inicializamos el Servidor MCP
-mcp = FastMCP("EquipoAgentesLangGraph")
+# Servidor MCP
+mcp = FastMCP("AIDevTeam")
 
-# 2. Compilamos el grafo una sola vez al iniciar el servidor
+# Grafo
 agentes_app = crear_grafo()
 
-# 3. Exponemos nuestro Grafo como una Herramienta MCP usando el decorador @mcp.tool()
+# Grafo como una Herramienta MCP usando el decorador @mcp.tool()
 @mcp.tool()
 def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str, thread_id: str = "1", approve: bool = False) -> str:
     """
@@ -54,19 +54,18 @@ def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str, thread
         # Extraer el plan de los valores de estado actual si está disponible
         plan_propuesto = estado.values.get("plan_desarrollo", "No se generó un plan.")
         return f"⏸️ El proceso está PAUSADO esperando aprobación del plan (Human in the loop).\n\nPLAN PROPUESTO:\n{plan_propuesto}\n\nPara aprobar y continuar, llama a esta herramienta con approve=True y el mismo thread_id."
-        
+
     # Extraemos el reporte final para devolvérselo al editor de código
     codigo_escrito = resultado.get("codigo_escrito", "No se reportó código.")
     errores_qa = resultado.get("errores_terminal", "Sin errores.")
     
     reporte_final = (
-        f"Tarea completada por el equipo LangGraph.\n"
+        f"Tarea completada por el equipo AI DevTeam.\n"
         f"Resumen de cambios: {codigo_escrito}\n"
         f"Estado final de los tests (QA): {errores_qa}"
     )
     return reporte_final
 
-# 4. Punto de entrada para ejecutar el servidor
+# Ejecución del servidor
 if __name__ == "__main__":
-    # run() inicia el servidor escuchando por la terminal (stdio)
-    mcp.run() # type: ignore
+    mcp.run()
