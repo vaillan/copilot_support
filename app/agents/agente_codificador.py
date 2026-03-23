@@ -11,16 +11,10 @@ from app.settings.settings import Settings
 settings = Settings()
 fileSystem = File(directory="prompts")
 
-# ==========================================
-# 1. HERRAMIENTA DE FINALIZACIÓN (Pydantic)
-# ==========================================
 class CodigoCompletado(BaseModel):
     """Llama a esta herramienta EXCLUSIVAMENTE cuando hayas terminado de programar todos los pasos del plan."""
     resumen_cambios: str = Field(description="Resumen detallado de los archivos que creaste o modificaste.")
 
-# ==========================================
-# 2. FUNCIÓN DEL AGENTE CODIFICADOR
-# ==========================================
 def agente_codificador(state: ProjectState) -> Command:
     """
     El Programador lee el plan de acción, escribe los archivos en el disco duro
@@ -62,10 +56,7 @@ def agente_codificador(state: ProjectState) -> Command:
     
     # 6. Invocamos al modelo
     respuesta = llm_con_herramientas.invoke(mensajes)
-    
-    # ==========================================
-    # 7. ENRUTAMIENTO DINÁMICO (Command)
-    # ==========================================
+
     if respuesta.tool_calls:
         # Buscamos si el LLM decidió que ya terminó su trabajo
         for tool_call in respuesta.tool_calls:
