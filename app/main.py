@@ -1,10 +1,11 @@
 from langgraph.graph import StateGraph, START
-from models.models import ProjectState
+from app.models.models import ProjectState
 
 # Importamos las funciones desde tus archivos modulares
-from agents.agente_planificador import agente_planificador, nodo_herramientas_planificador
-from agents.agente_codificador import agente_codificador, nodo_herramientas_codificador
-from agents.agente_revisor import agente_revisor, nodo_herramientas_revisor
+from app.agents.agente_planificador import agente_planificador, nodo_herramientas_planificador
+from app.agents.agente_codificador import agente_codificador, nodo_herramientas_codificador
+from app.agents.agente_revisor import agente_revisor, nodo_herramientas_revisor
+
 
 def crear_grafo():
     workflow = StateGraph(ProjectState)
@@ -23,9 +24,3 @@ def crear_grafo():
     workflow.add_edge(START, "agente_planificador")
 
     return workflow.compile()
-
-#if __name__ == "__main__":
-#    app = crear_grafo()
- 
-#    # Aquí puedes ejecutar app.stream(...) como vimos en la Tarea 4
-#    print("Grafo modular compilado con éxito.")
