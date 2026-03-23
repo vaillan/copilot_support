@@ -55,15 +55,8 @@ def agente_planificador(state: ProjectState) -> Command:
     herramientas_investigacion = herramientas_lectura + [tool_busqueda]
     
     # 4. Configuramos el LLM
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.1-pro-preview",
-        google_api_key=settings.GEMINI_API_KEY,
-        temperature=0.0,
-        top_p=0.7,
-        max_retries=5,
-        timeout=15,
-        transport='grpc_asyncio',
-    )
+    from app.settings.settings import get_llm
+    llm = get_llm(temperature=0.0)
     
     # EL TRUCO DE LANGGRAPH: Le pasamos las herramientas de investigación 
     # Y TAMBIÉN el modelo Pydantic (PlanDeAccion) como si fuera una herramienta más.

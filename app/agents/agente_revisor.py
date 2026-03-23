@@ -50,15 +50,8 @@ def agente_revisor(state: ProjectState) -> Command:
     herramientas_qa =[terminal, finalizar_revision] + herramientas_lectura
     
     # 3. Configuramos el LLM
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.1-pro-preview",
-        google_api_key=settings.GEMINI_API_KEY,
-        temperature=0.0,
-        top_p=0.7,
-        max_retries=5,
-        timeout=15,
-        transport='grpc_asyncio',
-    )
+    from app.settings.settings import get_llm
+    llm = get_llm(temperature=0.0)
     llm_con_herramientas = llm.bind_tools(herramientas_qa)
     
     # 4. Construimos el Prompt del Sistema

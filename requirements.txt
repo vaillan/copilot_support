@@ -36,3 +36,5 @@ deepagents
 itsdangerous
 starlette>=0.30.0
 mcp
+langchain-openai
+langchain-anthropic
