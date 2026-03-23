@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "MiEquipoLangGraph": {
+      "command": "/home/valentin-ortiz/dev/copilot_support/.venv/bin/python", 
+      "args": ["/home/valentin-ortiz/dev/copilot_support/mcp_server.py"],
+      "env": {
+        "OPENAI_API_KEY": "sk-tu-api-key"
+      }
+    }
+  }
+}
