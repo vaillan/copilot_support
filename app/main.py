@@ -15,43 +15,6 @@ from app.agents.agente_revisor import agente_revisor, nodo_herramientas_revisor
 from app.agents.agente_documentador import agente_documentador, nodo_herramientas_documentador
 
 
-def summarize_messages(state: ProjectState) -> Command:
-    """
-    Resume los mensajes antiguos para mantener el contexto manejable.
-    Basado en las mejores prácticas de LangGraph.
-    """
-    messages = state["messages"]
-    summary = state.get("summary", "")
-    proximo_paso = state.get("proximo_paso", "agente_planificador")
-    
-    # Solo resumimos si hay más de 6 mensajes
-    if len(messages) <= 6:
-        return Command(goto=proximo_paso)
-
-    from app.settings.settings import get_llm
-    llm = get_llm(temperature=0)
-    
-    if summary:
-        summary_message = (
-            f"Este es el resumen de la conversación hasta ahora: {summary}\n\n"
-            "Resume los nuevos mensajes arriba incorporándolos al resumen existente."
-        )
-    else:
-        summary_message = "Crea un resumen de la siguiente conversación:"
-
-    response = llm.invoke(messages + [HumanMessage(content=summary_message)])
-    
-    # Marcamos los mensajes antiguos para ser eliminados (excepto los últimos 2 para contexto inmediato)
-    delete_messages = [RemoveMessage(id=m.id) for m in messages[:-2] if m.id is not None]
-    
-    return Command(
-        update={
-            "summary": response.content,
-            "messages": delete_messages
-        },
-        goto=proximo_paso
-    )
-
 def crear_grafo():
     workflow = StateGraph(ProjectState)
 
@@ -61,7 +24,6 @@ def crear_grafo():
     workflow.add_node("agente_codificador_silent", agente_codificador)
     workflow.add_node("agente_revisor", agente_revisor)
     workflow.add_node("agente_documentador", agente_documentador)
-    workflow.add_node("summarize_messages", summarize_messages)
 
     # (Herramientas)
     workflow.add_node("nodo_herramientas_planificador", nodo_herramientas_planificador)

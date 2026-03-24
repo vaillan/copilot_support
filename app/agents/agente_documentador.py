@@ -43,11 +43,6 @@ def agente_documentador(state: ProjectState) -> Command:
     prompt_raw = fileSystem.get_file_content(file_name="documentador_prompt.md")
     prompt_sistema = prompt_raw.format(directorio=directorio)
     
-    # Manejo de Resumen (Summarization)
-    resumen_previo = state.get("summary", "")
-    if resumen_previo:
-        prompt_sistema += f"\n\n**Resumen de la conversación anterior:**\n{resumen_previo}"
-    
     # Preparamos los mensajes
     mensajes = [SystemMessage(content=prompt_sistema)] + state["messages"]
     
@@ -73,10 +68,9 @@ def agente_documentador(state: ProjectState) -> Command:
         # Forzamos al agente a seguir si responde solo con texto
         return Command(
             update={
-                "messages": [respuesta],
-                "proximo_paso": "agente_documentador"
+                "messages": [respuesta]
             },
-            goto="summarize_messages"
+            goto="agente_documentador"
         )
 
 def nodo_herramientas_documentador(state: ProjectState) -> Command:
@@ -102,8 +96,7 @@ def nodo_herramientas_documentador(state: ProjectState) -> Command:
             
     return Command(
         update={
-            "messages": respuestas_tools,
-            "proximo_paso": "agente_documentador"
+            "messages": respuestas_tools
         },
-        goto="summarize_messages"
+        goto="agente_documentador"
     )

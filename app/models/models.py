@@ -7,5 +7,3 @@ class ProjectState(MessagesState):
     plan_de_accion: dict      # El planificador escribirá aquí
     codigo_escrito: str       # El codificador escribirá aquí
     errores_terminal: str     # El revisor (QA) escribirá aquí
-    summary: str              # Para almacenar el resumen del historial
-    proximo_paso: str         # Para saber a qué agente regresar tras resumir

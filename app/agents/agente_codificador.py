@@ -49,11 +49,6 @@ def agente_codificador(state: ProjectState) -> Command:
         plan=plan
     )
     
-    # Manejo de Resumen (Summarization)
-    resumen = state.get("summary", "")
-    if resumen:
-        prompt_sistema += f"\n\n**Resumen de la conversación anterior:**\n{resumen}"
-    
     # CICLO DE AUTOCORRECCIÓN: Si el Revisor encontró errores, se los inyectamos aquí
     if errores:
         prompt_sistema += f"\n\n ATENCIÓN: Tu código anterior falló las pruebas. Corrige los siguientes errores:\n{errores}"
@@ -73,10 +68,9 @@ def agente_codificador(state: ProjectState) -> Command:
                 return Command(
                     update={
                         "codigo_escrito": resumen_codigo,
-                        "errores_terminal": "",
-                        "proximo_paso": "agente_revisor"
+                        "errores_terminal": ""
                     },
-                    goto="summarize_messages"      
+                    goto="agente_revisor"      
                 )
         
         # Si no llamó a CodigoCompletado, significa que usó write_file o read_file
@@ -86,13 +80,12 @@ def agente_codificador(state: ProjectState) -> Command:
         )
         
     else:
-        # Si el LLM responde solo con texto, lo forzamos a seguir en su loop pero pasando por summarizer
+        # Si el LLM responde solo con texto, lo forzamos a seguir en su loop
         return Command(
             update={
-                "messages": [respuesta],
-                "proximo_paso": "agente_codificador"
+                "messages": [respuesta]
             },
-            goto="summarize_messages"
+            goto="agente_codificador"
         )
 
 def nodo_herramientas_codificador(state: ProjectState) -> Command:
@@ -130,8 +123,7 @@ def nodo_herramientas_codificador(state: ProjectState) -> Command:
             
     return Command(
         update={
-            "messages": respuestas_tools,
-            "proximo_paso": proximo
+            "messages": respuestas_tools
         },
-        goto="summarize_messages"
+        goto=proximo
     )
