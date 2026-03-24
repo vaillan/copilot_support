@@ -11,9 +11,9 @@ agentes_app = crear_grafo()
 @mcp.tool()
 def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str, thread_id: str = "1", approve: bool = False) -> str:
     """
-    ÚSA ESTA HERRAMIENTA PARA DELEGAR TAREAS COMPLEJAS DE PROGRAMACIÓN.
-    Esta herramienta invoca a un equipo de 3 agentes autónomos (Arquitecto, Programador y QA).
-    Ellos planearán, escribirán el código y ejecutarán los tests automáticamente.
+    ÚSA ESTA HERRAMIENTA PARA DELEGAR TAREAS COMPLEJAS DE PROGRAMACIÓN Y DOCUMENTACIÓN.
+    Esta herramienta invoca a un equipo de 4 agentes autónomos (Arquitecto, Programador, QA y Documentador).
+    Ellos planearán, escribirán el código, ejecutarán los tests y documentarán los cambios automáticamente.
     
     El proceso se detendrá para que lo apruebes después de la fase de planificación.
     Para continuar después de la pausa, llama a esta misma herramienta con approve=True y el mismo thread_id.
