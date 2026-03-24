@@ -58,7 +58,8 @@ def agente_planificador(state: ProjectState) -> Command:
     llm_con_herramientas = llm.bind_tools(herramientas_investigacion + [PlanDeAccion])
     
     # 5. Construimos el Prompt
-    prompt_sistema = fileSystem.get_file_content(file_name="planificador_prompt.md")
+    prompt_raw = fileSystem.get_file_content(file_name="planificador_prompt.md")
+    prompt_sistema = prompt_raw.format(directorio=directorio)
     
     # Preparamos los mensajes (Historial + Prompt)
     mensajes =[SystemMessage(content=prompt_sistema)] + state["messages"]

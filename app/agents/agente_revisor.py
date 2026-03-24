@@ -30,6 +30,7 @@ def agente_revisor(state: ProjectState) -> Command:
     
     # 1. Herramienta de Terminal (ShellTool)
     terminal = ShellTool()
+    terminal.name = "terminal"
     
     # 2. Herramienta de Lectura (FileManagementToolkit)
     # Útil por si los tests generan un archivo 'coverage.xml' o 'error.log'
@@ -48,7 +49,11 @@ def agente_revisor(state: ProjectState) -> Command:
     llm_con_herramientas = llm.bind_tools(herramientas_qa)
     
     # 4. Construimos el Prompt del Sistema
-    prompt_sistema = fileSystem.get_file_content(file_name="revisor_prompt.md")
+    prompt_raw = fileSystem.get_file_content(file_name="revisor_prompt.md")
+    prompt_sistema = prompt_raw.format(
+        directorio=directorio,
+        codigo_escrito=state.get("codigo_escrito", "Sin reporte.")
+    )
     
     # Preparamos los mensajes
     mensajes =[SystemMessage(content=prompt_sistema)] + state["messages"]
@@ -97,6 +102,7 @@ def nodo_herramientas_revisor(state: ProjectState) -> Command:
     
     # Agregamos la terminal
     terminal = ShellTool()
+    terminal.name = "terminal"
     herramientas["terminal"] = terminal
     
     ultimo_mensaje = state["messages"][-1]

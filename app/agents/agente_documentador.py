@@ -40,9 +40,8 @@ def agente_documentador(state: ProjectState) -> Command:
     llm_con_herramientas = llm.bind_tools(herramientas_documentador)
     
     # 3. Construimos el Prompt del Sistema
-    prompt_sistema = fileSystem.get_file_content(file_name="documentador_prompt.md")
-    # Reemplazamos {directorio} manualmente si es necesario, o el prompt lo asume
-    prompt_sistema = prompt_sistema.replace("{directorio}", directorio)
+    prompt_raw = fileSystem.get_file_content(file_name="documentador_prompt.md")
+    prompt_sistema = prompt_raw.format(directorio=directorio)
     
     # Preparamos los mensajes
     mensajes = [SystemMessage(content=prompt_sistema)] + state["messages"]
