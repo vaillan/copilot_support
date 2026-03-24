@@ -122,8 +122,11 @@ def nodo_herramientas_codificador(state: ProjectState) -> Command:
             
             respuestas_tools.append(ToolMessage(content=str(resultado), tool_call_id=tool_call["id"], name=nombre))
             
-    # Si todas fueron lectura, vamos al nodo "silent" para no pedir permiso
-    proximo = "agente_codificador_silent" if todas_lectura else "agente_codificador"
+    # Si todas fueron lectura y la configuración lo permite, vamos al nodo "silent" para no pedir permiso
+    if todas_lectura and not settings.HITL_ASK_FOR_READ:
+        proximo = "agente_codificador_silent"
+    else:
+        proximo = "agente_codificador"
             
     return Command(
         update={

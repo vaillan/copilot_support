@@ -39,7 +39,7 @@ def agente_planificador(state: ProjectState) -> Command:
     ]
     
     # 3. Configuramos la búsqueda gratuita con SearxNG
-    searx = SearxSearchWrapper(searx_host=settings.SEARXNG_HOST, k=2)
+    searx = SearxSearchWrapper(searx_host=settings.SEARXNG_HOST, k=2) # type: ignore
     tool_busqueda = Tool(
         name="busqueda_web_searx",
         description="Busca en internet documentación técnica actualizada, tutoriales o foros.",
@@ -83,10 +83,13 @@ def agente_planificador(state: ProjectState) -> Command:
                 # Extraemos los argumentos que generó el LLM
                 plan_generado = tool_call["args"]
                 
+                from app.settings.settings import settings
+                proximo = "agente_codificador_silent" if not settings.HITL_ASK_FOR_READ else "agente_codificador"
+                
                 return Command(
                     update={
                         "plan_de_accion": plan_generado,
-                        "proximo_paso": "agente_codificador" # Destino tras resumir
+                        "proximo_paso": proximo # Destino tras resumir
                     }, 
                     goto="summarize_messages"                 
                 )
