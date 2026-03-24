@@ -23,7 +23,6 @@ def agente_codificador(state: ProjectState) -> Command:
     directorio = state.get("directorio_proyecto", "./")
     
     # 2. Configuramos las herramientas nativas de escritura y lectura
-    # El root_dir actúa como una "cárcel" de seguridad para no dañar otros archivos de tu PC
     toolkit_archivos = FileManagementToolkit(root_dir=directorio)
     
     # Filtramos SOLO las herramientas que el codificador necesita
@@ -50,6 +49,11 @@ def agente_codificador(state: ProjectState) -> Command:
         plan=plan
     )
     
+    # Manejo de Resumen (Summarization)
+    resumen = state.get("summary", "")
+    if resumen:
+        prompt_sistema += f"\n\n**Resumen de la conversación anterior:**\n{resumen}"
+    
     # CICLO DE AUTOCORRECCIÓN: Si el Revisor encontró errores, se los inyectamos aquí
     if errores:
         prompt_sistema += f"\n\n ATENCIÓN: Tu código anterior falló las pruebas. Corrige los siguientes errores:\n{errores}"
@@ -64,27 +68,31 @@ def agente_codificador(state: ProjectState) -> Command:
         # Buscamos si el LLM decidió que ya terminó su trabajo
         for tool_call in respuesta.tool_calls:
             if tool_call["name"] == "CodigoCompletado":
-                resumen = tool_call["args"].get("resumen_cambios", "Código completado.")
+                resumen_codigo = tool_call["args"].get("resumen_cambios", "Código completado.")
                 
                 return Command(
                     update={
-                        "codigo_escrito": resumen,
-                        "errores_terminal": "" # Limpiamos los errores pasados porque ya los intentó arreglar
+                        "codigo_escrito": resumen_codigo,
+                        "errores_terminal": "",
+                        "proximo_paso": "agente_revisor"
                     },
-                    goto="agente_revisor"      # ¡Terminó! Pasamos el turno al QA (Revisor)
+                    goto="summarize_messages"      
                 )
         
         # Si no llamó a CodigoCompletado, significa que usó write_file o read_file
         return Command(
             update={"messages": [respuesta]},
-            goto="nodo_herramientas_codificador" # Lo enviamos al nodo que ejecuta las herramientas de código
+            goto="nodo_herramientas_codificador"
         )
         
     else:
-        # Si el LLM responde solo con texto (sin usar herramientas), lo forzamos a seguir en su loop
+        # Si el LLM responde solo con texto, lo forzamos a seguir en su loop pero pasando por summarizer
         return Command(
-            update={"messages": [respuesta]},
-            goto="agente_codificador"
+            update={
+                "messages": [respuesta],
+                "proximo_paso": "agente_codificador"
+            },
+            goto="summarize_messages"
         )
 
 def nodo_herramientas_codificador(state: ProjectState) -> Command:
@@ -105,6 +113,9 @@ def nodo_herramientas_codificador(state: ProjectState) -> Command:
             respuestas_tools.append(ToolMessage(content=str(resultado), tool_call_id=tool_call["id"], name=nombre))
             
     return Command(
-        update={"messages": respuestas_tools},
-        goto="agente_codificador" # Regresamos el control al Codificador
+        update={
+            "messages": respuestas_tools,
+            "proximo_paso": "agente_codificador"
+        },
+        goto="summarize_messages"
     )

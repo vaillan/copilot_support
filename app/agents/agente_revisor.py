@@ -33,7 +33,6 @@ def agente_revisor(state: ProjectState) -> Command:
     terminal.name = "terminal"
     
     # 2. Herramienta de Lectura (FileManagementToolkit)
-    # Útil por si los tests generan un archivo 'coverage.xml' o 'error.log'
     toolkit_archivos = FileManagementToolkit(root_dir=directorio)
     herramientas_lectura =[
         t for t in toolkit_archivos.get_tools() 
@@ -55,6 +54,11 @@ def agente_revisor(state: ProjectState) -> Command:
         codigo_escrito=state.get("codigo_escrito", "Sin reporte.")
     )
     
+    # Manejo de Resumen (Summarization)
+    resumen = state.get("summary", "")
+    if resumen:
+        prompt_sistema += f"\n\n**Resumen de la conversación anterior:**\n{resumen}"
+    
     # Preparamos los mensajes
     mensajes =[SystemMessage(content=prompt_sistema)] + state["messages"]
     
@@ -69,29 +73,38 @@ def agente_revisor(state: ProjectState) -> Command:
                 errores = tool_call["args"].get("reporte_errores", "")
                 
                 if aprobado:
-                    # ÉXITO: El código funciona. Pasamos al Documentador.
+                    # ÉXITO: El código funciona. Pasamos al Documentador (via resumidor).
                     return Command(
-                        update={"errores_terminal": "Ninguno. Código aprobado."},
-                        goto="agente_documentador"
+                        update={
+                            "errores_terminal": "Ninguno. Código aprobado.",
+                            "proximo_paso": "agente_documentador"
+                        },
+                        goto="summarize_messages"
                     )
                 else:
-                    # FALLO: Hay errores. Devolvemos el control al Codificador.
+                    # FALLO: Hay errores. Devolvemos el control al Codificador (via resumidor).
                     return Command(
-                        update={"errores_terminal": errores},
-                        goto="agente_codificador" # ¡Viaje en el tiempo hacia atrás!
+                        update={
+                            "errores_terminal": errores,
+                            "proximo_paso": "agente_codificador"
+                        },
+                        goto="summarize_messages"
                     )
         
         # Si no llamó a finalizar_revision, significa que está usando la terminal o leyendo logs
         return Command(
             update={"messages":[respuesta]},
-            goto="nodo_herramientas_revisor" # Lo enviamos a ejecutar el comando bash
+            goto="nodo_herramientas_revisor"
         )
         
     else:
         # Forzamos al agente a seguir en su loop si responde solo con texto
         return Command(
-            update={"messages": [respuesta]},
-            goto="agente_revisor"
+            update={
+                "messages": [respuesta],
+                "proximo_paso": "agente_revisor"
+            },
+            goto="summarize_messages"
         )
 
 def nodo_herramientas_revisor(state: ProjectState) -> Command:
@@ -112,13 +125,14 @@ def nodo_herramientas_revisor(state: ProjectState) -> Command:
         nombre = tool_call["name"]
         args = tool_call["args"]
         
-        # Nota: La herramienta 'finalizar_revision' no se ejecuta aquí, 
-        # porque el Agente Revisor ya la interceptó en su propia función para hacer el enrutamiento.
         if nombre in herramientas:
             resultado = herramientas[nombre].invoke(args)
             respuestas_tools.append(ToolMessage(content=str(resultado), tool_call_id=tool_call["id"], name=nombre))
             
     return Command(
-        update={"messages": respuestas_tools},
-        goto="agente_revisor" # Regresamos el control al Revisor
+        update={
+            "messages": respuestas_tools,
+            "proximo_paso": "agente_revisor"
+        },
+        goto="summarize_messages"
     )
