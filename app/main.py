@@ -58,6 +58,7 @@ def crear_grafo():
     # (Cerebros)
     workflow.add_node("agente_planificador", agente_planificador)
     workflow.add_node("agente_codificador", agente_codificador)
+    workflow.add_node("agente_codificador_silent", agente_codificador)
     workflow.add_node("agente_revisor", agente_revisor)
     workflow.add_node("agente_documentador", agente_documentador)
     workflow.add_node("summarize_messages", summarize_messages)
