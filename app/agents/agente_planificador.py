@@ -39,7 +39,7 @@ def agente_planificador(state: ProjectState) -> Command:
     ]
     
     # 3. Configuramos la búsqueda gratuita con SearxNG
-    searx = SearxSearchWrapper(searx_host="http://127.0.0.1:8888", k=2)
+    searx = SearxSearchWrapper(searx_host=settings.SEARXNG_HOST, k=2)
     tool_busqueda = Tool(
         name="busqueda_web_searx",
         description="Busca en internet documentación técnica actualizada, tutoriales o foros.",
@@ -76,24 +76,35 @@ def agente_planificador(state: ProjectState) -> Command:
     # 6. Invocamos al modelo
     respuesta = llm_con_herramientas.invoke(mensajes)
 
-    # Verificamos si el LLM decidió entregar el plan final
-    if respuesta.tool_calls and respuesta.tool_calls[0]["name"] == "PlanDeAccion":
-        # Extraemos los argumentos que generó el LLM (que coinciden con nuestro Pydantic)
-        plan_generado = respuesta.tool_calls[0]["args"]
+    # Verificamos si el LLM decidió entregar el plan final (Buscamos PlanDeAccion en tool_calls)
+    if respuesta.tool_calls:
+        for tool_call in respuesta.tool_calls:
+            if tool_call["name"] == "PlanDeAccion":
+                # Extraemos los argumentos que generó el LLM
+                plan_generado = tool_call["args"]
+                
+                return Command(
+                    update={
+                        "plan_de_accion": plan_generado,
+                        "proximo_paso": "agente_codificador" # Destino tras resumir
+                    }, 
+                    goto="summarize_messages"                 
+                )
         
-        return Command(
-            update={
-                "plan_de_accion": plan_generado,
-                "proximo_paso": "agente_codificador" # Destino tras resumir
-            }, 
-            goto="summarize_messages"                 
-        )
-    
-    # Si no entregó el plan, significa que decidió usar read_file, list_directory o searx
-    else:
+        # Si no entregó el plan, significa que decidió usar read_file, list_directory o searx
         return Command(
             update={"messages": [respuesta]},         # Guardamos la intención de usar la herramienta
             goto="nodo_herramientas_planificador"     # Lo enviamos al nodo que ejecuta las herramientas
+        )
+    
+    # Si no hay tool_calls, el agente respondió con texto plano
+    else:
+        return Command(
+            update={
+                "messages": [respuesta],
+                "proximo_paso": "agente_planificador"
+            },
+            goto="summarize_messages"
         )
 
 def nodo_herramientas_planificador(state: ProjectState) -> Command:

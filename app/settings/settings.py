@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "google-genai")
     LLM_THINKING: bool = os.getenv("LLM_THINKING", "false").lower() == "true"
     LLM_THINKING_BUDGET: int = int(os.getenv("LLM_THINKING_BUDGET", "1024"))
+    SEARXNG_HOST: str = os.getenv("SEARXNG_HOST", "http://127.0.0.1:8888")
 
 
 settings = Settings()
