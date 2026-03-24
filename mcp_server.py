@@ -52,7 +52,7 @@ def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str, thread
     estado = agentes_app.get_state(config) # type: ignore
     if estado.next:
         # Extraer el plan de los valores de estado actual si está disponible
-        plan_propuesto = estado.values.get("plan_desarrollo", "No se generó un plan.")
+        plan_propuesto = estado.values.get("plan_de_accion", "No se generó un plan.")
         return f"⏸️ El proceso está PAUSADO esperando aprobación del plan (Human in the loop).\n\nPLAN PROPUESTO:\n{plan_propuesto}\n\nPara aprobar y continuar, llama a esta herramienta con approve=True y el mismo thread_id."
 
     # Extraemos el reporte final para devolvérselo al editor de código

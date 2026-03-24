@@ -93,7 +93,11 @@ def nodo_herramientas_documentador(state: ProjectState) -> Command:
         args = tool_call["args"]
         
         if nombre in herramientas:
-            resultado = herramientas[nombre].invoke(args)
+            try:
+                resultado = herramientas[nombre].invoke(args)
+            except Exception as e:
+                resultado = f"Error al ejecutar la herramienta {nombre}: {str(e)}"
+            
             respuestas_tools.append(ToolMessage(content=str(resultado), tool_call_id=tool_call["id"], name=nombre))
             
     return Command(
