@@ -64,10 +64,10 @@ def agente_revisor(state: ProjectState) -> Command:
                 errores = tool_call["args"].get("reporte_errores", "")
                 
                 if aprobado:
-                    # ÉXITO: El código funciona. Terminamos el Grafo.
+                    # ÉXITO: El código funciona. Pasamos al Documentador.
                     return Command(
                         update={"errores_terminal": "Ninguno. Código aprobado."},
-                        goto=END # Importado de langgraph.graph
+                        goto="agente_documentador"
                     )
                 else:
                     # FALLO: Hay errores. Devolvemos el control al Codificador.
