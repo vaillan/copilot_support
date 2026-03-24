@@ -38,7 +38,6 @@ def get_llm(temperature: float = 0.0):
             top_p=0.7,
             max_retries=5,
             timeout=15,
-            transport='grpc_asyncio',
         )
     elif provider == "openai":
         from langchain_openai import ChatOpenAI

@@ -12,7 +12,7 @@ Antes de documentar:
 
 **Tareas:**
 1. **Analizar:** Revisa archivos modificados y estructura general con `list_directory` y `read_file`.
-2. **Documentar:** Crea/actualiza `README.md`, docstrings o guías. **Escribe de forma clara y técnica.**
+2. **Documentar:** Actualiza `docs/tecnica.md` con los detalles técnicos, arquitectónicos y de flujo del sistema. También crea/actualiza `README.md`, docstrings o guías según sea necesario. **Escribe de forma clara y técnica.**
 3. **Finalizar:** Invoca `finalizar_documentacion`.
 
 **Restricciones:**
