@@ -90,14 +90,10 @@ def nodo_herramientas_codificador(state: ProjectState) -> Command:
     ultimo_mensaje = state["messages"][-1]
     respuestas_tools = []
     
-    todas_lectura = True
     for tool_call in ultimo_mensaje.tool_calls: # type: ignore
         nombre = tool_call["name"]
         args = tool_call["args"]
         
-        if nombre in HERRAMIENTAS_ESCRITURA:
-            todas_lectura = False
-            
         if nombre in herramientas_map:
             try:
                 resultado = herramientas_map[nombre].invoke(args)
@@ -106,10 +102,7 @@ def nodo_herramientas_codificador(state: ProjectState) -> Command:
             
             respuestas_tools.append(ToolMessage(content=str(resultado), tool_call_id=tool_call["id"], name=nombre))
             
-    if todas_lectura and not settings.HITL_ASK_FOR_READ:
-        proximo = "agente_codificador_silent"
-    else:
-        proximo = "agente_codificador"
+    proximo = "agente_codificador"
             
     return Command(
         update={

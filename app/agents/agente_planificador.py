@@ -80,7 +80,7 @@ def agente_planificador(state: ProjectState) -> Command:
                 plan_generado = tool_call["args"]
                 print(f"[DEBUG Planificador] Plan generado con {len(plan_generado.get('pasos', []))} pasos.")
                 
-                proximo = "agente_codificador_silent" if not settings.HITL_ASK_FOR_READ else "agente_codificador"
+                proximo = "agente_codificador"
                 
                 return Command(
                     update={
