@@ -1,7 +1,6 @@
 from langgraph.graph import StateGraph, START, END
 from app.models.models import ProjectState
-from langchain_core.messages import SystemMessage, HumanMessage, RemoveMessage
-from langgraph.types import Command
+
 
 # Importamos el checkpointer persistente en disco
 from langgraph.checkpoint.sqlite import SqliteSaver

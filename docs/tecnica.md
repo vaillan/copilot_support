@@ -1,78 +1,76 @@
 # Documentación Técnica: AI DevTeam
 
-Este documento proporciona una visión técnica detallada del servidor AI DevTeam, incluyendo su arquitectura de grafos, agentes y modelos de datos.
+Este documento detalla la arquitectura, el flujo de control y las herramientas de los agentes en el servidor AI DevTeam.
 
-## 🏗️ Arquitectura de LangGraph
+## 🏗️ Arquitectura de LangGraph (API Funcional)
 
-El corazón del sistema es un `StateGraph` de LangGraph que orquestra la comunicación entre agentes autónomos. El grafo está configurado para ser persistente y soportar la intervención humana (human-in-the-loop).
+A diferencia de las arquitecturas de grafos tradicionales con bordes estáticos, AI DevTeam utiliza la **API Funcional de LangGraph** (`Command`, `goto`, `update`). Esto permite que cada nodo controle de forma dinámica hacia dónde se dirige el flujo de ejecución, basándose en la lógica interna del agente y los resultados de las herramientas.
 
-### Definición del Grafo (`app/main.py`)
+### Estructura del Grafo (`app/main.py`)
 
-El grafo se compone de los siguientes nodos:
+El grafo se inicializa con `StateGraph(ProjectState)` y registra los nodos principales y sus respectivos nodos de herramientas:
 
-1.  **Agente Planificador**: Genera el plan inicial.
-2.  **Nodo Herramientas Planificador**: Ejecuta herramientas de lectura/listado para el planificador.
-3.  **Agente Codificador**: Implementa el código basado en el plan.
-4.  **Nodo Herramientas Codificador**: Permite la escritura y modificación de archivos.
-5.  **Agente Revisor (QA)**: Valida la implementación mediante la ejecución de comandos.
-6.  **Nodo Herramientas Revisor**: Ejecuta comandos en la terminal y lee archivos.
-7.  **Agente Documentador**: Genera y actualiza archivos de documentación.
-8.  **Nodo Herramientas Documentador**: Permite la lectura y escritura de archivos de documentación.
+1.  **Agentes (Cerebros)**: `agente_planificador`, `agente_codificador`, `agente_revisor`, `agente_documentador`.
+2.  **Nodos de Herramientas**: Gestionados mediante la factoría `create_tool_node` en `app/utils/agent_factory.py`.
 
-### Flujo de Datos (`ProjectState`)
+### Control de Flujo con `Command`
 
-El estado del proyecto se define en `app/models/models.py` y hereda de `MessagesState`.
+Cada agente devuelve un objeto `Command` que puede:
+- `update`: Modificar el estado (mensajes, plan, errores).
+- `goto`: Especificar el siguiente nodo (otro agente o su nodo de herramientas).
+- `END`: Finalizar la ejecución del grafo.
+
+## 🤖 Detalles de los Agentes y Herramientas
+
+### 1. Agente Planificador (Arquitecto)
+- **Función**: Analizar requerimientos y diseñar la solución técnica.
+- **Herramientas de Investigación**:
+  - `read_file`, `list_directory`: Exploración local.
+  - `busqueda_web_searx`: Búsqueda externa mediante SearxNG.
+- **Herramienta de Salida**: `PlanDeAccion` (Pydantic model) que estructura la tarea en pasos.
+- **Transición**: Tras generar el plan, el flujo se detiene (`interrupt_before=["agente_codificador"]`) esperando aprobación humana.
+
+### 2. Agente Codificador (Programador)
+- **Función**: Traducir el plan en código fuente real.
+- **Herramientas de Archivos**: `write_file`, `delete_file`, `move_file`, `copy_file`, `read_file`, `list_directory`, `file_search`.
+- **Herramienta de Cierre**: `CodigoCompletado` (utilizada cuando todos los pasos del plan han sido implementados).
+
+### 3. Agente Revisor (QA)
+- **Función**: Validar que el código funcione y cumpla con los requisitos.
+- **Herramientas**:
+  - `terminal` (ShellTool): Ejecución de comandos (tests, linters, compilación).
+  - `read_file`, `list_directory`: Inspección post-implementación.
+- **Herramienta de Decisión**: `finalizar_revision(aprobado, reporte_errores)`.
+  - Si `aprobado=True` -> `goto="agente_documentador"`.
+  - Si `aprobado=False` -> `goto="agente_codificador"` (ciclo de corrección).
+
+### 4. Agente Documentador
+- **Función**: Actualizar la documentación del proyecto.
+- **Herramientas**: `read_file`, `write_file`, `list_directory`.
+- **Herramienta de Cierre**: `finalizar_documentacion(resumen)`. Al llamarla, el flujo se dirige a `END`.
+
+## 💾 Persistencia y Estado (`ProjectState`)
+
+El estado del proyecto (`app/models/models.py`) extiende `MessagesState` de LangGraph e incluye campos adicionales:
 
 ```python
 class ProjectState(MessagesState):
     instruccion_usuario: str
     directorio_proyecto: str
-    plan_de_accion: dict
-    codigo_escrito: str
-    errores_terminal: str
+    plan_de_accion: dict  # Estructurado por el Arquitecto
+    codigo_escrito: str    # Resumen del Programador
+    errores_terminal: str # Retroalimentación del QA
 ```
 
-## 🤖 Detalles de los Agentes
+La persistencia se maneja mediante `SqliteSaver`, almacenando todo el historial en `memoria_agentes.db`.
 
-### 1. Agente Planificador (`agente_planificador.py`)
-- **Objetivo**: Entender el requerimiento y diseñar la solución.
-- **Tools**: `list_directory`, `read_file`.
-- **Interrupt**: El grafo se detiene **antes** de pasar al Codificador para que el usuario apruebe el plan.
+## ⚙️ Configuración y Proveedores (Settings)
 
-### 2. Agente Codificador (`agente_codificador.py`)
-- **Objetivo**: Realizar cambios efectivos en el sistema de archivos.
-- **Tools**: `write_file`, `edit_file`, `create_directory`.
+El sistema soporta múltiples proveedores de LLM configurables en `.env`:
 
-### 3. Agente Revisor (`agente_revisor.py`)
-- **Objetivo**: Asegurar la calidad y funcionalidad.
-- **Tools**: `execute_command`, `read_file`.
-- **Lógica**: Si encuentra errores, envía un mensaje de retroalimentación al Codificador reiniciando el ciclo de edición.
+- **Google**: Modelos `gemini-*`. Recomendado para rendimiento/coste.
+- **OpenAI**: Soporta modelos de razonamiento `o1` y `o3-mini`.
+- **Anthropic**: Soporta `claude-3-7-sonnet` con el parámetro `thinking` habilitado.
+- **OpenRouter**: Para acceso a modelos adicionales a través de una API unificada.
 
-### 4. Agente Documentador (`agente_documentador.py`)
-- **Objetivo**: Mantener la documentación sincronizada con el código.
-- **Tools**: `read_file`, `write_file`.
-- **Finalización**: El Agente Documentador finaliza el proceso de documentación invocando la herramienta `finalizar_documentacion`. Esta herramienta registra un resumen de los cambios realizados en la documentación.
-
-## 💾 Persistencia
-
-El sistema utiliza `SqliteSaver` para almacenar el estado del grafo en `memoria_agentes.db`. Esto permite:
-- Retomar tareas después de una interrupción manual.
-- Mantener el historial de decisiones de los agentes.
-- Recuperación ante fallos del proceso.
-
-## 🔌 Integración MCP (`mcp_server.py`)
-
-El servidor utiliza `FastMCP` para exponer la capacidad del equipo de IA como una herramienta estándar de MCP.
-
-### Herramienta: `delegar_tarea_a_equipo_ia`
-
-Esta herramienta actúa como el punto de entrada al grafo. Maneja la lógica de inicialización del estado y la reanudación del proceso tras la aprobación del usuario mediante el parámetro `approve`.
-
-## ⚙️ Configuración (`app/settings/settings.py`)
-
-El sistema es agnóstico al modelo de lenguaje gracias a LangChain. Soporta:
-- **Google GenAI** (Gemini 2.0 Flash recomendado).
-- **OpenAI** (GPT-4o).
-- **Anthropic** (Claude 3.5 Sonnet).
-
-La configuración se carga desde un archivo `.env` o variables de entorno del sistema.
+La lógica de instanciación reside en `app/settings/settings.py`, asegurando que cada proveedor reciba los parámetros correctos (temperatura, thinking budget, etc.).
