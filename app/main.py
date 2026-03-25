@@ -25,10 +25,10 @@ def crear_grafo():
     workflow.add_node("agente_documentador", agente_documentador)
 
     # (Herramientas)
-    workflow.add_node("nodo_herramientas_planificador", nodo_herramientas_planificador)
-    workflow.add_node("nodo_herramientas_codificador", nodo_herramientas_codificador)
-    workflow.add_node("nodo_herramientas_revisor", nodo_herramientas_revisor)
-    workflow.add_node("nodo_herramientas_documentador", nodo_herramientas_documentador)
+    workflow.add_node("nodo_herramientas_planificador", nodo_herramientas_planificador) # type: ignore
+    workflow.add_node("nodo_herramientas_codificador", nodo_herramientas_codificador) # type: ignore
+    workflow.add_node("nodo_herramientas_revisor", nodo_herramientas_revisor) # type: ignore
+    workflow.add_node("nodo_herramientas_documentador", nodo_herramientas_documentador) # type: ignore
 
     # Punto de entrada
     workflow.add_edge(START, "agente_planificador")
