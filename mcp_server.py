@@ -2,7 +2,7 @@ from mcp.server.fastmcp import FastMCP
 from app.main import crear_grafo
 
 # 1. Inicializamos el Servidor MCP
-mcp = FastMCP("EquipoAgentesLangGraph")
+mcp = FastMCP("AIDevTeam")
 
 # 2. Compilamos el grafo una sola vez al iniciar el servidor
 agentes_app = crear_grafo()

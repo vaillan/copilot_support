@@ -6,8 +6,8 @@ from langchain_community.tools import ShellTool
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_core.tools import tool
 from langchain_core.messages import ToolMessage
-from models.models import ProjectState
-from utils.files import File
+from app.models.models import ProjectState
+from app.utils.files import File
 from app.settings.settings import Settings
 
 settings = Settings()
@@ -52,7 +52,7 @@ def agente_revisor(state: ProjectState) -> Command:
     # 3. Configuramos el LLM
     llm = ChatGoogleGenerativeAI(
         model="gemini-3.1-pro-preview",
-        google_api_key=settings.GEMINI_API_KEY,
+        google_api_key=settings.LLM_API_KEY,
         temperature=0.0,
         top_p=0.7,
         max_retries=5,
