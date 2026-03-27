@@ -44,6 +44,14 @@ def get_llm(temperature: float = 0.0):
             )
         except ImportError:
             raise ImportError("Debe instalar 'langchain-anthropic' para usar modelos de Anthropic.")
+    elif provider == "open-router":
+        from langchain_openrouter import ChatOpenRouter
+        return ChatOpenRouter(
+            model=model_name, # type: ignore
+            api_key=api_key, # type: ignore
+            temperature=temperature,
+            max_retries=5,
+        )
     else:
         # Intento de instanciación genérica si el proveedor no está mapeado explícitamente
         # pero existe en langchain (requiere langchain >= 0.2.13 para init_chat_model)
