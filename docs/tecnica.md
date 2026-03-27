@@ -51,7 +51,6 @@ class ProjectState(MessagesState):
 ### 4. Agente Documentador (`agente_documentador.py`)
 - **Objetivo**: Mantener la documentación sincronizada con el código.
 - **Tools**: `read_file`, `write_file`.
-- **Finalización**: El Agente Documentador finaliza el proceso de documentación invocando la herramienta `finalizar_documentacion`. Esta herramienta registra un resumen de los cambios realizados en la documentación.
 
 ## 💾 Persistencia
 

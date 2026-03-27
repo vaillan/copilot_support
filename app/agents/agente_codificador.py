@@ -1,60 +1,66 @@
 from pydantic import BaseModel, Field
 from langgraph.types import Command
-from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
+from langchain_core.messages import SystemMessage
 from langchain_community.agent_toolkits import FileManagementToolkit
+from langchain_core.messages import ToolMessage
 from app.models.models import ProjectState
 from app.utils.files import File
-from app.settings.settings import Settings, get_llm
+from app.settings.settings import Settings
 
 settings = Settings()
 fileSystem = File(directory="prompts")
 
-# Herramientas de escritura y gestión de archivos
-HERRAMIENTAS_ESCRITURA = ["write_file", "delete_file", "move_file", "copy_file"]
-# Herramientas de lectura y exploración
-HERRAMIENTAS_LECTURA = ["read_file", "list_directory", "file_search"]
-# Todas las herramientas permitidas para el codificador
-NOMBRES_HERRAMIENTAS = HERRAMIENTAS_ESCRITURA + HERRAMIENTAS_LECTURA
-
 class CodigoCompletado(BaseModel):
     """Llama a esta herramienta EXCLUSIVAMENTE cuando hayas terminado de programar todos los pasos del plan."""
     resumen_cambios: str = Field(description="Resumen detallado de los archivos que creaste o modificaste.")
-
-def get_herramientas_codificador(directorio: str):
-    """Helper para obtener las herramientas configuradas para un directorio."""
-    toolkit = FileManagementToolkit(root_dir=directorio)
-    return [t for t in toolkit.get_tools() if t.name in NOMBRES_HERRAMIENTAS]
 
 def agente_codificador(state: ProjectState) -> Command:
     """
     El Programador lee el plan de acción, escribe los archivos en el disco duro
     y corrige errores si el Revisor (QA) los encuentra.
     """
+    # 1. Obtenemos la ruta dinámica desde el estado
     directorio = state.get("directorio_proyecto", "./")
-    herramientas_codigo = get_herramientas_codificador(directorio)
     
+    # 2. Configuramos las herramientas nativas de escritura y lectura
+    toolkit_archivos = FileManagementToolkit(root_dir=directorio)
+    
+    # Filtramos las herramientas que el codificador necesita (lectura, escritura y búsqueda)
+    herramientas_codigo =[
+        t for t in toolkit_archivos.get_tools() 
+        if t.name in["read_file", "write_file", "list_directory", "file_search"]
+    ]
+    
+    # 3. Configuramos el LLM
+    from app.settings.settings import get_llm
     llm = get_llm(temperature=0.0)
+    
+    # Le "atamos" las herramientas de archivos + la herramienta de finalización
     llm_con_herramientas = llm.bind_tools(herramientas_codigo + [CodigoCompletado])
     
+    # 4. Extraemos el contexto del Estado
     plan = state.get("plan_de_accion", {})
     errores = state.get("errores_terminal", "")
     
+    # 5. Construimos el Prompt del Sistema
     prompt_raw = fileSystem.get_file_content(file_name="codificador_prompt.md")
     prompt_sistema = prompt_raw.format(
         directorio=directorio,
         plan=plan
     )
     
-    mensajes = [SystemMessage(content=prompt_sistema)] + state["messages"]
-    
-    # CICLO DE AUTOCORRECCIÓN: Si el Revisor encontró errores, se los inyectamos como HumanMessage
+    # CICLO DE AUTOCORRECCIÓN: Si el Revisor encontró errores, se los inyectamos aquí
     if errores:
-        aviso_error = f"ATENCIÓN: Tu código anterior falló las pruebas. Corrige los siguientes errores:\n{errores}"
-        mensajes.append(HumanMessage(content=aviso_error))
+        prompt_sistema += f"\n\n ATENCIÓN: Tu código anterior falló las pruebas. Corrige los siguientes errores:\n{errores}"
         
+    # Preparamos los mensajes
+    mensajes =[SystemMessage(content=prompt_sistema)] + state["messages"]
+    
+    # 6. Invocamos al modelo
     respuesta = llm_con_herramientas.invoke(mensajes)
 
     if respuesta.tool_calls:
+        # Buscamos si el LLM decidió que ya terminó su trabajo
         for tool_call in respuesta.tool_calls:
             if tool_call["name"] == "CodigoCompletado":
                 resumen_codigo = tool_call["args"].get("resumen_cambios", "Código completado.")
@@ -67,45 +73,52 @@ def agente_codificador(state: ProjectState) -> Command:
                     goto="agente_revisor"      
                 )
         
+        # Si no llamó a CodigoCompletado, significa que usó write_file o read_file
         return Command(
             update={"messages": [respuesta]},
             goto="nodo_herramientas_codificador"
         )
         
     else:
-        # Validación: Si no hay tool_calls, inyectamos un aviso para evitar bucles sin acción
-        aviso_no_tool = "Has respondido sin usar ninguna herramienta. Si aún no has terminado el plan, por favor utiliza las herramientas de archivos necesarias (read_file, write_file, etc.) o finaliza con CodigoCompletado."
+        # Si el LLM responde solo con texto, lo forzamos a seguir en su loop
         return Command(
             update={
-                "messages": [respuesta, HumanMessage(content=aviso_no_tool)]
+                "messages": [respuesta]
             },
             goto="agente_codificador"
         )
 
 def nodo_herramientas_codificador(state: ProjectState) -> Command:
     directorio = state.get("directorio_proyecto", "./")
-    herramientas_lista = get_herramientas_codificador(directorio)
-    herramientas_map = {t.name: t for t in herramientas_lista}
+    
+    toolkit = FileManagementToolkit(root_dir=directorio)
+    herramientas = {t.name: t for t in toolkit.get_tools() if t.name in ["read_file", "write_file", "list_directory", "file_search"]}
     
     ultimo_mensaje = state["messages"][-1]
-    respuestas_tools = []
+    respuestas_tools =[]
+    
+    # 2. Identificar si todas las herramientas llamadas son de "lectura" para evitar el HITL
+    # Definimos explícitamente qué herramientas requieren permiso humano (escritura/peligrosas)
+    herramientas_escritura = ["write_file", "delete_file", "move_file", "copy_file"]
     
     todas_lectura = True
     for tool_call in ultimo_mensaje.tool_calls: # type: ignore
         nombre = tool_call["name"]
         args = tool_call["args"]
         
-        if nombre in HERRAMIENTAS_ESCRITURA:
+        # Si la herramienta está en la lista de escritura, ya no es solo lectura
+        if nombre in herramientas_escritura:
             todas_lectura = False
             
-        if nombre in herramientas_map:
+        if nombre in herramientas:
             try:
-                resultado = herramientas_map[nombre].invoke(args)
+                resultado = herramientas[nombre].invoke(args)
             except Exception as e:
                 resultado = f"Error al ejecutar la herramienta {nombre}: {str(e)}"
             
             respuestas_tools.append(ToolMessage(content=str(resultado), tool_call_id=tool_call["id"], name=nombre))
             
+    # Si todas fueron lectura y la configuración lo permite, vamos al nodo "silent" para no pedir permiso
     if todas_lectura and not settings.HITL_ASK_FOR_READ:
         proximo = "agente_codificador_silent"
     else:
