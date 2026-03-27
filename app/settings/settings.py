@@ -20,7 +20,6 @@ class Settings(BaseSettings):
     LLM_THINKING: bool = os.getenv("LLM_THINKING", "false").lower() == "true"
     LLM_THINKING_BUDGET: int = int(os.getenv("LLM_THINKING_BUDGET", "1024"))
     SEARXNG_HOST: str = os.getenv("SEARXNG_HOST", "http://127.0.0.1:8888")
-    HITL_ASK_FOR_READ: bool = os.getenv("HITL_ASK_FOR_READ", "true").lower() == "true"
 
 
 settings = Settings()
@@ -65,7 +64,7 @@ def get_llm(temperature: float = 0.0):
 
         return ChatAnthropic(
             model_name=settings.LLM_MODEL,
-            api_key=settings.LLM_API_KEY, # type: ignore
+            api_key=settings.LLM_API_KEY,
             temperature=temperature,
             max_retries=5,
             timeout=15,
