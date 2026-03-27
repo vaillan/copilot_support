@@ -1,4 +1,5 @@
 from langgraph.graph import StateGraph, START
+from langgraph.checkpoint.memory import MemorySaver
 from app.models.models import ProjectState
 
 # Importamos las funciones desde tus archivos modulares
@@ -22,7 +23,10 @@ def crear_grafo():
     # 3. Punto de entrada
     workflow.add_edge(START, "agente_planificador")
 
-    return workflow.compile()
+    # 4. Agregamos el Checkpointer para la memoria por sesión
+    memory = MemorySaver()
+
+    return workflow.compile(checkpointer=memory)
 
 #if __name__ == "__main__":
 #    app = crear_grafo()

@@ -66,10 +66,6 @@ def agente_planificador(state: ProjectState) -> Command:
     
     # Preparamos los mensajes (Historial + Prompt)
     mensajes =[SystemMessage(content=prompt_sistema)] + state["messages"]
-    
-    # Si es el primer turno (no hay mensajes previos), inyectamos la instrucción del usuario
-    if not state["messages"]:
-        mensajes.append(HumanMessage(content=state["instruccion_usuario"]))
         
     # 6. Invocamos al modelo
     respuesta = llm_con_herramientas.invoke(mensajes)

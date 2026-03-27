@@ -1,4 +1,6 @@
+import hashlib
 from fastmcp import FastMCP
+from langchain_core.messages import HumanMessage
 from app.main import crear_grafo
 
 # 1. Inicializamos el Servidor MCP
@@ -20,17 +22,22 @@ def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str) -> str
         directorio_proyecto: La ruta absoluta de la carpeta actual del proyecto.
     """
     
-    # Preparamos el estado inicial que nuestro LangGraph espera
+    # Generamos un ID de hilo (thread_id) basado en el directorio del proyecto
+    # Esto permite que cada proyecto tenga su propia memoria de sesión
+    thread_id = hashlib.md5(directorio_proyecto.encode()).hexdigest()
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 50}
+
+    # Preparamos el estado inicial. 
+    # Al pasar la instrucción en 'messages', LangGraph la añade al historial de la sesión.
     estado_inicial = {
         "instruccion_usuario": instruccion,
         "directorio_proyecto": directorio_proyecto,
-        "messages":[]
+        "messages": [HumanMessage(content=instruccion)]
     }
     
     try:
-        # Ejecutamos el equipo de agentes
-        # Usamos invoke() en lugar de stream() para que el servidor espere a que terminen
-        resultado = agentes_app.invoke(estado_inicial, {"recursion_limit": 50}) # type: ignore
+        # Ejecutamos el equipo de agentes con la configuración de memoria
+        resultado = agentes_app.invoke(estado_inicial, config) # type: ignore
         
         # Extraemos el reporte final para devolvérselo al editor de código
         codigo_escrito = resultado.get("codigo_escrito", "No se reportó código.")
@@ -38,6 +45,7 @@ def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str) -> str
         
         reporte_final = (
             f"Tarea completada por el equipo LangGraph.\n"
+            f"ID de Sesión: {thread_id}\n"
             f"Resumen de cambios: {codigo_escrito}\n"
             f"Estado final de los tests (QA): {errores_qa}"
         )
