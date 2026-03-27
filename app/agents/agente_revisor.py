@@ -6,8 +6,8 @@ from langchain_community.tools import ShellTool
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_core.tools import tool
 from langchain_core.messages import ToolMessage
-from app.models.models import ProjectState
-from app.utils.files import File
+from models.models import ProjectState
+from utils.files import File
 from app.settings.settings import Settings
 
 settings = Settings()
