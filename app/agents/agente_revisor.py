@@ -13,6 +13,9 @@ from app.settings.settings import Settings
 settings = Settings()
 fileSystem = File(directory="prompts")
 
+# ==========================================
+# 1. HERRAMIENTA PERSONALIZADA (@tool)
+# ==========================================
 @tool
 def finalizar_revision(aprobado: bool, reporte_errores: str = "") -> str:
     """
@@ -22,6 +25,9 @@ def finalizar_revision(aprobado: bool, reporte_errores: str = "") -> str:
     """
     return "Revisión procesada."
 
+# ==========================================
+# 2. FUNCIÓN DEL AGENTE REVISOR
+# ==========================================
 def agente_revisor(state: ProjectState) -> Command:
     """
     El Tester ejecuta el código en la terminal. Si hay errores, 
@@ -57,6 +63,9 @@ def agente_revisor(state: ProjectState) -> Command:
     # 5. Invocamos al modelo
     respuesta = llm_con_herramientas.invoke(mensajes)
     
+    # ==========================================
+    # 6. ENRUTAMIENTO DINÁMICO (El Bucle de Feedback)
+    # ==========================================
     if respuesta.tool_calls:
         for tool_call in respuesta.tool_calls:
             # Si el agente decide que ya terminó de evaluar...
