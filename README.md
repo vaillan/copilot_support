@@ -1,4 +1,4 @@
-# AI DevTeam: Servidor MCP de Agentes de Desarrollo Autónomo
+# MiEquipoLangGraph - Servidor MCP
 
 ![LangGraph](https://img.shields.io/badge/LangGraph-000000?style=for-the-badge&logo=langchain&logoColor=white)
 ![FastMCP](https://img.shields.io/badge/FastMCP-005571?style=for-the-badge)
@@ -6,7 +6,7 @@
 
 ## 📋 Descripción General
 
-**AI DevTeam** es un servidor compatible con el [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) que permite delegar tareas de programación complejas a un equipo de agentes autónomos orquestados con [LangGraph](https://www.langchain.com/langgraph). 
+**MiEquipoLangGraph** es un servidor compatible con el [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) que permite delegar tareas de programación complejas a un equipo de agentes autónomos orquestados con [LangGraph](https://www.langchain.com/langgraph). 
 
 El sistema utiliza una arquitectura de agentes especializados para planificar, ejecutar y revisar cambios en el código de manera iterativa, asegurando que las soluciones propuestas sean funcionales, seguras y sigan estrictamente los requisitos del usuario.
 
