@@ -23,9 +23,4 @@ def crear_grafo():
     # 3. Punto de entrada
     workflow.add_edge(START, "agente_planificador")
 
-    # Importamos el checkpointer para la persistencia
-    from langgraph.checkpoint.memory import MemorySaver
-    memory = MemorySaver()
-
-    # Compilamos con el checkpointer e interrupción antes del agente_codificador (human in the loop)
-    return workflow.compile(checkpointer=memory, interrupt_before=["agente_codificador"])
+    return workflow.compile()
