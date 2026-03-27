@@ -44,11 +44,7 @@ def agente_codificador(state: ProjectState) -> Command:
     errores = state.get("errores_terminal", "")
     
     # 5. Construimos el Prompt del Sistema
-    prompt_raw = fileSystem.get_file_content(file_name="codificador_prompt.md")
-    prompt_sistema = prompt_raw.format(
-        directorio=directorio,
-        plan=plan
-    )
+    prompt_sistema = fileSystem.get_file_content(file_name="codificador_prompt.md")
     
     # CICLO DE AUTOCORRECCIÓN: Si el Revisor encontró errores, se los inyectamos aquí
     if errores:
