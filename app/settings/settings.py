@@ -17,8 +17,6 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")
     LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini-3.1-pro-preview")
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "google-genai")
-    LLM_THINKING: bool = os.getenv("LLM_THINKING", "false").lower() == "true"
-    LLM_THINKING_BUDGET: int = int(os.getenv("LLM_THINKING_BUDGET", "1024"))
 
 
 settings = Settings()
@@ -28,7 +26,6 @@ def get_llm(temperature: float = 0.0):
     
     if provider == "google-genai" or provider == "google":
         from langchain_google_genai import ChatGoogleGenerativeAI
-        # Para Gemini 2.0 Flash Thinking o similares, el modelo se define en LLM_MODEL
         return ChatGoogleGenerativeAI(
             model=settings.LLM_MODEL,
             api_key=settings.LLM_API_KEY,
@@ -40,34 +37,21 @@ def get_llm(temperature: float = 0.0):
         )
     elif provider == "openai":
         from langchain_openai import ChatOpenAI
-        # Los modelos o1/o3-mini manejan el razonamiento internamente.
-        # En versiones recientes se usa reasoning_effort o max_completion_tokens.
         return ChatOpenAI(
             model=settings.LLM_MODEL,
             api_key=settings.LLM_API_KEY, # type: ignore
-            temperature=temperature if "o1" not in settings.LLM_MODEL and "o3" not in settings.LLM_MODEL else 1, # o1 suele requerir temp 1 o no soportarla
+            temperature=temperature,
             max_retries=5,
             timeout=15,
         )
     elif provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
-        
-        extra_kwargs = {}
-        if settings.LLM_THINKING and "claude-3-7" in settings.LLM_MODEL:
-            extra_kwargs["thinking"] = {
-                "type": "enabled",
-                "budget_tokens": settings.LLM_THINKING_BUDGET
-            }
-            # Claude con thinking requiere temperature=1 y no soporta max_tokens normal si no es budget
-            temperature = 1.0
-
         return ChatAnthropic(
             model_name=settings.LLM_MODEL,
             api_key=settings.LLM_API_KEY,
             temperature=temperature,
             max_retries=5,
             timeout=15,
-            **extra_kwargs
         ) # type: ignore
     else:
         # Fallback to init_chat_model if available or just raise error

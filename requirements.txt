@@ -3,14 +3,39 @@
 # pip install --upgrade -r requirements.txt
 
 python-dotenv
+fastapi[standard]
+uvicorn[standard]
 pydantic
-pydantic-settings
+pdfplumber
+Pillow
+pytesseract
+openpyxl
+python-docx
+python-pptx
+defusedxml
+opencv-python
+pdf2image
+beautifulsoup4
+langchain>=0.1 # Force LangChain 1.0+
+langgraph>=0.1 # Ensure langgraph is updated for LangChain 1.0
+langchain-google-genai>=0.0.10 # Ensure this is compatible with LangChain 1.0
+langchain-mcp-adapters
+pyppeteer
+nest-asyncio
+httpx
+sqlmodel
+psycopg2-binary
+ipython
+langchain-core>=0.1 # Force langchain-core 1.0+
+langchain-community>=0.0.10 # Force langchain-community 1.0+
+# psycopg[binary,pool]
+langgraph-checkpoint-postgres
+pyjwt
+pwdlib[argon2]
+deepagents
+itsdangerous
+starlette>=0.30.0
 mcp
-langchain>=0.1
-langgraph>=0.1
-langchain-core>=0.1
-langchain-community>=0.1
+langchain-openai
+langchain-anthropic
 langgraph-checkpoint-sqlite
-langchain-google-genai>=0.0.10
-langchain-openai>=0.1.0
-langchain-anthropic>=0.3.1

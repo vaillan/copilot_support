@@ -61,11 +61,6 @@ def agente_planificador(state: ProjectState) -> Command:
     prompt_raw = fileSystem.get_file_content(file_name="planificador_prompt.md")
     prompt_sistema = prompt_raw.format(directorio=directorio)
     
-    # Manejo de Resumen (Summarization)
-    resumen = state.get("summary", "")
-    if resumen:
-        prompt_sistema += f"\n\n**Resumen de la conversación anterior:**\n{resumen}"
-    
     # Preparamos los mensajes (Historial + Prompt)
     mensajes =[SystemMessage(content=prompt_sistema)] + state["messages"]
     
@@ -82,11 +77,8 @@ def agente_planificador(state: ProjectState) -> Command:
         plan_generado = respuesta.tool_calls[0]["args"]
         
         return Command(
-            update={
-                "plan_de_accion": plan_generado,
-                "proximo_paso": "agente_codificador" # Destino tras resumir
-            }, 
-            goto="summarize_messages"                 
+            update={"plan_de_accion": plan_generado}, # Guardamos el plan en el Estado
+            goto="agente_codificador"                 # ¡Terminó! Pasamos el turno al Codificador
         )
     
     # Si no entregó el plan, significa que decidió usar read_file, list_directory o searx
@@ -120,9 +112,6 @@ def nodo_herramientas_planificador(state: ProjectState) -> Command:
             respuestas_tools.append(ToolMessage(content=str(resultado), tool_call_id=tool_call["id"], name=nombre))
             
     return Command(
-        update={
-            "messages": respuestas_tools,
-            "proximo_paso": "agente_planificador"
-        },
-        goto="summarize_messages" 
+        update={"messages": respuestas_tools},
+        goto="agente_planificador" # Regresamos el control al Planificador para que lea el resultado
     )
