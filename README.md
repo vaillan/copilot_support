@@ -1,124 +1,78 @@
-# Copilot Support
+# AIDevTeam - Equipo de Agentes de Desarrollo IA
 
 ## Descripción
+**AIDevTeam** es un sistema de agentes autónomos diseñado para automatizar tareas de desarrollo de software. Utiliza la arquitectura de **LangGraph** para orquestar un flujo de trabajo entre tres agentes especializados: un **Planificador** (Arquitecto), un **Codificador** (Programador) y un **Revisor** (QA). 
 
-Copilot Support es un sistema inteligente de gestión de tickets diseñado para integrarse con monday.com. El sistema utiliza agentes de IA para analizar nuevos tickets, buscar tickets similares en una base de conocimiento y generar retroalimentación para ayudar a los usuarios a resolver problemas de manera más eficiente.
+El sistema está diseñado para integrarse como un servidor **MCP (Model Context Protocol)**, lo que permite delegar tareas de programación complejas directamente desde editores de código compatibles que actúen como clientes MCP.
 
 ## Características
+- **Arquitectura Multi-Agente**: Orquestación robusta de agentes con roles definidos para asegurar la calidad y coherencia del código generado.
+- **Servidor MCP Nativo**: Implementado con `FastMCP`, exponiendo herramientas de desarrollo directamente a LLMs.
+- **Flujo de Trabajo Inteligente**:
+  - **Agente Planificador**: Analiza los requerimientos del usuario y diseña una estrategia detallada de implementación.
+  - **Agente Codificador**: Implementa la lógica de negocio y las funcionalidades siguiendo el plan diseñado.
+  - **Agente Revisor**: Valida el código escrito, detecta posibles errores y asegura el cumplimiento de las especificaciones.
+- **Integración con Google Gemini**: Potenciado por los modelos de lenguaje de última generación de Google para un razonamiento avanzado.
 
-- **Integración con monday.com**: Se conecta a tableros de monday.com para recuperar y crear tickets.
-- **Base de Conocimiento Vectorial**: Crea y mantiene una base de conocimiento vectorial para buscar tickets similares de manera semántica.
-- **Procesamiento de Lenguaje Natural**: Utiliza modelos de lenguaje para destilar conocimiento de tickets existentes y generar retroalimentación.
-- **Arquitectura Basada en Agentes**: Construido con LangGraph, el sistema orquesta una serie de agentes para manejar el flujo de trabajo de gestión de tickets.
-- **Extracción de Datos**: Capaz de extraer texto de varios tipos de archivos, incluyendo PDFs, imágenes y documentos de Office.
-- **API con FastAPI**: Expone la funcionalidad del agente a través de una API web robusta y fácil de usar.
+## Estructura del Proyecto
+```text
+.
+├── app/
+│   ├── agents/             # Lógica de los agentes (Planificador, Codificador, Revisor)
+│   ├── models/             # Fábrica de LLMs y definición del estado del grafo
+│   ├── prompts/            # Prompts del sistema en formato Markdown para cada agente
+│   ├── settings/           # Configuraciones globales y variables de entorno
+│   ├── utils/              # Funciones de utilidad para manejo de archivos y procesos
+│   └── main.py             # Definición y compilación del grafo de LangGraph
+├── mcp_server.py           # Servidor MCP que expone el equipo de IA como herramienta
+├── requirements.txt        # Dependencias del proyecto (LangChain, LangGraph, MCP, etc.)
+└── .env                    # Configuración de claves de API (requerido: GEMINI_API_KEY)
+```
 
-## Cómo Funciona
-
-El sistema está orquestado por un grafo de estados (`StateGraph`) de LangGraph que gestiona el flujo de trabajo entre diferentes agentes especializados. La interacción se realiza a través de una API creada con FastAPI.
-
-El flujo de trabajo se puede resumir en los siguientes pasos:
-
-1.  **Entrada del Usuario**: El usuario envía una consulta a través del endpoint `/invoke` de la API.
-2.  **Supervisor de Equipos**: Un agente supervisor analiza la consulta y la dirige al equipo apropiado: `research_team` o `doc_writing_team`.
-3.  **Equipo de Investigación (`research_team`)**: Busca información relevante en monday.com y otras fuentes de datos, y genera un resumen.
-4.  **Equipo de Redacción de Documentos (`doc_writing_team`)**: Crea documentos detallados, notas o gráficos basados en el informe de investigación.
-5.  **Respuesta al Usuario**: El resultado final se devuelve como respuesta de la API.
+## Requisitos Previos
+- Python 3.10 o superior.
+- Una clave de API de Google Gemini (`GEMINI_API_KEY`).
 
 ## Instalación
-
-1.  Clona el repositorio:
+1.  **Clona el repositorio**:
     ```bash
-    git clone https://github.com/tu_usuario/copilot_support.git
+    git clone <url-del-repositorio>
     cd copilot_support
     ```
 
-2.  Crea un entorno virtual e instálalo:
+2.  **Crea y activa un entorno virtual**:
     ```bash
     python -m venv .venv
+    # Linux/macOS:
     source .venv/bin/activate
+    # Windows:
+    .venv\Scripts\activate
     ```
 
-3.  Instala las dependencias:
+3.  **Instala las dependencias**:
     ```bash
     pip install -r requirements.txt
     ```
 
-4.  Crea un archivo `.env` en la raíz del proyecto y añade tus claves de API:
-    ```
-    MONDAY_API_KEY="tu_clave_api_de_monday"
-    GEMINI_API_KEY="tu_clave_api_de_gemini"
-    ```
-5. Configura la base de datos PostgreSQL con la extensión `pgvector`:
-    ```bash
-    sudo apt install postgresql-16-pgvector
-    sudo -u postgres psql -d copilot
-    CREATE EXTENSION vector;
+4.  **Configura las variables de entorno**:
+    Crea un archivo `.env` en la raíz del proyecto con el siguiente contenido:
+    ```env
+    GEMINI_API_KEY=tu_clave_de_api_aqui
     ```
 
 ## Uso
-
-La aplicación se ejecuta como un servidor web gracias a FastAPI. Para iniciarla, ejecuta el siguiente comando desde la raíz del proyecto:
-
+### Ejecución del Servidor MCP
+Para iniciar el servidor MCP y que esté disponible para clientes como Claude Desktop u otros editores compatibles:
 ```bash
-uvicorn main:app --reload
+python mcp_server.py
 ```
 
-El servidor estará disponible en `http://localhost:8000`. Puedes interactuar con la API a través de la documentación interactiva que se genera automáticamente en `http://localhost:8000/docs`.
+### Herramienta Principal: `delegar_tarea_a_equipo_ia`
+El servidor expone una herramienta principal para la delegación de tareas:
+- **`instruccion`**: La descripción detallada de lo que deseas que el equipo de IA construya o modifique.
+- **`directorio_proyecto`**: La ruta absoluta donde el equipo debe trabajar.
 
-## Estructura del Proyecto
+El sistema devolverá un resumen de los cambios realizados y el estado final de las validaciones realizadas por el agente Revisor.
 
-```
-/
-├── .gitignore
-├── main.py
-├── README.md
-├── requirements.txt
-├── media/
-└── app/
-    ├── agents/
-    │   ├── __init__.py
-    │   ├── document_writer_team.py
-    │   ├── hierarchy_team.py
-    │   ├── make_supervisor_node.py
-    │   └── research_team.py
-    ├── auth/
-    │   └── auth.py
-    ├── database/
-    │   ├── connection.py
-    │   └── tables.py
-    ├── models/
-    │   └── models.py
-    ├── prompts/
-    │   ├── action_prompt.md
-    │   ├── report_prompt.md
-    │   ├── search_prompt.md
-    │   └── supervisor_general_prompt.md
-    ├── router/
-    │   ├── agent.py
-    │   └── auth.py
-    ├── settings/
-    │   ├── __init__.py
-    │   └── settings.py
-    ├── tools/
-    │   ├── __init__.py
-    │   ├── doc_tools.py
-    │   └── mcp_client.py
-    └── utils/
-        ├── checkpointer.py
-        ├── files.py
-        ├── monday_client.py
-        ├── state.py
-        └── vector_store.py
-```
-
-## Dependencias Principales
-
-- **langchain**, **langgraph**, **langchain-core**, **langchain-community**, **langchain-google-genai**: Para construir la arquitectura basada en agentes y la integración con los modelos de IA generativa de Google.
-- **fastapi**, **uvicorn**: Para crear la API web y ejecutar el servidor ASGI.
-- **python-dotenv**, **pydantic**: Para la gestión de variables de entorno y la validación de datos.
-- **pdfplumber**, **Pillow**, **pytesseract**, **openpyxl**, **python-docx**, **python-pptx**, **defusedxml**, **opencv-python**, **pdf2image**, **beautifulsoup4**: Para la extracción de datos de varios formatos de archivo.
-- **monday-api-python-sdk**: Para la integración con monday.com.
-- **sqlmodel**, **psycopg2-binary**, **pgvector**, **langgraph-checkpoint-postgres**: Para la conexión, ORM y base de datos PostgreSQL con capacidades vectoriales.
-- **pyppeteer**, **nest-asyncio**, **httpx**: Para la navegación y solicitudes web asíncronas.
-- **pyjwt**, **pwdlib**: Para la autenticación y gestión de contraseñas.
+---
+© 2026 AIDevTeam - Automatización Inteligente de Software.
