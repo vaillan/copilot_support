@@ -5,7 +5,6 @@
 python-dotenv
 pydantic
 pydantic-settings
-mcp
 langchain>=0.1
 langgraph>=0.1
 langchain-core>=0.1
@@ -14,3 +13,4 @@ langgraph-checkpoint-sqlite
 langchain-google-genai>=0.0.10
 langchain-openai>=0.1.0
 langchain-anthropic>=0.3.1
+fastmcp

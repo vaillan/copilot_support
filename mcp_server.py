@@ -1,4 +1,4 @@
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 from app.main import crear_grafo
 
 # 1. Inicializamos el Servidor MCP
