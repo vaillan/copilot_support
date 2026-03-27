@@ -11,26 +11,20 @@ from app.models.llm_factory import get_llm
 settings = Settings()
 fileSystem = File(directory="prompts")
 
-# ==========================================
-# 1. HERRAMIENTA DE FINALIZACIÓN (Pydantic)
-# ==========================================
+
 class CodigoCompletado(BaseModel):
     """Llama a esta herramienta EXCLUSIVAMENTE cuando hayas terminado de programar todos los pasos del plan."""
     resumen_cambios: str = Field(description="Resumen detallado de los archivos que creaste o modificaste.")
 
-# ==========================================
-# 2. FUNCIÓN DEL AGENTE CODIFICADOR
-# ==========================================
+
 def agente_codificador(state: ProjectState) -> Command:
     """
     El Programador lee el plan de acción, escribe los archivos en el disco duro
     y corrige errores si el Revisor (QA) los encuentra.
     """
-    # 1. Obtenemos la ruta dinámica desde el estado
+    
     directorio = state.get("directorio_proyecto", "./")
     
-    # 2. Configuramos las herramientas nativas de escritura y lectura
-    # El root_dir actúa como una "cárcel" de seguridad para no dañar otros archivos de tu PC
     toolkit_archivos = FileManagementToolkit(root_dir=directorio)
     
     # Filtramos SOLO las herramientas que el codificador necesita
@@ -39,32 +33,25 @@ def agente_codificador(state: ProjectState) -> Command:
         if t.name in["read_file", "write_file"]
     ]
     
-    # 3. Configuramos el LLM
     llm = get_llm(temperature=0.0)
     
     # Le "atamos" las herramientas de archivos + la herramienta de finalización
     llm_con_herramientas = llm.bind_tools(herramientas_codigo + [CodigoCompletado])
     
-    # 4. Extraemos el contexto del Estado
     plan = state.get("plan_de_accion", {})
     errores = state.get("errores_terminal", "")
     
-    # 5. Construimos el Prompt del Sistema
+    # Prompt del Sistema
     prompt_sistema = fileSystem.get_file_content(file_name="codificador_prompt.md")
     
     # CICLO DE AUTOCORRECCIÓN: Si el Revisor encontró errores, se los inyectamos aquí
     if errores:
         prompt_sistema += f"\n\n ATENCIÓN: Tu código anterior falló las pruebas. Corrige los siguientes errores:\n{errores}"
         
-    # Preparamos los mensajes
     mensajes =[SystemMessage(content=prompt_sistema)] + state["messages"]
     
-    # 6. Invocamos al modelo
     respuesta = llm_con_herramientas.invoke(mensajes)
     
-    # ==========================================
-    # 7. ENRUTAMIENTO DINÁMICO (Command)
-    # ==========================================
     if respuesta.tool_calls:
         # Buscamos si el LLM decidió que ya terminó su trabajo
         for tool_call in respuesta.tool_calls:

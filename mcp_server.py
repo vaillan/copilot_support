@@ -18,13 +18,11 @@ from langchain_core.messages import HumanMessage
 from app.main import crear_grafo
 
 
-# 1. Inicializamos el Servidor MCP
+
 mcp = FastMCP("AIDevTeam")
 
-# 2. Compilamos el grafo una sola vez al iniciar el servidor
 agentes_app = crear_grafo()
 
-# 3. Exponemos nuestro Grafo como una Herramienta MCP usando el decorador @mcp.tool()
 @mcp.tool()
 def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str) -> str:
     """
@@ -69,7 +67,6 @@ def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str) -> str
     except Exception as e:
         return f" El equipo de agentes falló con un error interno: {str(e)}"
 
-# 4. Punto de entrada para ejecutar el servidor
+
 if __name__ == "__main__":
-    # run() inicia el servidor escuchando por la terminal (stdio)
     mcp.run(transport="stdio")

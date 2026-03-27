@@ -27,9 +27,3 @@ def crear_grafo():
     memory = MemorySaver()
 
     return workflow.compile(checkpointer=memory)
-
-#if __name__ == "__main__":
-#    app = crear_grafo()
- 
-#    # Aquí puedes ejecutar app.stream(...) como vimos en la Tarea 4
-#    print("Grafo modular compilado con éxito.")

@@ -35,10 +35,8 @@ def agente_revisor(state: ProjectState) -> Command:
     """
     directorio = state.get("directorio_proyecto", "./")
     
-    # 1. Herramienta de Terminal (ShellTool)
     terminal = ShellTool()
     
-    # 2. Herramienta de Lectura (FileManagementToolkit)
     # Útil por si los tests generan un archivo 'coverage.xml' o 'error.log'
     toolkit_archivos = FileManagementToolkit(root_dir=directorio)
     herramientas_lectura =[
@@ -49,22 +47,18 @@ def agente_revisor(state: ProjectState) -> Command:
     # Unimos todas las herramientas del QA
     herramientas_qa =[terminal, finalizar_revision] + herramientas_lectura
     
-    # 3. Configuramos el LLM
     llm = get_llm(temperature=0.0)
     llm_con_herramientas = llm.bind_tools(herramientas_qa)
     
-    # 4. Construimos el Prompt del Sistema
+
     prompt_sistema = fileSystem.get_file_content(file_name="revisor_prompt.md")
     
     # Preparamos los mensajes
     mensajes =[SystemMessage(content=prompt_sistema)] + state["messages"]
     
-    # 5. Invocamos al modelo
     respuesta = llm_con_herramientas.invoke(mensajes)
     
-    # ==========================================
-    # 6. ENRUTAMIENTO DINÁMICO (El Bucle de Feedback)
-    # ==========================================
+
     if respuesta.tool_calls:
         for tool_call in respuesta.tool_calls:
             # Si el agente decide que ya terminó de evaluar...
