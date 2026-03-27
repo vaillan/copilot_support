@@ -2,7 +2,6 @@ from langgraph.graph import StateGraph, START
 from langgraph.checkpoint.memory import MemorySaver
 from app.models.models import ProjectState
 
-# Importamos las funciones desde tus archivos modulares
 from app.agents.agente_planificador import agente_planificador, nodo_herramientas_planificador
 from app.agents.agente_codificador import agente_codificador, nodo_herramientas_codificador
 from app.agents.agente_revisor import agente_revisor, nodo_herramientas_revisor
@@ -10,20 +9,18 @@ from app.agents.agente_revisor import agente_revisor, nodo_herramientas_revisor
 def crear_grafo():
     workflow = StateGraph(ProjectState)
 
-    # 1. Agregamos los Nodos (Cerebros)
+    # Nodos (Cerebros)
     workflow.add_node("agente_planificador", agente_planificador)
     workflow.add_node("agente_codificador", agente_codificador)
     workflow.add_node("agente_revisor", agente_revisor)
 
-    # 2. Agregamos los Nodos (Herramientas)
+    # Nodos (Herramientas)
     workflow.add_node("nodo_herramientas_planificador", nodo_herramientas_planificador)
     workflow.add_node("nodo_herramientas_codificador", nodo_herramientas_codificador)
     workflow.add_node("nodo_herramientas_revisor", nodo_herramientas_revisor)
 
-    # 3. Punto de entrada
     workflow.add_edge(START, "agente_planificador")
 
-    # 4. Agregamos el Checkpointer para la memoria por sesión
     memory = MemorySaver()
 
     return workflow.compile(checkpointer=memory)
