@@ -1,5 +1,4 @@
 import os
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.utilities import SearxSearchWrapper
 from langchain_community.agent_toolkits import FileManagementToolkit
 from typing import List
@@ -9,6 +8,7 @@ from langgraph.types import Command
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import Tool
 from app.settings.settings import Settings
+from app.models.llm_factory import get_llm
 from app.models.models import ProjectState
 from app.utils.files import File
 
@@ -55,15 +55,7 @@ def agente_planificador(state: ProjectState) -> Command:
     herramientas_investigacion = herramientas_lectura + [tool_busqueda]
     
     # 4. Configuramos el LLM
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.1-pro-preview",
-        google_api_key=settings.LLM_API_KEY,
-        temperature=0.0,
-        top_p=0.7,
-        max_retries=5,
-        timeout=15,
-        transport='grpc_asyncio',
-    )
+    llm = get_llm(temperature=0.0)
     
     # EL TRUCO DE LANGGRAPH: Le pasamos las herramientas de investigación 
     # Y TAMBIÉN el modelo Pydantic (PlanDeAccion) como si fuera una herramienta más.

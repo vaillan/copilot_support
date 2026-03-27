@@ -1,12 +1,12 @@
 from pydantic import BaseModel, Field
 from langgraph.types import Command
 from langchain_core.messages import SystemMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_core.messages import ToolMessage
 from app.utils.files import File
 from app.models.models import ProjectState
 from app.settings.settings import Settings
+from app.models.llm_factory import get_llm
 
 settings = Settings()
 fileSystem = File(directory="prompts")
@@ -40,15 +40,7 @@ def agente_codificador(state: ProjectState) -> Command:
     ]
     
     # 3. Configuramos el LLM
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.1-pro-preview",
-        google_api_key=settings.LLM_API_KEY,
-        temperature=0.0,
-        top_p=0.7,
-        max_retries=5,
-        timeout=15,
-        transport='grpc_asyncio',
-    )
+    llm = get_llm(temperature=0.0)
     
     # Le "atamos" las herramientas de archivos + la herramienta de finalización
     llm_con_herramientas = llm.bind_tools(herramientas_codigo + [CodigoCompletado])

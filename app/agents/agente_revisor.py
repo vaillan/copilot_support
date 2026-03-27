@@ -1,7 +1,7 @@
 from langgraph.graph import END
 from langgraph.types import Command
 from langchain_core.messages import SystemMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
+from app.models.llm_factory import get_llm
 from langchain_community.tools import ShellTool
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_core.tools import tool
@@ -50,15 +50,7 @@ def agente_revisor(state: ProjectState) -> Command:
     herramientas_qa =[terminal, finalizar_revision] + herramientas_lectura
     
     # 3. Configuramos el LLM
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3.1-pro-preview",
-        google_api_key=settings.LLM_API_KEY,
-        temperature=0.0,
-        top_p=0.7,
-        max_retries=5,
-        timeout=15,
-        transport='grpc_asyncio',
-    )
+    llm = get_llm(temperature=0.0)
     llm_con_herramientas = llm.bind_tools(herramientas_qa)
     
     # 4. Construimos el Prompt del Sistema
