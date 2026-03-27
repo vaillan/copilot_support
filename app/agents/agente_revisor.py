@@ -54,6 +54,11 @@ def agente_revisor(state: ProjectState) -> Command:
         codigo_escrito=state.get("codigo_escrito", "Sin reporte.")
     )
     
+    # Manejo de Resumen (Summarization)
+    resumen = state.get("summary", "")
+    if resumen:
+        prompt_sistema += f"\n\n**Resumen de la conversación anterior:**\n{resumen}"
+    
     # Preparamos los mensajes
     mensajes =[SystemMessage(content=prompt_sistema)] + state["messages"]
     
@@ -68,20 +73,22 @@ def agente_revisor(state: ProjectState) -> Command:
                 errores = tool_call["args"].get("reporte_errores", "")
                 
                 if aprobado:
-                    # ÉXITO: El código funciona. Pasamos al Documentador.
+                    # ÉXITO: El código funciona. Pasamos al Documentador (via resumidor).
                     return Command(
                         update={
-                            "errores_terminal": "Ninguno. Código aprobado."
+                            "errores_terminal": "Ninguno. Código aprobado.",
+                            "proximo_paso": "agente_documentador"
                         },
-                        goto="agente_documentador"
+                        goto="summarize_messages"
                     )
                 else:
-                    # FALLO: Hay errores. Devolvemos el control al Codificador.
+                    # FALLO: Hay errores. Devolvemos el control al Codificador (via resumidor).
                     return Command(
                         update={
-                            "errores_terminal": errores
+                            "errores_terminal": errores,
+                            "proximo_paso": "agente_codificador"
                         },
-                        goto="agente_codificador"
+                        goto="summarize_messages"
                     )
         
         # Si no llamó a finalizar_revision, significa que está usando la terminal o leyendo logs
@@ -94,9 +101,10 @@ def agente_revisor(state: ProjectState) -> Command:
         # Forzamos al agente a seguir en su loop si responde solo con texto
         return Command(
             update={
-                "messages": [respuesta]
+                "messages": [respuesta],
+                "proximo_paso": "agente_revisor"
             },
-            goto="agente_revisor"
+            goto="summarize_messages"
         )
 
 def nodo_herramientas_revisor(state: ProjectState) -> Command:
@@ -129,7 +137,8 @@ def nodo_herramientas_revisor(state: ProjectState) -> Command:
             
     return Command(
         update={
-            "messages": respuestas_tools
+            "messages": respuestas_tools,
+            "proximo_paso": "agente_revisor"
         },
-        goto="agente_revisor"
+        goto="summarize_messages"
     )
