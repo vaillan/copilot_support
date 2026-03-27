@@ -76,6 +76,32 @@ LLM_MODEL=gemini-1.5-pro
 LLM_API_KEY=tu_api_key_aqui
 ```
 
+### 4. Configuración del Cliente MCP (ej. Roo Code, Claude Desktop)
+Para integrar AIDevTeam como un servidor MCP en tu cliente preferido, agrega la siguiente configuración en el archivo de ajustes de MCP (`mcp_settings.json` o similar):
+
+```json
+{
+	"mcpServers": {
+		"AIDevTeam": {
+			"command": "/home/valentin-ortiz/dev/copilot_support/.venv/bin/python",
+			"args": [
+				"/home/valentin-ortiz/dev/copilot_support/mcp_server.py"
+			],
+			"env": {
+				"LLM_API_KEY": "tu_api_key",
+				"LLM_MODEL": "gemini-3.1-pro-preview",
+				"LLM_PROVIDER": "google",
+				"FASTMCP_LOG_LEVEL": "CRITICAL"
+			},
+			"alwaysAllow": [
+				"delegar_tarea_a_equipo_ia"
+			],
+			"timeout": 600
+		}
+	}
+}
+```
+
 ## 💻 Uso
 
 ### Iniciar el Servidor MCP
