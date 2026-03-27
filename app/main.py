@@ -10,7 +10,6 @@ from pathlib import Path
 from app.agents.agente_planificador import agente_planificador, nodo_herramientas_planificador
 from app.agents.agente_codificador import agente_codificador, nodo_herramientas_codificador
 from app.agents.agente_revisor import agente_revisor, nodo_herramientas_revisor
-from app.agents.agente_documentador import agente_documentador, nodo_herramientas_documentador
 
 
 def crear_grafo():
@@ -20,13 +19,11 @@ def crear_grafo():
     workflow.add_node("agente_planificador", agente_planificador)
     workflow.add_node("agente_codificador", agente_codificador)
     workflow.add_node("agente_revisor", agente_revisor)
-    workflow.add_node("agente_documentador", agente_documentador)
 
     # (Herramientas)
     workflow.add_node("nodo_herramientas_planificador", nodo_herramientas_planificador)
     workflow.add_node("nodo_herramientas_codificador", nodo_herramientas_codificador)
     workflow.add_node("nodo_herramientas_revisor", nodo_herramientas_revisor)
-    workflow.add_node("nodo_herramientas_documentador", nodo_herramientas_documentador)
 
     # Punto de entrada
     workflow.add_edge(START, "agente_planificador")
