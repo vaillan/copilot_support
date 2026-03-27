@@ -15,20 +15,20 @@ from app.agents.agente_revisor import agente_revisor, nodo_herramientas_revisor
 def crear_grafo():
     workflow = StateGraph(ProjectState)
 
-    # (Cerebros)
+    # 1. Agregamos los Nodos (Cerebros)
     workflow.add_node("agente_planificador", agente_planificador)
     workflow.add_node("agente_codificador", agente_codificador)
     workflow.add_node("agente_revisor", agente_revisor)
 
-    # (Herramientas)
+    # 2. Agregamos los Nodos (Herramientas)
     workflow.add_node("nodo_herramientas_planificador", nodo_herramientas_planificador)
     workflow.add_node("nodo_herramientas_codificador", nodo_herramientas_codificador)
     workflow.add_node("nodo_herramientas_revisor", nodo_herramientas_revisor)
 
-    # Punto de entrada
+    # 3. Punto de entrada
     workflow.add_edge(START, "agente_planificador")
 
-    # Persistencia para cuando se reinicie o cierre el editor "memoria_agentes.db"
+    # Crea un archivo fisico en tu proyecto llamado "memoria_agentes.db"
     ruta_raiz = Path(__file__).parent.parent
     ruta_db = ruta_raiz / "memoria_agentes.db"
     
