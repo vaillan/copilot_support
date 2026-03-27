@@ -29,9 +29,16 @@ def crear_grafo():
     workflow.add_edge(START, "agente_planificador")
 
     # Crea un archivo fisico en tu proyecto llamado "memoria_agentes.db"
+    # 1. Calculamos la ruta absoluta de la raíz de tu proyecto
+    # __file__ es la ruta de este archivo (app/main.py)
+    # .parent es la carpeta (app/)
+    # .parent.parent es la raíz del proyecto (donde está mcp_server.py)
     ruta_raiz = Path(__file__).parent.parent
+    
+    # 2. Definimos la ruta exacta para la base de datos
     ruta_db = ruta_raiz / "memoria_agentes.db"
     
+    # 3. Conectamos SQLite usando esa ruta absoluta
     conn = sqlite3.connect(str(ruta_db), check_same_thread=False)
     memory = SqliteSaver(conn)
 
