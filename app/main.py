@@ -1,11 +1,6 @@
 from langgraph.graph import StateGraph, START
 from app.models.models import ProjectState
 
-# Importamos el checkpointer persistente en disco
-from langgraph.checkpoint.sqlite import SqliteSaver
-import sqlite3
-from pathlib import Path
-
 # Importamos las funciones desde tus archivos modulares
 from app.agents.agente_planificador import agente_planificador, nodo_herramientas_planificador
 from app.agents.agente_codificador import agente_codificador, nodo_herramientas_codificador
@@ -28,6 +23,10 @@ def crear_grafo():
     # 3. Punto de entrada
     workflow.add_edge(START, "agente_planificador")
 
+    # Importamos el checkpointer persistente en disco
+    from langgraph.checkpoint.sqlite import SqliteSaver
+    import sqlite3
+    from pathlib import Path
     # Crea un archivo fisico en tu proyecto llamado "memoria_agentes.db"
     # 1. Calculamos la ruta absoluta de la raíz de tu proyecto
     # __file__ es la ruta de este archivo (app/main.py)
