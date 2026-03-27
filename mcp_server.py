@@ -1,7 +1,22 @@
-import hashlib
+import os
+import sys
+
+# Bloqueamos la impresión de cualquier cosa que no sea JSON
+class MuteStderr:
+    def write(self, x): pass
+    def flush(self): pass
+
+# Guardamos el original por si acaso, pero silenciamos stderr que es donde sale el banner rojo
+sys.stderr = MuteStderr()
+
+# Forzamos silencio en la librería
+os.environ["FASTMCP_LOG_LEVEL"] = "CRITICAL"
+
 from fastmcp import FastMCP
+import hashlib
 from langchain_core.messages import HumanMessage
 from app.main import crear_grafo
+
 
 # 1. Inicializamos el Servidor MCP
 mcp = FastMCP("AIDevTeam")
@@ -57,4 +72,4 @@ def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str) -> str
 # 4. Punto de entrada para ejecutar el servidor
 if __name__ == "__main__":
     # run() inicia el servidor escuchando por la terminal (stdio)
-    mcp.run()
+    mcp.run(transport="stdio")
