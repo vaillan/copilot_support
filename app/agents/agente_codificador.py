@@ -25,10 +25,10 @@ def agente_codificador(state: ProjectState) -> Command:
     # 2. Configuramos las herramientas nativas de escritura y lectura
     toolkit_archivos = FileManagementToolkit(root_dir=directorio)
     
-    # Filtramos SOLO las herramientas que el codificador necesita (lectura, escritura y búsqueda)
+    # Filtramos SOLO las herramientas que el codificador necesita
     herramientas_codigo =[
         t for t in toolkit_archivos.get_tools() 
-        if t.name in["read_file", "write_file", "list_directory"]
+        if t.name in["read_file", "write_file"]
     ]
     
     # 3. Configuramos el LLM
@@ -99,32 +99,23 @@ def nodo_herramientas_codificador(state: ProjectState) -> Command:
     directorio = state.get("directorio_proyecto", "./")
     
     toolkit = FileManagementToolkit(root_dir=directorio)
-    herramientas = {t.name: t for t in toolkit.get_tools() if t.name in ["read_file", "write_file", "list_directory"]}
+    herramientas = {t.name: t for t in toolkit.get_tools() if t.name in ["read_file", "write_file"]}
     
     ultimo_mensaje = state["messages"][-1]
     respuestas_tools =[]
     
-    # 2. Identificar si todas las herramientas llamadas son de "lectura" para evitar el HITL
-    todas_lectura = True
     for tool_call in ultimo_mensaje.tool_calls: # type: ignore
         nombre = tool_call["name"]
         args = tool_call["args"]
         
-        # Si usa write_file, ya no es solo lectura
-        if nombre == "write_file":
-            todas_lectura = False
-            
         if nombre in herramientas:
             resultado = herramientas[nombre].invoke(args)
             respuestas_tools.append(ToolMessage(content=str(resultado), tool_call_id=tool_call["id"], name=nombre))
             
-    # Si todas fueron lectura, vamos al nodo "silent" para no pedir permiso
-    proximo = "agente_codificador_silent" if todas_lectura else "agente_codificador"
-            
     return Command(
         update={
             "messages": respuestas_tools,
-            "proximo_paso": proximo
+            "proximo_paso": "agente_codificador"
         },
         goto="summarize_messages"
     )
