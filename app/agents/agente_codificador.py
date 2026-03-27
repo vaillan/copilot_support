@@ -115,11 +115,7 @@ def nodo_herramientas_codificador(state: ProjectState) -> Command:
             todas_lectura = False
             
         if nombre in herramientas:
-            try:
-                resultado = herramientas[nombre].invoke(args)
-            except Exception as e:
-                resultado = f"Error al ejecutar la herramienta {nombre}: {str(e)}"
-            
+            resultado = herramientas[nombre].invoke(args)
             respuestas_tools.append(ToolMessage(content=str(resultado), tool_call_id=tool_call["id"], name=nombre))
             
     # Si todas fueron lectura, vamos al nodo "silent" para no pedir permiso

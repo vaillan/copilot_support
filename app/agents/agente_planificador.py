@@ -116,13 +116,7 @@ def nodo_herramientas_planificador(state: ProjectState) -> Command:
         
         # 3. Ejecutamos la herramienta y guardamos el resultado
         if nombre in herramientas:
-            try:
-                # Extraemos el string de búsqueda si args es un diccionario
-                input_args = args.get("query", args) if isinstance(args, dict) and nombre == "busqueda_web_searx" else args
-                resultado = herramientas[nombre].invoke(input_args)
-            except Exception as e:
-                resultado = f"Error al ejecutar la herramienta {nombre}: {str(e)}"
-                
+            resultado = herramientas[nombre].invoke(args)
             respuestas_tools.append(ToolMessage(content=str(resultado), tool_call_id=tool_call["id"], name=nombre))
             
     return Command(
