@@ -69,14 +69,6 @@ def get_llm(temperature: float = 0.0):
             timeout=15,
             **extra_kwargs
         ) # type: ignore
-    elif provider == "open-router":
-        from langchain_openrouter import ChatOpenRouter
-        return ChatOpenRouter(
-            model=settings.LLM_MODEL,
-            temperature=temperature,
-            api_key=settings.LLM_API_KEY, # type: ignore
-            max_retries=5,
-        )
     else:
         # Fallback to init_chat_model if available or just raise error
         try:
