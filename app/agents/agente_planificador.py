@@ -80,6 +80,19 @@ def agente_planificador(state: ProjectState) -> Command:
         )
 
 def nodo_herramientas_planificador(state: ProjectState) -> Command:
+    """
+    Ejecuta las herramientas de investigación (lectura de archivos, listado de directorios y búsqueda web) 
+    solicitadas por el planificador.
+    
+    Procesa las llamadas a herramientas en el último mensaje del estado, las ejecuta 
+    y devuelve los resultados al agente planificador para que continúe con el análisis.
+    
+    Args:
+        state (ProjectState): El estado actual del proyecto.
+        
+    Returns:
+        Command: Un comando de LangGraph que actualiza los mensajes y redirige al agente planificador.
+    """
     directorio = state.get("directorio_proyecto", "./")
     
     toolkit = FileManagementToolkit(root_dir=directorio)

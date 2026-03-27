@@ -93,6 +93,18 @@ def agente_revisor(state: ProjectState) -> Command:
         )
 
 def nodo_herramientas_revisor(state: ProjectState) -> Command:
+    """
+    Ejecuta las herramientas de revisión (terminal y lectura de archivos) solicitadas por el revisor.
+    
+    Procesa las llamadas a herramientas en el último mensaje del estado, las ejecuta 
+    y devuelve los resultados al agente revisor para que determine si el código es correcto.
+    
+    Args:
+        state (ProjectState): El estado actual del proyecto.
+        
+    Returns:
+        Command: Un comando de LangGraph que actualiza los mensajes y redirige al agente revisor.
+    """
     directorio = state.get("directorio_proyecto", "./")
     
     toolkit = FileManagementToolkit(root_dir=directorio)

@@ -80,6 +80,19 @@ def agente_codificador(state: ProjectState) -> Command:
         )
 
 def nodo_herramientas_codificador(state: ProjectState) -> Command:
+    """
+    Ejecuta las herramientas de manejo de archivos (lectura y escritura) solicitadas por el codificador.
+    
+    Procesa las llamadas a herramientas presentes en el último mensaje del estado,
+    ejecuta la acción correspondiente en el sistema de archivos y devuelve los
+    resultados al agente codificador.
+    
+    Args:
+        state (ProjectState): El estado actual del proyecto.
+        
+    Returns:
+        Command: Un comando de LangGraph que actualiza los mensajes y redirige al agente codificador.
+    """
     directorio = state.get("directorio_proyecto", "./")
     
     toolkit = FileManagementToolkit(root_dir=directorio)

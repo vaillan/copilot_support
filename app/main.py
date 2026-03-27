@@ -7,6 +7,16 @@ from app.agents.agente_codificador import agente_codificador, nodo_herramientas_
 from app.agents.agente_revisor import agente_revisor, nodo_herramientas_revisor
 
 def crear_grafo():
+    """
+    Configura y compila el grafo de estados para el flujo de trabajo de los agentes.
+    
+    Define los nodos para los agentes planificador, codificador y revisor, así como
+    sus respectivos nodos de herramientas, estableciendo el punto de inicio y el
+    sistema de persistencia de memoria.
+    
+    Returns:
+        CompiledGraph: El grafo de estados listo para ser ejecutado.
+    """
     workflow = StateGraph(ProjectState)
 
     # Nodos (Cerebros)
