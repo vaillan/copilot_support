@@ -40,8 +40,15 @@ def agente_codificador(state: ProjectState) -> Command:
     ]
     
     # 3. Configuramos el LLM
-    from app.settings.settings import get_llm
-    llm = get_llm(temperature=0.0)
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-3.1-pro-preview",
+        google_api_key=settings.GEMINI_API_KEY,
+        temperature=0.0,
+        top_p=0.7,
+        max_retries=5,
+        timeout=15,
+        transport='grpc_asyncio',
+    )
     
     # Le "atamos" las herramientas de archivos + la herramienta de finalización
     llm_con_herramientas = llm.bind_tools(herramientas_codigo + [CodigoCompletado])

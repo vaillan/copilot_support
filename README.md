@@ -68,40 +68,15 @@ Añade lo siguiente a tu archivo de configuración de Claude Desktop:
 {
   "mcpServers": {
     "equipo-langgraph": {
-      "command": "/ruta/absoluta/al/proyecto/.venv/bin/python",
-      "args": ["/ruta/absoluta/al/proyecto/mcp_server.py"],
+      "command": "python",
+      "args": ["/ruta/absoluta/a/mcp_server.py"],
       "env": {
-        "LLM_API_KEY": "tu_clave_api_aquí",
-        "LLM_MODEL": "gemini-3.1-pro-preview",
-        "LLM_PROVIDER": "google"
+        "GEMINI_API_KEY": "tu_clave_api_aquí"
       }
     }
   }
 }
 ```
-
-## Definición del Servidor MCP
-
-El servidor MCP en este proyecto se define de manera simplificada utilizando **FastMCP**, una abstracción de alto nivel que facilita la creación de servidores. Esto se realiza en el archivo `mcp_server.py`:
-
-```python
-from mcp.server.fastmcp import FastMCP
-
-# 1. Inicialización del servidor
-mcp = FastMCP("EquipoAgentesLangGraph")
-
-# 2. Exposición de herramientas mediante decoradores
-@mcp.tool()
-def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str, thread_id: str = "1", approve: bool = False) -> str:
-    # Lógica de la herramienta y llamada a LangGraph...
-    pass
-
-# 3. Ejecución del servidor a través de stdio
-if __name__ == "__main__":
-    mcp.run()
-```
-
-Esta estructura permite exponer funciones de Python regulares como herramientas MCP simplemente añadiéndoles el decorador `@mcp.tool()`, y el servidor se encarga automáticamente del ciclo de vida y la comunicación mediante la entrada/salida estándar (`stdio`).
 
 ## Herramientas Expuestas
 
