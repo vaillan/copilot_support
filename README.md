@@ -1,84 +1,68 @@
 # MiEquipoLangGraph - Servidor MCP
 
-![LangGraph](https://img.shields.io/badge/LangGraph-000000?style=for-the-badge&logo=langchain&logoColor=white)
-![FastMCP](https://img.shields.io/badge/FastMCP-005571?style=for-the-badge)
-![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
-
-## 📋 Descripción General
+## Descripción
 
 **MiEquipoLangGraph** es un servidor compatible con el [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) que permite delegar tareas de programación complejas a un equipo de agentes autónomos orquestados con [LangGraph](https://www.langchain.com/langgraph). 
 
-El sistema utiliza una arquitectura de agentes especializados para planificar, ejecutar y revisar cambios en el código de manera iterativa, asegurando que las soluciones propuestas sean funcionales, seguras y sigan estrictamente los requisitos del usuario.
+El sistema utiliza una arquitectura de agentes especializados para planificar, ejecutar y revisar cambios en el código de manera iterativa, asegurando que las soluciones propuestas sean funcionales y sigan los requisitos del usuario.
 
-## ✨ Características Principales
+## Características
 
-- **🤖 Arquitectura de Agentes Especializados**: Orquestación colaborativa de tres agentes (Planificador, Codificador y Revisor) con roles bien definidos.
-- **🔌 Integración MCP**: Expone una herramienta (`delegar_tarea_a_equipo_ia`) directamente consumible por clientes MCP como Claude Desktop, Roo-Code, Cursor o Windsurf.
-- **⚙️ Automatización End-to-End**: El equipo planifica la arquitectura, escribe el código fuente, y valida los errores de ejecución automáticamente.
-- **👨‍💻 Human-in-the-loop (Aprobación Manual)**: Implementa pausas de ejecución (interruptions) que permiten al desarrollador revisar y aprobar el plan de desarrollo propuesto por el Arquitecto antes de escribir código.
-- **📂 Contexto del Proyecto Activo**: Diseñado para operar dinámicamente sobre el sistema de archivos de cualquier directorio de proyecto especificado.
+- **Arquitectura de Agentes**: Orquestación de tres agentes especializados (Planificador, Codificador y Revisor).
+- **Integración MCP**: Expone una herramienta (`delegar_tarea_a_equipo_ia`) que puede ser consumida por clientes MCP como Claude Desktop o Roo-Code.
+- **Automatización Completa**: El equipo es capaz de planificar la solución, escribir el código y validar los errores de ejecución automáticamente.
+- **Contexto del Proyecto**: Diseñado para operar directamente sobre el sistema de archivos del proyecto especificado.
 
-## 🧠 Flujo de Trabajo de los Agentes
+## Cómo Funciona
 
-El sistema utiliza un grafo de estados (`StateGraph` de LangGraph) que gestiona el ciclo de vida de la tarea a través de los siguientes nodos:
+El sistema utiliza un grafo de estados (`StateGraph`) que gestiona el flujo de trabajo entre los siguientes nodos:
 
-1. **🏗️ Agente Planificador (Arquitecto)**:
-   - Analiza la instrucción inicial del usuario.
-   - Explora el directorio del proyecto para entender el contexto.
-   - Diseña un plan de acción detallado paso a paso.
-   - *Pausa la ejecución esperando aprobación (Human-in-the-loop).*
-2. **💻 Agente Codificador (Programador)**:
-   - Toma el plan aprobado como referencia.
-   - Implementa los cambios directamente en el código base utilizando herramientas de sistema de archivos.
-3. **🕵️ Agente Revisor (QA)**:
-   - Revisa el código implementado por el Programador.
-   - Ejecuta validaciones (linters, tests, ejecución de comandos en terminal).
-   - Si encuentra fallos o discrepancias, genera retroalimentación y devuelve el control al Codificador para que corrija los errores (Ciclo Iterativo).
+1.  **Agente Planificador (Arquitecto)**: Analiza la instrucción del usuario y diseña un plan de acción detallado.
+2.  **Agente Codificador (Programador)**: Implementa los cambios en el código siguiendo el plan establecido. Utiliza herramientas para interactuar con el sistema de archivos.
+3.  **Agente Revisor (QA)**: Ejecuta el código o realiza pruebas para identificar errores. Si encuentra fallos, el ciclo se repite para corregirlos.
 
-## 🚀 Requisitos Previos
+## Requisitos Previos
 
 - Python 3.10 o superior.
-- Clave de API válida para un modelo fundacional (por defecto, Google Gemini).
-- Dependencias de Python instaladas (ver `requirements.txt`).
+- Clave de API de Gemini (u otro modelo configurado en el entorno).
+- Dependencias instaladas (ver `requirements.txt`).
 
-## 🛠️ Instalación y Configuración
+## Instalación
 
-1. **Clonar el repositorio**:
-   ```bash
-   git clone https://github.com/tu_usuario/copilot_support.git
-   cd copilot_support
-   ```
+1.  Clona el repositorio:
+    ```bash
+    git clone https://github.com/tu_usuario/copilot_support.git
+    cd copilot_support
+    ```
 
-2. **Crear y activar un entorno virtual**:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # En Windows: .venv\Scripts\activate
-   ```
+2.  Crea un entorno virtual e instálalo:
+    ```bash
+    python -m venv .venv
+    source .venv/bin/activate  # En Windows: .venv\Scripts\activate
+    ```
 
-3. **Instalar las dependencias**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+3.  Instala las dependencias:
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-4. **Configurar variables de entorno**:
-   Crea un archivo `.env` en la raíz del proyecto basándote en un posible archivo `.env.example`, o configurando al menos:
-   ```env
-   GEMINI_API_KEY="tu_clave_api_aqui"
-   # Configuraciones opcionales:
-   # LLM_MODEL="gemini-3.1-pro-preview"
-   ```
+4.  Configura las variables de entorno en un archivo `.env`:
+    ```env
+    GEMINI_API_KEY="tu_clave_api_aquí"
+    # Otras configuraciones opcionales (ver app/settings/settings.py)
+    ```
 
-## 🔌 Uso como Servidor MCP
+## Uso como Servidor MCP
 
-El servidor se comunica a través del transporte `stdio` (entrada/salida estándar). Para ejecutarlo de forma aislada:
+Para ejecutar el servidor MCP a través del transporte `stdio`, utiliza el siguiente comando:
 
 ```bash
 python mcp_server.py
 ```
 
-### Configuración en Clientes MCP (Ej. Claude Desktop o Roo-Code)
+### Configuración en Claude Desktop
 
-Para integrar este servidor en tu cliente MCP favorito, debes añadir la siguiente configuración en tu archivo de configuración (`claude_desktop_config.json` o la configuración de servidores de la extensión):
+Añade lo siguiente a tu archivo de configuración de Claude Desktop:
 
 ```json
 {
@@ -87,59 +71,65 @@ Para integrar este servidor en tu cliente MCP favorito, debes añadir la siguien
       "command": "/ruta/absoluta/al/proyecto/.venv/bin/python",
       "args": ["/ruta/absoluta/al/proyecto/mcp_server.py"],
       "env": {
-        "GEMINI_API_KEY": "tu_clave_api_aqui"
+        "LLM_API_KEY": "tu_clave_api_aquí",
+        "LLM_MODEL": "gemini-3.1-pro-preview",
+        "LLM_PROVIDER": "google"
       }
     }
   }
 }
 ```
-*Asegúrate de reemplazar `/ruta/absoluta/al/proyecto/` con la ruta real en tu sistema.*
 
-## 🧰 Herramientas MCP Expuestas
+## Definición del Servidor MCP
+
+El servidor MCP en este proyecto se define de manera simplificada utilizando **FastMCP**, una abstracción de alto nivel que facilita la creación de servidores. Esto se realiza en el archivo `mcp_server.py`:
+
+```python
+from mcp.server.fastmcp import FastMCP
+
+# 1. Inicialización del servidor
+mcp = FastMCP("EquipoAgentesLangGraph")
+
+# 2. Exposición de herramientas mediante decoradores
+@mcp.tool()
+def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str, thread_id: str = "1", approve: bool = False) -> str:
+    # Lógica de la herramienta y llamada a LangGraph...
+    pass
+
+# 3. Ejecución del servidor a través de stdio
+if __name__ == "__main__":
+    mcp.run()
+```
+
+Esta estructura permite exponer funciones de Python regulares como herramientas MCP simplemente añadiéndoles el decorador `@mcp.tool()`, y el servidor se encarga automáticamente del ciclo de vida y la comunicación mediante la entrada/salida estándar (`stdio`).
+
+## Herramientas Expuestas
 
 ### `delegar_tarea_a_equipo_ia`
-Invoca al equipo de agentes LangGraph para resolver un problema de programación o crear una nueva característica.
+Invoca al equipo de agentes para resolver un problema de programación.
+- **Argumentos**:
+  - `instruccion`: Descripción de la tarea (ej. "Crea un endpoint de login con JWT").
+  - `directorio_proyecto`: Ruta absoluta de la carpeta donde se debe trabajar.
 
-**Argumentos**:
-- `instruccion` *(string, requerido)*: Descripción detallada de la tarea a realizar (ej. "Crea un sistema de autenticación con JWT y base de datos SQLite").
-- `directorio_proyecto` *(string, requerido)*: Ruta absoluta de la carpeta del proyecto donde se realizarán los cambios.
-- `thread_id` *(string, opcional, por defecto "1")*: Identificador de la sesión/hilo para la persistencia del grafo, útil para retomar la ejecución en el Human-in-the-loop.
-- `approve` *(boolean, opcional, por defecto false)*: Bandera que, al establecerse en `True`, indica a LangGraph que el plan generado por el Arquitecto ha sido aprobado y el Programador puede comenzar a escribir código.
-
-**Flujo de Aprobación (Human-in-the-loop)**:
-1. Llamas a la herramienta con `instruccion` y `directorio_proyecto`.
-2. El servidor retorna un estado pausado con el plan propuesto.
-3. El usuario aprueba el plan.
-4. Llamas a la herramienta nuevamente con `approve=True` y el mismo `thread_id` para continuar la ejecución.
-
-## 📁 Estructura del Proyecto
+## Estructura del Proyecto
 
 ```text
 .
 ├── app/
-│   ├── agents/                    # Nodos de LangGraph (Lógica de los agentes)
-│   │   ├── agente_planificador.py # Agente Arquitecto (analiza y diseña el plan)
-│   │   ├── agente_codificador.py  # Agente Programador (implementa el código)
-│   │   └── agente_revisor.py      # Agente QA (ejecuta validaciones y pruebas)
-│   ├── models/                    # Pydantic schemas y definición de estados
-│   │   └── models.py              # Definición de ProjectState (estado global)
-│   ├── prompts/                   # Instrucciones base de los agentes (System Prompts)
-│   │   ├── planificador_prompt.md 
-│   │   ├── codificador_prompt.md  
-│   │   └── revisor_prompt.md      
-│   ├── settings/                  # Configuración de entorno
-│   │   └── settings.py            
-│   ├── utils/                     # Herramientas de soporte y filesystem
-│   │   └── files.py               
-│   └── main.py                    # Ensamblaje y compilación del StateGraph
-├── mcp_server.py                  # Punto de entrada FastMCP
-├── requirements.txt               # Dependencias del proyecto
-└── README.md                      # Esta documentación
+│   ├── agents/            # Lógica de los agentes (Planificador, Codificador, Revisor)
+│   ├── models/            # Definiciones de estado (ProjectState)
+│   ├── prompts/           # Prompts del sistema para cada agente
+│   ├── settings/          # Gestión de configuración y variables de entorno
+│   ├── utils/             # Funciones de utilidad (manejo de archivos, etc.)
+│   └── main.py            # Construcción y compilación del grafo LangGraph
+├── mcp_server.py          # Punto de entrada del servidor MCP (FastMCP)
+├── requirements.txt       # Dependencias del proyecto
+└── README.md              # Documentación principal
 ```
 
-## 🏗️ Extensibilidad
+## Tecnologías Utilizadas
 
-El diseño modular permite escalar fácilmente las capacidades del equipo:
-- **Nuevos Agentes**: Puedes agregar nuevos nodos a `app/main.py` (ej. `Agente_Documentador` o `Agente_Despliegue`).
-- **Nuevas Herramientas**: Las funciones de `app/utils/` pueden registrarse como nuevas herramientas disponibles para el Codificador o Revisor.
-- **Soporte Multi-Modelo**: Adaptando `app/settings/settings.py` para instanciar diferentes LLMs de LangChain según la conveniencia de cada agente.
+- **LangGraph**: Orquestación de agentes.
+- **FastMCP**: Implementación del servidor MCP.
+- **Pydantic**: Validación de datos y configuraciones.
+- **Google Gemini**: Modelo de lenguaje principal (configurable).
