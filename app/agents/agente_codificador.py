@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from langgraph.types import Command
 from langchain_core.messages import SystemMessage
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_core.messages import ToolMessage
 from app.models.models import ProjectState
