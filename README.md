@@ -4,12 +4,12 @@
 
 ## 🚀 Arquitectura del Sistema
 
-El proyecto implementa un grafo cíclico de estados utilizando la arquitectura de agentes de LangChain, permitiendo la colaboración en tiempo real y la corrección de errores en un flujo iterativo.
+El proyecto implementa un grafo cíclico de estados (`StateGraph`) utilizando la arquitectura de agentes de LangChain, permitiendo la colaboración en tiempo real y la corrección de errores en un flujo iterativo. Además, incorpora un sistema de **Human-in-the-Loop (HITL)** para garantizar la calidad y el control humano sobre las decisiones críticas.
 
 ### El Equipo de Agentes
 1.  **🏗️ Agente Planificador (Arquitecto)**:
     - **Función**: Analiza los requerimientos del usuario y la estructura actual del proyecto.
-    - **Herramientas**: Búsqueda web avanzada (SearxNG), exploración de archivos y lectura técnica.
+    - **Herramientas**: Búsqueda web avanzada (`SearxSearchWrapper`), exploración de archivos y lectura técnica (`FileManagementToolkit`).
     - **Salida**: Genera un `PlanDeAccion` estructurado que guía al resto del equipo.
 
 2.  **💻 Agente Codificador (Programador)**:
@@ -21,6 +21,11 @@ El proyecto implementa un grafo cíclico de estados utilizando la arquitectura d
     - **Función**: Valida la integridad del código escrito mediante pruebas de ejecución.
     - **Herramientas**: `ShellTool` para ejecución de comandos en terminal y verificación de sintaxis o tests.
     - **Bucle de Feedback**: Si detecta errores, devuelve el estado al Codificador con un reporte detallado.
+
+### ⏸️ Flujo de Aprobación Manual (Human-in-the-Loop)
+El sistema está diseñado para pausar su ejecución en momentos clave, permitiendo la intervención humana:
+- **PAUSA 1 (Aprobación del Plan)**: Tras la generación del plan por el Arquitecto, el sistema se detiene para que el usuario valide el enfoque técnico antes de escribir código.
+- **PAUSA 2 (Revisión de Código)**: Una vez que el Programador escribe los archivos, el sistema se pausará nuevamente. Esto permite al usuario revisar el *Diff* (cambios en Git) y aprobar el código antes de que el QA ejecute las pruebas.
 
 ## 📁 Estructura del Proyecto y Módulos
 
@@ -60,7 +65,7 @@ La estructura del proyecto está organizada de la siguiente manera:
 - **`app/prompts/`**: Almacena las instrucciones base (System Prompts) de cada agente en archivos Markdown, facilitando su edición y mantenimiento sin tocar el código Python.
 - **`app/settings/`**: Centraliza la configuración de la aplicación utilizando `pydantic-settings`, cargando variables de entorno de forma segura.
 - **`app/utils/`**: Proporciona clases y funciones auxiliares, como la clase `File` en `files.py` para leer los prompts desde el disco.
-- **`app/main.py`**: Es el orquestador principal. Une todos los agentes y herramientas definiendo los nodos y las aristas (edges) del `StateGraph` de LangGraph, y configura la persistencia de memoria (`MemorySaver`).
+- **`app/main.py`**: Es el orquestador principal. Une todos los agentes y herramientas definiendo los nodos y las aristas (edges) del `StateGraph` de LangGraph. Configura la persistencia de memoria (`MemorySaver`) y los puntos de interrupción (`interrupt_before`) para el flujo de aprobación manual.
 
 ## 🛠️ Instalación y Configuración
 
@@ -132,17 +137,38 @@ Ejecuta el servidor para habilitar las herramientas:
 python mcp_server.py
 ```
 
-### Ejecutar desde un Cliente MCP
-Una vez conectado, puedes llamar a la herramienta:
+### Ejecutar desde un Cliente MCP (Flujo de Trabajo)
+El sistema utiliza un parámetro `approve` para gestionar las pausas de revisión. El flujo típico es el siguiente:
+
+**1. Iniciar una nueva tarea:**
 ```json
 {
   "name": "delegar_tarea_a_equipo_ia",
   "arguments": {
     "instruccion": "Crea una función de suma en un nuevo archivo math_utils.py",
-    "directorio_proyecto": "/ruta/absoluta/a/tu/proyecto"
+    "directorio_proyecto": "/ruta/absoluta/a/tu/proyecto",
+    "approve": false
   }
 }
 ```
+*El sistema devolverá el plan propuesto por el Arquitecto y se pausará (PAUSA 1).*
+
+**2. Aprobar el Plan:**
+Si estás de acuerdo con el plan, vuelve a llamar a la herramienta con `approve: true`:
+```json
+{
+  "name": "delegar_tarea_a_equipo_ia",
+  "arguments": {
+    "instruccion": "Crea una función de suma en un nuevo archivo math_utils.py",
+    "directorio_proyecto": "/ruta/absoluta/a/tu/proyecto",
+    "approve": true
+  }
+}
+```
+*El Programador escribirá el código y el sistema se pausará nuevamente (PAUSA 2).*
+
+**3. Revisar y Aprobar el Código:**
+Revisa los cambios en la pestaña de Control de Código Fuente (Git) de tu editor. Si todo es correcto, llama a la herramienta nuevamente con `approve: true` para que el QA ejecute las pruebas y finalice la tarea.
 
 ## 🛡️ Seguridad
 El sistema utiliza un `root_dir` en el `FileManagementToolkit` para restringir las operaciones de archivos al directorio especificado en la instrucción inicial, evitando accesos no autorizados fuera del área de trabajo del proyecto.
