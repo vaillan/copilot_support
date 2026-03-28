@@ -1,8 +1,10 @@
 from langchain.chat_models import init_chat_model
 from app.settings.settings import Settings
+from functools import lru_cache
 
 settings = Settings()
 
+@lru_cache(maxsize=2)
 def get_llm(temperature: float = 0.0):
     """
     Retorna una instancia del LLM configurado en los ajustes de forma agnóstica al proveedor.

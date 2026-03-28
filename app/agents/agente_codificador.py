@@ -7,6 +7,7 @@ from app.utils.files import File
 from app.models.models import ProjectState
 from app.settings.settings import Settings
 from app.models.llm_factory import get_llm
+from functools import lru_cache
 
 settings = Settings()
 fileSystem = File(directory="prompts")
@@ -15,18 +16,13 @@ class CodigoCompletado(BaseModel):
     """Llama a esta herramienta EXCLUSIVAMENTE cuando hayas terminado de programar todos los pasos del plan."""
     resumen_cambios: str = Field(description="Resumen detallado de los archivos que creaste o modificaste.")
 
-_cache_tools = {}
-
+@lru_cache(maxsize=10)
 def _get_tools(directorio: str):
-    if directorio in _cache_tools:
-        return _cache_tools[directorio]
-        
     toolkit_archivos = FileManagementToolkit(root_dir=directorio)
     herramientas = [
         t for t in toolkit_archivos.get_tools() 
         if t.name in ["read_file", "write_file"]
     ]
-    _cache_tools[directorio] = herramientas
     return herramientas
 
 def agente_codificador(state: ProjectState) -> Command:
@@ -62,7 +58,8 @@ def agente_codificador(state: ProjectState) -> Command:
                 return Command(
                     update={
                         "codigo_escrito": resumen,
-                        "errores_terminal": ""
+                        "errores_terminal": "",
+                        "messages": [respuesta]
                     },
                     goto="agente_revisor"
                 )

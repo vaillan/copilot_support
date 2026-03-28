@@ -11,6 +11,7 @@ from app.settings.settings import Settings
 from app.models.llm_factory import get_llm
 from app.models.models import ProjectState
 from app.utils.files import File
+from functools import lru_cache
 
 settings = Settings()
 fileSystem = File(directory="prompts")
@@ -24,12 +25,8 @@ class PlanDeAccion(BaseModel):
     explicacion_arquitectura: str = Field(description="Breve explicación del enfoque técnico")
     pasos: List[Paso]
 
-_cache_tools = {}
-
+@lru_cache(maxsize=10)
 def _get_tools(directorio: str):
-    if directorio in _cache_tools:
-        return _cache_tools[directorio]
-        
     toolkit_archivos = FileManagementToolkit(root_dir=directorio)
     herramientas_lectura = [
         t for t in toolkit_archivos.get_tools() 
@@ -43,7 +40,6 @@ def _get_tools(directorio: str):
         func=searx.run
     )
     herramientas = herramientas_lectura + [tool_busqueda]
-    _cache_tools[directorio] = herramientas
     return herramientas
 
 def agente_planificador(state: ProjectState) -> Command:
@@ -66,17 +62,27 @@ def agente_planificador(state: ProjectState) -> Command:
     cadena = prompt_template | llm_con_herramientas
     respuesta = cadena.invoke({"messages": state["messages"], "directorio": directorio})
     
-    if respuesta.tool_calls and respuesta.tool_calls[0]["name"] == "PlanDeAccion": # type: ignore
-        plan_generado = respuesta.tool_calls[0]["args"] # type: ignore
+    if respuesta.tool_calls:
+        for tool_call in respuesta.tool_calls:
+            if tool_call["name"] == "PlanDeAccion":
+                plan_generado = tool_call["args"]
+                
+                return Command(
+                    update={
+                        "plan_de_accion": plan_generado,
+                        "messages": [respuesta]
+                    },
+                    goto="agente_codificador"
+                )
         
         return Command(
-            update={"plan_de_accion": plan_generado},
-            goto="agente_codificador"
+            update={"messages": [respuesta]},
+            goto="nodo_herramientas_planificador"
         )
     else:
         return Command(
             update={"messages": [respuesta]},
-            goto="nodo_herramientas_planificador"
+            goto="agente_planificador"
         )
 
 def nodo_herramientas_planificador(state: ProjectState):

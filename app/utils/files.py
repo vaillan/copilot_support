@@ -17,10 +17,10 @@ class File:
         Lee y retorna el contenido completo de un archivo con sistema de caché.
         """
         cache_key = str(self.PROMPTS_DIR / file_name)
-        if cache_key in self._cache:
-            return self._cache[cache_key]
+        if cache_key in File._cache:
+            return File._cache[cache_key]
             
         with open(self.PROMPTS_DIR / file_name, "r", encoding="utf-8") as f:
             content = f.read()
-            self._cache[cache_key] = content
+            File._cache[cache_key] = content
         return content

@@ -9,6 +9,7 @@ from langgraph.prebuilt import ToolNode
 from app.models.models import ProjectState
 from app.utils.files import File
 from app.settings.settings import Settings
+from functools import lru_cache
 
 settings = Settings()
 fileSystem = File(directory="prompts")
@@ -22,12 +23,8 @@ def finalizar_revision(aprobado: bool, reporte_errores: str = "") -> str:
     """
     return "Revisión procesada."
 
-_cache_tools = {}
-
+@lru_cache(maxsize=10)
 def _get_tools(directorio: str):
-    if directorio in _cache_tools:
-        return _cache_tools[directorio]
-        
     toolkit_archivos = FileManagementToolkit(root_dir=directorio)
     herramientas_lectura = [
         t for t in toolkit_archivos.get_tools() 
@@ -35,7 +32,6 @@ def _get_tools(directorio: str):
     ]
     terminal = ShellTool()
     herramientas = [terminal, finalizar_revision] + herramientas_lectura
-    _cache_tools[directorio] = herramientas
     return herramientas
 
 def agente_revisor(state: ProjectState) -> Command:
@@ -67,12 +63,18 @@ def agente_revisor(state: ProjectState) -> Command:
                 
                 if aprobado:
                     return Command(
-                        update={"errores_terminal": "Ninguno. Código aprobado."},
+                        update={
+                            "errores_terminal": "Ninguno. Código aprobado.",
+                            "messages": [respuesta]
+                        },
                         goto=END
                     )
                 else:
                     return Command(
-                        update={"errores_terminal": errores},
+                        update={
+                            "errores_terminal": errores,
+                            "messages": [respuesta]
+                        },
                         goto="agente_codificador"
                     )
         

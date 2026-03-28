@@ -21,7 +21,7 @@ mcp = FastMCP("AIDevTeam")
 agentes_app = crear_grafo()
 
 @mcp.tool()
-def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str, approve: bool = False) -> str:
+async def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str, approve: bool = False) -> str:
     """
     ÚSA ESTA HERRAMIENTA PARA DELEGAR TAREAS COMPLEJAS DE PROGRAMACIÓN.
     Esta herramienta invoca a un equipo de 3 agentes autónomos (Arquitecto, Programador y QA).
@@ -39,7 +39,7 @@ def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str, approv
     try:
         if approve:
             # Si el usuario aprobó visualmente, reanudamos el grafo desde donde se quedó
-            resultado = agentes_app.invoke(None, config) # type: ignore
+            resultado = await agentes_app.ainvoke(None, config) # type: ignore
         else:
             # Si es una tarea nueva, iniciamos desde cero
             estado_inicial = {
@@ -47,9 +47,9 @@ def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str, approv
                 "directorio_proyecto": directorio_proyecto,
                 "messages":[HumanMessage(content=instruccion)]
             }
-            resultado = agentes_app.invoke(estado_inicial, config) # type: ignore
+            resultado = await agentes_app.ainvoke(estado_inicial, config) # type: ignore
 
-        estado = agentes_app.get_state(config) # type: ignore
+        estado = await agentes_app.aget_state(config) # type: ignore
         
         if estado.next:
             siguiente_nodo = estado.next[0]
