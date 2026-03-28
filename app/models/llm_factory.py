@@ -16,9 +16,8 @@ def get_llm(temperature: float = 0.0):
             model=model_name,
             api_key=api_key,
             temperature=temperature,
-            top_p=0.7,
             max_retries=5,
-            timeout=15,
+            timeout=120,
         )
     elif provider == "openai":
         try:
@@ -40,7 +39,7 @@ def get_llm(temperature: float = 0.0):
                 api_key=api_key,
                 temperature=temperature,
                 max_retries=5,
-                timeout=15,
+                timeout=120,
             )
         except ImportError:
             raise ImportError("Debe instalar 'langchain-anthropic' para usar modelos de Anthropic.")
@@ -51,6 +50,7 @@ def get_llm(temperature: float = 0.0):
             api_key=api_key, # type: ignore
             temperature=temperature,
             max_retries=5,
+            timeout=120,
         )
     else:
         try:
