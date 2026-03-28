@@ -26,6 +26,12 @@ def crear_grafo():
     workflow.add_node("nodo_herramientas_revisor", nodo_herramientas_revisor)
 
     workflow.add_edge(START, "agente_planificador")
+    
+    # Aristas de retorno desde los nodos de herramientas hacia los agentes.
+    # Esto es necesario porque ToolNode no retorna un Command(goto=...) por defecto.
+    workflow.add_edge("nodo_herramientas_planificador", "agente_planificador")
+    workflow.add_edge("nodo_herramientas_codificador", "agente_codificador")
+    workflow.add_edge("nodo_herramientas_revisor", "agente_revisor")
 
     memory = MemorySaver()
 

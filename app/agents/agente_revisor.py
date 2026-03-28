@@ -1,11 +1,11 @@
 from langgraph.graph import END
 from langgraph.types import Command
-from langchain_core.messages import SystemMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from app.models.llm_factory import get_llm
 from langchain_community.tools import ShellTool
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_core.tools import tool
-from langchain_core.messages import ToolMessage
+from langgraph.prebuilt import ToolNode
 from app.models.models import ProjectState
 from app.utils.files import File
 from app.settings.settings import Settings
@@ -22,34 +22,36 @@ def finalizar_revision(aprobado: bool, reporte_errores: str = "") -> str:
     """
     return "Revisión procesada."
 
+def _get_tools(directorio: str):
+    toolkit_archivos = FileManagementToolkit(root_dir=directorio)
+    herramientas_lectura = [
+        t for t in toolkit_archivos.get_tools() 
+        if t.name == "read_file"
+    ]
+    terminal = ShellTool()
+    return [terminal, finalizar_revision] + herramientas_lectura
+
 def agente_revisor(state: ProjectState) -> Command:
     """
     El Tester ejecuta el código en la terminal. Si hay errores, 
     devuelve el flujo al Codificador. Si todo está bien, termina el proceso.
     """
     directorio = state.get("directorio_proyecto", "./")
-    
-    terminal = ShellTool()
-    
-    toolkit_archivos = FileManagementToolkit(root_dir=directorio)
-    herramientas_lectura =[
-        t for t in toolkit_archivos.get_tools() 
-        if t.name == "read_file"
-    ]
-    
-    herramientas_qa =[terminal, finalizar_revision] + herramientas_lectura
+    herramientas_qa = _get_tools(directorio)
     
     llm = get_llm(temperature=0.0)
     llm_con_herramientas = llm.bind_tools(herramientas_qa)
     
-
     prompt_sistema = fileSystem.get_file_content(file_name="revisor_prompt.md")
     
-    mensajes =[SystemMessage(content=prompt_sistema)] + state["messages"]
+    prompt_template = ChatPromptTemplate.from_messages([
+        ("system", prompt_sistema),
+        MessagesPlaceholder(variable_name="messages")
+    ])
     
-    respuesta = llm_con_herramientas.invoke(mensajes)
+    cadena = prompt_template | llm_con_herramientas
+    respuesta = cadena.invoke({"messages": state["messages"]})
     
-
     if respuesta.tool_calls:
         for tool_call in respuesta.tool_calls:
             if tool_call["name"] == "finalizar_revision":
@@ -68,49 +70,22 @@ def agente_revisor(state: ProjectState) -> Command:
                     )
         
         return Command(
-            update={"messages":[respuesta]},
+            update={"messages": [respuesta]},
             goto="nodo_herramientas_revisor"
         )
-        
     else:
         return Command(
             update={"messages": [respuesta]},
             goto="agente_revisor"
         )
 
-def nodo_herramientas_revisor(state: ProjectState) -> Command:
+def nodo_herramientas_revisor(state: ProjectState):
     """
-    Ejecuta las herramientas de revisión (terminal y lectura de archivos) solicitadas por el revisor.
-    
-    Procesa las llamadas a herramientas en el último mensaje del estado, las ejecuta 
-    y devuelve los resultados al agente revisor para que determine si el código es correcto.
-    
-    Args:
-        state (ProjectState): El estado actual del proyecto.
-        
-    Returns:
-        Command: Un comando de LangGraph que actualiza los mensajes y redirige al agente revisor.
+    Ejecuta las herramientas de revisión utilizando ToolNode de LangGraph.
     """
     directorio = state.get("directorio_proyecto", "./")
-    
-    toolkit = FileManagementToolkit(root_dir=directorio)
-    herramientas = {t.name: t for t in toolkit.get_tools() if t.name == "read_file"}
-    
-    terminal = ShellTool()
-    herramientas["terminal"] = terminal
-    
-    ultimo_mensaje = state["messages"][-1]
-    respuestas_tools =[]
-    
-    for tool_call in ultimo_mensaje.tool_calls: # type: ignore
-        nombre = tool_call["name"]
-        args = tool_call["args"]
-        
-        if nombre in herramientas:
-            resultado = herramientas[nombre].invoke(args)
-            respuestas_tools.append(ToolMessage(content=str(resultado), tool_call_id=tool_call["id"], name=nombre))
-            
-    return Command(
-        update={"messages": respuestas_tools},
-        goto="agente_revisor"
-    )
+    herramientas = _get_tools(directorio)
+    # Excluimos finalizar_revision del ToolNode porque la manejamos manualmente en el agente
+    herramientas_ejecutables = [t for t in herramientas if t.name != "finalizar_revision"]
+    nodo = ToolNode(herramientas_ejecutables)
+    return nodo.invoke(state)
