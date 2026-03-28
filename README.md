@@ -174,4 +174,10 @@ Revisa los cambios en la pestaña de Control de Código Fuente (Git) de tu edito
 El sistema utiliza un `root_dir` en el `FileManagementToolkit` para restringir las operaciones de archivos al directorio especificado en la instrucción inicial, evitando accesos no autorizados fuera del área de trabajo del proyecto.
 
 ---
-© 2026 AIDevTeam - Automatización Inteligente de Software.
+© 2026 AIDevTeam - Automatización Inteligente de Software.-e 
+## ⚡ Mejoras Técnicas Recientes (Marzo 2026)
+
+- **Refactorización de Agentes**: Migración a `ToolNode` y `ChatPromptTemplate` de LangGraph para mayor claridad y modularidad.
+- **Abstracción de LLMs**: Implementación de `init_chat_model` en `app/models/llm_factory.py`, permitiendo una inicialización dinámica y agnóstica de proveedores (Google, OpenAI, Anthropic, etc.).
+- **Orquestación Mejorada**: Adición de aristas explícitas de retorno en `app/main.py` para asegurar un flujo correcto entre herramientas y agentes.
+- **Actualización de Dependencias**: Sustitución de `duckduckgo-search` por `ddgs` para búsquedas web más eficientes.
