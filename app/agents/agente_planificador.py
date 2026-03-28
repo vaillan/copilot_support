@@ -1,5 +1,5 @@
 import os
-from langchain_community.utilities import SearxSearchWrapper
+from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 from langchain_community.agent_toolkits import FileManagementToolkit
 from typing import List
 from pydantic import BaseModel, Field
@@ -38,9 +38,9 @@ def agente_planificador(state: ProjectState) -> Command:
         if t.name in ["read_file", "list_directory"]
     ]
     
-    searx = SearxSearchWrapper(searx_host="http://127.0.0.1:8888", k=2)
+    searx = DuckDuckGoSearchAPIWrapper()
     tool_busqueda = Tool(
-        name="busqueda_web_searx",
+        name="busqueda_web_duckduckgo",
         description="Busca en internet documentación técnica actualizada, tutoriales o foros.",
         func=searx.run
     )
@@ -57,8 +57,8 @@ def agente_planificador(state: ProjectState) -> Command:
         
     respuesta = llm_con_herramientas.invoke(mensajes)
     
-    if respuesta.tool_calls and respuesta.tool_calls[0]["name"] == "PlanDeAccion":
-        plan_generado = respuesta.tool_calls[0]["args"]
+    if respuesta.tool_calls and respuesta.tool_calls[0]["name"] == "PlanDeAccion": # type: ignore
+        plan_generado = respuesta.tool_calls[0]["args"] # type: ignore
         
         return Command(
             update={"plan_de_accion": plan_generado},
@@ -90,8 +90,8 @@ def nodo_herramientas_planificador(state: ProjectState) -> Command:
     toolkit = FileManagementToolkit(root_dir=directorio)
     herramientas = {t.name: t for t in toolkit.get_tools() if t.name in ["read_file", "list_directory"]}
     
-    searx = SearxSearchWrapper(searx_host="http://127.0.0.1:8888")
-    herramientas["busqueda_web_searx"] = Tool(name="busqueda_web_searx", func=searx.run, description="")
+    searx = DuckDuckGoSearchAPIWrapper()
+    herramientas["busqueda_web_duckduckgo"] = Tool(name="busqueda_web_duckduckgo", func=searx.run, description="Búsqueda web con DuckDuckGo")
     
     ultimo_mensaje = state["messages"][-1]
     respuestas_tools =[]

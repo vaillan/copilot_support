@@ -9,7 +9,7 @@ El proyecto implementa un grafo cíclico de estados (`StateGraph`) utilizando la
 ### El Equipo de Agentes
 1.  **🏗️ Agente Planificador (Arquitecto)**:
     - **Función**: Analiza los requerimientos del usuario y la estructura actual del proyecto.
-    - **Herramientas**: Búsqueda web avanzada (`SearxSearchWrapper`), exploración de archivos y lectura técnica (`FileManagementToolkit`).
+    - **Herramientas**: Búsqueda web avanzada (`DuckDuckGoSearchAPIWrapper`), exploración de archivos y lectura técnica (`FileManagementToolkit`).
     - **Salida**: Genera un `PlanDeAccion` estructurado que guía al resto del equipo.
 
 2.  **💻 Agente Codificador (Programador)**:
@@ -71,7 +71,7 @@ La estructura del proyecto está organizada de la siguiente manera:
 
 ### 1. Requisitos Previos
 - Python 3.10 o superior.
-- Instalación de [SearxNG](https://github.com/searxng/searxng) (opcional, para búsqueda web avanzada).
+- Conexión a internet para búsqueda web.
 
 ### 2. Configuración del Entorno
 Clona el repositorio y configura el entorno virtual. Luego, instala las dependencias listadas en `requirements.txt`:
