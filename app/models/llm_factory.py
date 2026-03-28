@@ -53,8 +53,6 @@ def get_llm(temperature: float = 0.0):
             max_retries=5,
         )
     else:
-        # Intento de instanciación genérica si el proveedor no está mapeado explícitamente
-        # pero existe en langchain (requiere langchain >= 0.2.13 para init_chat_model)
         try:
             from langchain.chat_models import init_chat_model
             return init_chat_model(model_name, model_provider=provider, temperature=temperature, api_key=api_key)

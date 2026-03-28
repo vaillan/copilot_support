@@ -38,7 +38,6 @@ def agente_planificador(state: ProjectState) -> Command:
         if t.name in ["read_file", "list_directory"]
     ]
     
-    # Configuramos la búsqueda gratuita con SearxNG
     searx = SearxSearchWrapper(searx_host="http://127.0.0.1:8888", k=2)
     tool_busqueda = Tool(
         name="busqueda_web_searx",
@@ -46,37 +45,30 @@ def agente_planificador(state: ProjectState) -> Command:
         func=searx.run
     )
     
-    # Unimos las herramientas de investigación
     herramientas_investigacion = herramientas_lectura + [tool_busqueda]
     
     llm = get_llm(temperature=0.0)
     
-    # EL TRUCO DE LANGGRAPH: Le pasamos las herramientas de investigación 
-    # Y TAMBIÉN el modelo Pydantic (PlanDeAccion) como si fuera una herramienta más.
     llm_con_herramientas = llm.bind_tools(herramientas_investigacion + [PlanDeAccion])
     
     prompt_sistema = fileSystem.get_file_content(file_name="planificador_prompt.md")
     
-    # Preparamos los mensajes (Historial + Prompt)
     mensajes =[SystemMessage(content=prompt_sistema)] + state["messages"]
         
     respuesta = llm_con_herramientas.invoke(mensajes)
     
-    # Verificamos si el LLM decidió entregar el plan final
     if respuesta.tool_calls and respuesta.tool_calls[0]["name"] == "PlanDeAccion":
-        # Extraemos los argumentos que generó el LLM (que coinciden con nuestro Pydantic)
         plan_generado = respuesta.tool_calls[0]["args"]
         
         return Command(
-            update={"plan_de_accion": plan_generado}, # Guardamos el plan en el Estado
-            goto="agente_codificador"                 # ¡Terminó! Pasamos el turno al Codificador
+            update={"plan_de_accion": plan_generado},
+            goto="agente_codificador"
         )
     
-    # Si no entregó el plan, significa que decidió usar read_file, list_directory o searx
     else:
         return Command(
-            update={"messages": [respuesta]},         # Guardamos la intención de usar la herramienta
-            goto="nodo_herramientas_planificador"     # Lo enviamos al nodo que ejecuta las herramientas
+            update={"messages": [respuesta]},
+            goto="nodo_herramientas_planificador"
         )
 
 def nodo_herramientas_planificador(state: ProjectState) -> Command:
@@ -114,5 +106,5 @@ def nodo_herramientas_planificador(state: ProjectState) -> Command:
             
     return Command(
         update={"messages": respuestas_tools},
-        goto="agente_planificador" # Regresamos el control al Planificador para que lea el resultado
+        goto="agente_planificador"
     )

@@ -18,13 +18,9 @@ def crear_grafo():
         CompiledGraph: El grafo de estados listo para ser ejecutado.
     """
     workflow = StateGraph(ProjectState)
-
-    # Nodos (Cerebros)
     workflow.add_node("agente_planificador", agente_planificador)
     workflow.add_node("agente_codificador", agente_codificador)
     workflow.add_node("agente_revisor", agente_revisor)
-
-    # Nodos (Herramientas)
     workflow.add_node("nodo_herramientas_planificador", nodo_herramientas_planificador)
     workflow.add_node("nodo_herramientas_codificador", nodo_herramientas_codificador)
     workflow.add_node("nodo_herramientas_revisor", nodo_herramientas_revisor)

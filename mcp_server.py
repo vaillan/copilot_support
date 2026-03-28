@@ -1,15 +1,12 @@
 import os
 import sys
 
-# Bloqueamos la impresión de cualquier cosa que no sea JSON
 class MuteStderr:
     def write(self, x): pass
     def flush(self): pass
 
-# Guardamos el original por si acaso, pero silenciamos stderr que es donde sale el banner rojo
 sys.stderr = MuteStderr()
 
-# Forzamos silencio en la librería
 os.environ["FASTMCP_LOG_LEVEL"] = "CRITICAL"
 
 from fastmcp import FastMCP
@@ -35,13 +32,9 @@ def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str) -> str
         directorio_proyecto: La ruta absoluta de la carpeta actual del proyecto.
     """
     
-    # Generamos un ID de hilo (thread_id) basado en el directorio del proyecto
-    # Esto permite que cada proyecto tenga su propia memoria de sesión
     thread_id = hashlib.md5(directorio_proyecto.encode()).hexdigest()
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 50}
 
-    # Preparamos el estado inicial. 
-    # Al pasar la instrucción en 'messages', LangGraph la añade al historial de la sesión.
     estado_inicial = {
         "instruccion_usuario": instruccion,
         "directorio_proyecto": directorio_proyecto,
@@ -49,10 +42,8 @@ def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str) -> str
     }
     
     try:
-        # Ejecutamos el equipo de agentes con la configuración de memoria
         resultado = agentes_app.invoke(estado_inicial, config) # type: ignore
         
-        # Extraemos el reporte final para devolvérselo al editor de código
         codigo_escrito = resultado.get("codigo_escrito", "No se reportó código.")
         errores_qa = resultado.get("errores_terminal", "Sin errores.")
         

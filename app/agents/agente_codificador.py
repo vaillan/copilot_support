@@ -26,25 +26,19 @@ def agente_codificador(state: ProjectState) -> Command:
     directorio = state.get("directorio_proyecto", "./")
     
     toolkit_archivos = FileManagementToolkit(root_dir=directorio)
-    
-    # Filtramos SOLO las herramientas que el codificador necesita
     herramientas_codigo =[
         t for t in toolkit_archivos.get_tools() 
         if t.name in["read_file", "write_file"]
     ]
     
     llm = get_llm(temperature=0.0)
-    
-    # Le "atamos" las herramientas de archivos + la herramienta de finalización
     llm_con_herramientas = llm.bind_tools(herramientas_codigo + [CodigoCompletado])
     
     plan = state.get("plan_de_accion", {})
     errores = state.get("errores_terminal", "")
     
-    # Prompt del Sistema
     prompt_sistema = fileSystem.get_file_content(file_name="codificador_prompt.md")
     
-    # CICLO DE AUTOCORRECCIÓN: Si el Revisor encontró errores, se los inyectamos aquí
     if errores:
         prompt_sistema += f"\n\n ATENCIÓN: Tu código anterior falló las pruebas. Corrige los siguientes errores:\n{errores}"
         
@@ -53,7 +47,6 @@ def agente_codificador(state: ProjectState) -> Command:
     respuesta = llm_con_herramientas.invoke(mensajes)
     
     if respuesta.tool_calls:
-        # Buscamos si el LLM decidió que ya terminó su trabajo
         for tool_call in respuesta.tool_calls:
             if tool_call["name"] == "CodigoCompletado":
                 resumen = tool_call["args"].get("resumen_cambios", "Código completado.")
@@ -61,19 +54,17 @@ def agente_codificador(state: ProjectState) -> Command:
                 return Command(
                     update={
                         "codigo_escrito": resumen,
-                        "errores_terminal": "" # Limpiamos los errores pasados porque ya los intentó arreglar
+                        "errores_terminal": ""
                     },
-                    goto="agente_revisor"      # ¡Terminó! Pasamos el turno al QA (Revisor)
+                    goto="agente_revisor"
                 )
         
-        # Si no llamó a CodigoCompletado, significa que usó write_file o read_file
         return Command(
             update={"messages": [respuesta]},
-            goto="nodo_herramientas_codificador" # Lo enviamos al nodo que ejecuta las herramientas de código
+            goto="nodo_herramientas_codificador"
         )
         
     else:
-        # Si el LLM responde solo con texto (sin usar herramientas), lo forzamos a seguir en su loop
         return Command(
             update={"messages": [respuesta]},
             goto="agente_codificador"

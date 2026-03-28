@@ -8,9 +8,8 @@ class ProjectState(MessagesState):
     campos específicos para coordinar el flujo entre los agentes planificador,
     codificador y revisor.
     """
-    # 'messages' ya está incluido automáticamente por MessagesState
     instruccion_usuario: str
-    directorio_proyecto: str  # 🌟 Agregado para que funcione en cualquier editor
-    plan_de_accion: dict      # El planificador escribirá aquí
-    codigo_escrito: str       # El codificador escribirá aquí
-    errores_terminal: str     # El revisor (QA) escribirá aquí
+    directorio_proyecto: str
+    plan_de_accion: dict
+    codigo_escrito: str
+    errores_terminal: str
