@@ -22,6 +22,74 @@ El proyecto implementa un grafo cíclico de estados utilizando la arquitectura d
     - **Herramientas**: `ShellTool` para ejecución de comandos en terminal y verificación de sintaxis o tests.
     - **Bucle de Feedback**: Si detecta errores, devuelve el estado al Codificador con un reporte detallado.
 
+## 📁 Estructura del Proyecto y Módulos
+
+La estructura del proyecto está organizada de la siguiente manera:
+
+```text
+.
+├── app/
+│   ├── agents/             # Definiciones lógicas y nodos de agentes
+│   │   ├── agente_planificador.py # Lógica del Arquitecto (análisis y planificación)
+│   │   ├── agente_codificador.py  # Lógica del Programador (escritura de código)
+│   │   ├── agente_revisor.py      # Lógica del QA (pruebas y validación)
+│   │   └── __init__.py
+│   ├── models/             # Esquemas de datos y configuración de LLMs
+│   │   ├── llm_factory.py  # Fábrica multi-proveedor (Google, OpenAI, Anthropic, OpenRouter)
+│   │   └── models.py       # Estado global del grafo (ProjectState)
+│   ├── prompts/            # Prompts del sistema en formato Markdown
+│   │   ├── planificador_prompt.md
+│   │   ├── codificador_prompt.md
+│   │   └── revisor_prompt.md
+│   ├── settings/           # Configuración dinámica y variables de entorno
+│   │   ├── settings.py     # Carga de variables desde .env (API Keys, Modelos)
+│   │   └── __init__.py
+│   ├── utils/              # Utilidades generales
+│   │   ├── files.py        # Gestión de lectura de archivos (ej. carga de prompts)
+│   │   └── __init__.py
+│   └── main.py             # Definición, configuración y compilación del Grafo de LangGraph
+├── mcp_server.py           # Punto de entrada para el servidor FastMCP
+├── requirements.txt        # Dependencias del proyecto
+├── .env                    # Configuración de credenciales (no versionado)
+└── README.md               # Documentación del proyecto
+```
+
+### Propósito de los Módulos en `app/`
+- **`app/agents/`**: Contiene la lógica individual de cada agente. Cada archivo define el comportamiento, las herramientas asignadas y las transiciones condicionales dentro del grafo para su respectivo rol.
+- **`app/models/`**: Define las estructuras de datos fundamentales. `models.py` contiene el `ProjectState` que fluye a través del grafo, mientras que `llm_factory.py` abstrae la instanciación de modelos de lenguaje, permitiendo cambiar fácilmente entre proveedores (Google, OpenAI, Anthropic, etc.).
+- **`app/prompts/`**: Almacena las instrucciones base (System Prompts) de cada agente en archivos Markdown, facilitando su edición y mantenimiento sin tocar el código Python.
+- **`app/settings/`**: Centraliza la configuración de la aplicación utilizando `pydantic-settings`, cargando variables de entorno de forma segura.
+- **`app/utils/`**: Proporciona clases y funciones auxiliares, como la clase `File` en `files.py` para leer los prompts desde el disco.
+- **`app/main.py`**: Es el orquestador principal. Une todos los agentes y herramientas definiendo los nodos y las aristas (edges) del `StateGraph` de LangGraph, y configura la persistencia de memoria (`MemorySaver`).
+
+## 🛠️ Instalación y Configuración
+
+### 1. Requisitos Previos
+- Python 3.10 o superior.
+- Instalación de [SearxNG](https://github.com/searxng/searxng) (opcional, para búsqueda web avanzada).
+
+### 2. Configuración del Entorno
+Clona el repositorio y configura el entorno virtual. Luego, instala las dependencias listadas en `requirements.txt`:
+
+```bash
+git clone <repository-url>
+cd copilot_support
+python -m venv .venv
+source .venv/bin/activate  # En Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+*Nota: `requirements.txt` incluye paquetes clave como `langchain`, `langgraph`, `fastmcp`, y conectores para múltiples proveedores de LLM (`langchain-google-genai`, `langchain-openai`, `langchain-anthropic`, `langchain-openrouter`).*
+
+### 3. Variables de Entorno (.env)
+Crea un archivo `.env` en la raíz del proyecto con la siguiente configuración:
+```env
+# Proveedor soportado: google, openai, anthropic, open-router
+LLM_PROVIDER=google
+LLM_MODEL=gemini-1.5-pro
+LLM_API_KEY=tu_api_key_aqui
+```
+
 ## 🔌 Integración con MCP (Model Context Protocol)
 
 AIDevTeam está diseñado para funcionar como un servidor **FastMCP**. Esto permite que el sistema se integre perfectamente con editores de código y clientes compatibles, exponiendo la capacidad del equipo de agentes como una herramienta estándar.
@@ -30,62 +98,16 @@ AIDevTeam está diseñado para funcionar como un servidor **FastMCP**. Esto perm
 - **Herramienta Principal**: `delegar_tarea_a_equipo_ia`
 - **Gestión de Sesión**: Utiliza un sistema de persistencia basado en `MemorySaver`. Cada directorio de proyecto genera un `thread_id` único mediante un hash MD5, permitiendo que los agentes mantengan el contexto histórico de cada proyecto por separado.
 
-## 📁 Estructura del Proyecto
-
-```text
-.
-├── app/
-│   ├── agents/             # Definiciones lógicas y nodos de agentes
-│   │   ├── agente_planificador.py
-│   │   ├── agente_codificador.py
-│   │   └── agente_revisor.py
-│   ├── models/             # Esquemas Pydantic y configuración del Grafo
-│   │   ├── llm_factory.py  # Fábrica multi-proveedor de LLM
-│   │   └── models.py       # Estado global (ProjectState)
-│   ├── prompts/            # Prompts del sistema en Markdown
-│   ├── settings/           # Configuración dinámica y variables de entorno
-│   ├── utils/              # Utilidades para manejo de archivos
-│   └── main.py             # Definición y compilación del Grafo de LangGraph
-├── mcp_server.py           # Punto de entrada para el servidor MCP
-├── requirements.txt        # Dependencias core
-└── .env                    # Configuración de credenciales
-```
-
-## 🛠️ Instalación y Configuración
-
-### 1. Requisitos Previos
-- Python 3.10 o superior.
-- Instalación de [SearxNG](https://github.com/searxng/searxng) (opcional, para búsqueda web).
-
-### 2. Configuración del Entorno
-Clona el repositorio y configura el entorno virtual:
-```bash
-git clone <repository-url>
-cd copilot_support
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-### 3. Variables de Entorno (.env)
-Crea un archivo `.env` en la raíz con la siguiente configuración:
-```env
-# Proveedor: google, openai, anthropic, etc.
-LLM_PROVIDER=google
-LLM_MODEL=gemini-1.5-pro
-LLM_API_KEY=tu_api_key_aqui
-```
-
-### 4. Configuración del Cliente MCP (ej. Roo Code, Claude Desktop)
+### Configuración del Cliente MCP (ej. Roo Code, Claude Desktop)
 Para integrar AIDevTeam como un servidor MCP en tu cliente preferido, agrega la siguiente configuración en el archivo de ajustes de MCP (`mcp_settings.json` o similar):
 
 ```json
 {
 	"mcpServers": {
 		"AIDevTeam": {
-			"command": "/home/valentin-ortiz/dev/copilot_support/.venv/bin/python",
+			"command": "/ruta/absoluta/a/tu/.venv/bin/python",
 			"args": [
-				"/home/valentin-ortiz/dev/copilot_support/mcp_server.py"
+				"/ruta/absoluta/a/tu/mcp_server.py"
 			],
 			"env": {
 				"LLM_API_KEY": "tu_api_key",
