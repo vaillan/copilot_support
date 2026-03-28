@@ -57,7 +57,7 @@ def agente_planificador(state: ProjectState) -> Command:
     ])
     
     cadena = prompt_template | llm_con_herramientas
-    respuesta = cadena.invoke({"messages": state["messages"]})
+    respuesta = cadena.invoke({"messages": state["messages"], "directorio": directorio})
     
     if respuesta.tool_calls and respuesta.tool_calls[0]["name"] == "PlanDeAccion": # type: ignore
         plan_generado = respuesta.tool_calls[0]["args"] # type: ignore

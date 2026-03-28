@@ -45,7 +45,7 @@ def agente_codificador(state: ProjectState) -> Command:
     ])
     
     cadena = prompt_template | llm_con_herramientas
-    respuesta = cadena.invoke({"messages": state["messages"]})
+    respuesta = cadena.invoke({"messages": state["messages"], "directorio": directorio, "plan": state.get("plan_de_accion", "Sin plan.")})
     
     if respuesta.tool_calls:
         for tool_call in respuesta.tool_calls:

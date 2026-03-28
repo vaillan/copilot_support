@@ -50,7 +50,7 @@ def agente_revisor(state: ProjectState) -> Command:
     ])
     
     cadena = prompt_template | llm_con_herramientas
-    respuesta = cadena.invoke({"messages": state["messages"]})
+    respuesta = cadena.invoke({"messages": state["messages"], "directorio": directorio, "codigo_escrito": state.get("codigo_escrito", "Sin reporte.")})
     
     if respuesta.tool_calls:
         for tool_call in respuesta.tool_calls:

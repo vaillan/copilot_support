@@ -5,9 +5,9 @@ class MuteStderr:
     def write(self, x): pass
     def flush(self): pass
 
-sys.stderr = MuteStderr()
+# sys.stderr = MuteStderr()
 
-os.environ["FASTMCP_LOG_LEVEL"] = "CRITICAL"
+os.environ["FASTMCP_LOG_LEVEL"] = "INFO"
 
 from fastmcp import FastMCP
 import hashlib
