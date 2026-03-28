@@ -29,4 +29,7 @@ def crear_grafo():
 
     memory = MemorySaver()
 
-    return workflow.compile(checkpointer=memory)
+    return workflow.compile(
+            checkpointer=memory,
+            interrupt_before=["agente_codificador", "agente_revisor"]
+        )

@@ -21,34 +21,58 @@ mcp = FastMCP("AIDevTeam")
 agentes_app = crear_grafo()
 
 @mcp.tool()
-def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str) -> str:
+def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str, approve: bool = False) -> str:
     """
     ÚSA ESTA HERRAMIENTA PARA DELEGAR TAREAS COMPLEJAS DE PROGRAMACIÓN.
     Esta herramienta invoca a un equipo de 3 agentes autónomos (Arquitecto, Programador y QA).
-    Ellos planearán, escribirán el código y ejecutarán los tests automáticamente.
     
     Args:
-        instruccion: Lo que el usuario quiere construir (ej. "Crea un sistema de login").
-        directorio_proyecto: La ruta absoluta de la carpeta actual del proyecto.
+        instruccion: Lo que el usuario quiere construir.
+        directorio_proyecto: La ruta absoluta de la carpeta actual.
+        approve: Booleano para aprobar y continuar si el proceso está pausado esperando revisión humana.
     """
     
+    # Generamos un ID de sesión único por proyecto
     thread_id = hashlib.md5(directorio_proyecto.encode()).hexdigest()
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 50}
 
-    estado_inicial = {
-        "instruccion_usuario": instruccion,
-        "directorio_proyecto": directorio_proyecto,
-        "messages": [HumanMessage(content=instruccion)]
-    }
-    
     try:
-        resultado = agentes_app.invoke(estado_inicial, config) # type: ignore
+        if approve:
+            # Si el usuario aprobó visualmente, reanudamos el grafo desde donde se quedó
+            resultado = agentes_app.invoke(None, config) # type: ignore
+        else:
+            # Si es una tarea nueva, iniciamos desde cero
+            estado_inicial = {
+                "instruccion_usuario": instruccion,
+                "directorio_proyecto": directorio_proyecto,
+                "messages":[HumanMessage(content=instruccion)]
+            }
+            resultado = agentes_app.invoke(estado_inicial, config) # type: ignore
+
+        estado = agentes_app.get_state(config) # type: ignore
         
+        if estado.next:
+            siguiente_nodo = estado.next[0]
+            
+            if siguiente_nodo == "agente_codificador":
+                plan = estado.values.get("plan_de_accion", "Plan generado.")
+                return f"⏸️ PAUSA 1: El Arquitecto propone este plan:\n{plan}\n\nPregúntale al usuario si lo aprueba. Si dice que sí, llama a esta herramienta con approve=True."
+                
+            elif siguiente_nodo == "agente_revisor":
+                return (
+                    f"⏸️ PAUSA 2 (REVISIÓN DE CÓDIGO): El Programador ha terminado de escribir los archivos en el disco duro.\n\n"
+                    f"👀 ACCIÓN REQUERIDA POR EL USUARIO:\n"
+                    f"1. Abre la pestaña de 'Control de Código Fuente' (Git) en VSCode.\n"
+                    f"2. Haz clic en los archivos modificados para ver el Diff (los cambios en verde y rojo).\n"
+                    f"3. Si el código es correcto, dile a Roo Code 'Apruebo los cambios'. Roo Code llamará a esta herramienta con approve=True para que el QA corra los tests.\n"
+                    f"4. Si el código está mal, descarta los cambios en Git y pídele a Roo Code que corrija la instrucción."
+                )
+
         codigo_escrito = resultado.get("codigo_escrito", "No se reportó código.")
         errores_qa = resultado.get("errores_terminal", "Sin errores.")
         
         reporte_final = (
-            f"Tarea completada por el equipo LangGraph.\n"
+            f"✅ Tarea completada por el equipo LangGraph.\n"
             f"ID de Sesión: {thread_id}\n"
             f"Resumen de cambios: {codigo_escrito}\n"
             f"Estado final de los tests (QA): {errores_qa}"
@@ -56,7 +80,7 @@ def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str) -> str
         return reporte_final
         
     except Exception as e:
-        return f" El equipo de agentes falló con un error interno: {str(e)}"
+        return f"🚨 El equipo de agentes falló con un error interno: {str(e)}"
 
 
 if __name__ == "__main__":
