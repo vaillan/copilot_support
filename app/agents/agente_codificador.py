@@ -15,12 +15,19 @@ class CodigoCompletado(BaseModel):
     """Llama a esta herramienta EXCLUSIVAMENTE cuando hayas terminado de programar todos los pasos del plan."""
     resumen_cambios: str = Field(description="Resumen detallado de los archivos que creaste o modificaste.")
 
+_cache_tools = {}
+
 def _get_tools(directorio: str):
+    if directorio in _cache_tools:
+        return _cache_tools[directorio]
+        
     toolkit_archivos = FileManagementToolkit(root_dir=directorio)
-    return [
+    herramientas = [
         t for t in toolkit_archivos.get_tools() 
         if t.name in ["read_file", "write_file"]
     ]
+    _cache_tools[directorio] = herramientas
+    return herramientas
 
 def agente_codificador(state: ProjectState) -> Command:
     """
@@ -65,9 +72,10 @@ def agente_codificador(state: ProjectState) -> Command:
             goto="nodo_herramientas_codificador"
         )
     else:
+        # Evitar bucle infinito: Si no hay llamadas a herramientas, informar y pedir acción.
         return Command(
             update={"messages": [respuesta]},
-            goto="agente_codificador"
+            goto="agente_codificador" # LangGraph volverá aquí, pero si no cambiamos el prompt o el estado, seguirá igual.
         )
 
 def nodo_herramientas_codificador(state: ProjectState):

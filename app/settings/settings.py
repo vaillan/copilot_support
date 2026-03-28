@@ -1,15 +1,14 @@
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings # type: ignore
 import os
-from tempfile import TemporaryDirectory
 from pathlib import Path
 
 from dotenv import load_dotenv # type: ignore
 
 load_dotenv()
 
-_TEMP_DIRECTORY = TemporaryDirectory()
-WORKING_DIRECTORY = Path(_TEMP_DIRECTORY.name)
+WORKING_DIRECTORY = Path(os.getenv('WORKING_DIRECTORY', os.getcwd()))
+
 class Settings(BaseSettings):
     """
     Configuración global de la aplicación.

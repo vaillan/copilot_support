@@ -22,14 +22,21 @@ def finalizar_revision(aprobado: bool, reporte_errores: str = "") -> str:
     """
     return "Revisión procesada."
 
+_cache_tools = {}
+
 def _get_tools(directorio: str):
+    if directorio in _cache_tools:
+        return _cache_tools[directorio]
+        
     toolkit_archivos = FileManagementToolkit(root_dir=directorio)
     herramientas_lectura = [
         t for t in toolkit_archivos.get_tools() 
         if t.name == "read_file"
     ]
     terminal = ShellTool()
-    return [terminal, finalizar_revision] + herramientas_lectura
+    herramientas = [terminal, finalizar_revision] + herramientas_lectura
+    _cache_tools[directorio] = herramientas
+    return herramientas
 
 def agente_revisor(state: ProjectState) -> Command:
     """
@@ -74,6 +81,7 @@ def agente_revisor(state: ProjectState) -> Command:
             goto="nodo_herramientas_revisor"
         )
     else:
+        # Evitar bucle infinito: Si no hay llamadas a herramientas, informar y pedir acción.
         return Command(
             update={"messages": [respuesta]},
             goto="agente_revisor"

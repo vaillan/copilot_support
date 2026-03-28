@@ -24,7 +24,12 @@ class PlanDeAccion(BaseModel):
     explicacion_arquitectura: str = Field(description="Breve explicación del enfoque técnico")
     pasos: List[Paso]
 
+_cache_tools = {}
+
 def _get_tools(directorio: str):
+    if directorio in _cache_tools:
+        return _cache_tools[directorio]
+        
     toolkit_archivos = FileManagementToolkit(root_dir=directorio)
     herramientas_lectura = [
         t for t in toolkit_archivos.get_tools() 
@@ -37,7 +42,9 @@ def _get_tools(directorio: str):
         description="Busca en internet documentación técnica actualizada, tutoriales o foros.",
         func=searx.run
     )
-    return herramientas_lectura + [tool_busqueda]
+    herramientas = herramientas_lectura + [tool_busqueda]
+    _cache_tools[directorio] = herramientas
+    return herramientas
 
 def agente_planificador(state: ProjectState) -> Command:
     """
