@@ -62,10 +62,10 @@ async def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str, 
                 return (
                     f"⏸️ PAUSA 2 (REVISIÓN DE CÓDIGO): El Programador ha terminado de escribir los archivos en el disco duro.\n\n"
                     f"👀 ACCIÓN REQUERIDA POR EL USUARIO:\n"
-                    f"1. Abre la pestaña de 'Control de Código Fuente' (Git) en VSCode.\n"
+                    f"1. Abre la herramienta de 'Control de Código Fuente' (Git) en tu editor de código.\n"
                     f"2. Haz clic en los archivos modificados para ver el Diff (los cambios en verde y rojo).\n"
-                    f"3. Si el código es correcto, dile a Roo Code 'Apruebo los cambios'. Roo Code llamará a esta herramienta con approve=True para que el QA corra los tests.\n"
-                    f"4. Si el código está mal, descarta los cambios en Git y pídele a Roo Code que corrija la instrucción."
+                    f"3. Si el código es correcto, dile a tu cliente MCP 'Apruebo los cambios'. El cliente llamará a esta herramienta con approve=True para que el QA corra los tests.\n"
+                    f"4. Si el código está mal, descarta los cambios en Git y pídele a tu cliente MCP que corrija la instrucción."
                 )
 
         codigo_escrito = resultado.get("codigo_escrito", "No se reportó código.")

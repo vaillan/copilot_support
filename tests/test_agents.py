@@ -228,3 +228,118 @@ def test_agente_revisor_herramienta_terminal(mock_get_file, mock_get_llm, mock_s
     messages = result.update["messages"]
     assert len(messages) == 1
     assert isinstance(messages[0], AIMessage)
+
+import os
+import tempfile
+from app.agents.agente_codificador import _get_tools as get_tools_codificador
+from app.agents.agente_planificador import nodo_herramientas_planificador
+from app.agents.agente_codificador import nodo_herramientas_codificador
+from app.agents.agente_revisor import nodo_herramientas_revisor
+
+def test_replace_in_file_tool():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Crear archivo de prueba
+        file_path = os.path.join(temp_dir, "test.txt")
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write("Hola mundo\nEsto es una prueba.")
+            
+        # Obtener herramientas
+        tools = get_tools_codificador(temp_dir)
+        replace_tool = next(t for t in tools if t.name == "replace_in_file")
+        
+        # Ejecutar reemplazo exitoso
+        result = replace_tool.invoke({
+            "file_path": "test.txt",
+            "search_string": "mundo",
+            "replace_string": "LangGraph"
+        })
+        
+        assert "Reemplazo exitoso" in result
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        assert "Hola LangGraph" in content
+        
+        # Ejecutar reemplazo fallido (cadena no encontrada)
+        result_fail = replace_tool.invoke({
+            "file_path": "test.txt",
+            "search_string": "no_existe",
+            "replace_string": "algo"
+        })
+        assert "Error: La cadena de búsqueda no se encontró" in result_fail
+
+def test_nodo_herramientas_planificador():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Crear archivo para leer
+        file_path = os.path.join(temp_dir, "leeme.txt")
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write("contenido secreto")
+            
+        tool_call = {
+            "name": "read_file",
+            "args": {"file_path": "leeme.txt"},
+            "id": "call_read_1"
+        }
+        
+        state = {
+            "messages": [AIMessage(content="", tool_calls=[tool_call])],
+            "directorio_proyecto": temp_dir,
+            "plan_de_accion": None,
+            "codigo_escrito": "",
+            "errores_terminal": ""
+        }
+        
+        result = nodo_herramientas_planificador(state)
+        
+        messages = result["messages"]
+        assert len(messages) == 1
+        assert isinstance(messages[0], ToolMessage)
+        assert "contenido secreto" in messages[0].content
+
+def test_nodo_herramientas_codificador():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        tool_call = {
+            "name": "write_file",
+            "args": {"file_path": "nuevo.txt", "text": "hola"},
+            "id": "call_write_1"
+        }
+        
+        state = {
+            "messages": [AIMessage(content="", tool_calls=[tool_call])],
+            "directorio_proyecto": temp_dir,
+            "plan_de_accion": None,
+            "codigo_escrito": "",
+            "errores_terminal": ""
+        }
+        
+        result = nodo_herramientas_codificador(state)
+        
+        messages = result["messages"]
+        assert len(messages) == 1
+        assert isinstance(messages[0], ToolMessage)
+        assert "File written successfully" in messages[0].content
+        
+        # Verificar que el archivo se creó
+        assert os.path.exists(os.path.join(temp_dir, "nuevo.txt"))
+
+def test_nodo_herramientas_revisor():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        tool_call = {
+            "name": "terminal",
+            "args": {"commands": ["echo 'test terminal'"]},
+            "id": "call_term_1"
+        }
+        
+        state = {
+            "messages": [AIMessage(content="", tool_calls=[tool_call])],
+            "directorio_proyecto": temp_dir,
+            "plan_de_accion": None,
+            "codigo_escrito": "",
+            "errores_terminal": ""
+        }
+        
+        result = nodo_herramientas_revisor(state)
+        
+        messages = result["messages"]
+        assert len(messages) == 1
+        assert isinstance(messages[0], ToolMessage)
+        assert "test terminal" in messages[0].content
