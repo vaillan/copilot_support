@@ -1,4 +1,5 @@
 from langgraph.graph import END
+from langchain_core.messages import ToolMessage, HumanMessage
 from langgraph.types import Command
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from app.models.llm_factory import get_llm
@@ -52,8 +53,8 @@ def agente_revisor(state: ProjectState) -> Command:
         MessagesPlaceholder(variable_name="messages")
     ])
     
-    cadena = prompt_template | llm_con_herramientas
-    respuesta = cadena.invoke({"messages": state["messages"], "directorio": directorio, "codigo_escrito": state.get("codigo_escrito", "Sin reporte.")})
+    prompt = prompt_template.invoke({"messages": state["messages"], "directorio": directorio, "codigo_escrito": state.get("codigo_escrito", "Sin reporte.")})
+    respuesta = llm_con_herramientas.invoke(prompt)
     
     if respuesta.tool_calls:
         for tool_call in respuesta.tool_calls:
@@ -61,11 +62,20 @@ def agente_revisor(state: ProjectState) -> Command:
                 aprobado = tool_call["args"].get("aprobado", False)
                 errores = tool_call["args"].get("reporte_errores", "")
                 
+                # Bug fix: Attach ToolMessages for each tool_call
+                tool_messages = [
+                    ToolMessage(
+                        tool_call_id=tc["id"],
+                        content="Revisión finalizada con éxito." if tc["name"] == "finalizar_revision" else "Operación completada",
+                    )
+                    for tc in respuesta.tool_calls
+                ]
+                
                 if aprobado:
                     return Command(
                         update={
                             "errores_terminal": "Ninguno. Código aprobado.",
-                            "messages": [respuesta]
+                            "messages": [respuesta] + tool_messages
                         },
                         goto=END
                     )
@@ -73,7 +83,7 @@ def agente_revisor(state: ProjectState) -> Command:
                     return Command(
                         update={
                             "errores_terminal": errores,
-                            "messages": [respuesta]
+                            "messages": [respuesta] + tool_messages
                         },
                         goto="agente_codificador"
                     )
@@ -83,9 +93,9 @@ def agente_revisor(state: ProjectState) -> Command:
             goto="nodo_herramientas_revisor"
         )
     else:
-        # Evitar bucle infinito: Si no hay llamadas a herramientas, informar y pedir acción.
+        # Bug fix: Avoid infinite loop
         return Command(
-            update={"messages": [respuesta]},
+            update={"messages": [respuesta, HumanMessage(content="Debes llamar a una herramienta para probar el código o llamar a finalizar_revision si ya terminaste.")]},
             goto="agente_revisor"
         )
 

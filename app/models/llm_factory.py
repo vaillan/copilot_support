@@ -11,7 +11,7 @@ def get_llm(temperature: float = 0.0):
     Utiliza init_chat_model, la mejor práctica en LangChain v1.0 para inicialización dinámica.
     """
     provider = settings.LLM_PROVIDER.lower() if settings.LLM_PROVIDER else "google_genai"
-    model_name = settings.LLM_MODEL if settings.LLM_MODEL else "gemini-3.1-pro-preview"
+    model_name = settings.LLM_MODEL if settings.LLM_MODEL else "gemini-1.5-pro"
     api_key = settings.LLM_API_KEY
     
     # Mapeo de proveedores para init_chat_model

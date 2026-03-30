@@ -1,15 +1,14 @@
 from pydantic import BaseModel, Field
+from langchain_core.messages import ToolMessage, HumanMessage
 from langgraph.types import Command
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langgraph.prebuilt import ToolNode
 from app.utils.files import File
 from app.models.models import ProjectState
-from app.settings.settings import Settings
 from app.models.llm_factory import get_llm
 from functools import lru_cache
 
-settings = Settings()
 fileSystem = File(directory="prompts")
 
 class CodigoCompletado(BaseModel):
@@ -40,26 +39,49 @@ def agente_codificador(state: ProjectState) -> Command:
     prompt_sistema = fileSystem.get_file_content(file_name="codificador_prompt.md")
     
     if errores:
-        prompt_sistema += f"\n\n ATENCIÓN: Tu código anterior falló las pruebas. Corrige los siguientes errores:\n{errores}"
+        prompt_sistema += (
+            f"\n\n ATENCIÓN: Tu código anterior falló las pruebas. "
+            f"Corrige los siguientes errores:\n{errores}"
+        )
         
     prompt_template = ChatPromptTemplate.from_messages([
         ("system", prompt_sistema),
         MessagesPlaceholder(variable_name="messages")
     ])
     
-    cadena = prompt_template | llm_con_herramientas
-    respuesta = cadena.invoke({"messages": state["messages"], "directorio": directorio, "plan": state.get("plan_de_accion", "Sin plan.")})
+    plan = state.get("plan_de_accion", "Sin plan.")
+    prompt = prompt_template.invoke({
+        "messages": state["messages"], 
+        "directorio": directorio, 
+        "plan": plan
+    })
+    respuesta = llm_con_herramientas.invoke(prompt)
     
     if respuesta.tool_calls:
         for tool_call in respuesta.tool_calls:
             if tool_call["name"] == "CodigoCompletado":
                 resumen = tool_call["args"].get("resumen_cambios", "Código completado.")
                 
+                # Bug fix: Attach ToolMessages for each tool_call
+                tool_messages = []
+                for tc in respuesta.tool_calls:
+                    if tc["name"] == "CodigoCompletado":
+                        content = f"Código guardado y listo para revisión: {resumen}"
+                    else:
+                        content = "Operación de archivo confirmada"
+                    
+                    tool_messages.append(
+                        ToolMessage(
+                            tool_call_id=tc["id"],
+                            content=content,
+                        )
+                    )
+                
                 return Command(
                     update={
                         "codigo_escrito": resumen,
                         "errores_terminal": "",
-                        "messages": [respuesta]
+                        "messages": [respuesta] + tool_messages
                     },
                     goto="agente_revisor"
                 )
@@ -69,10 +91,11 @@ def agente_codificador(state: ProjectState) -> Command:
             goto="nodo_herramientas_codificador"
         )
     else:
-        # Evitar bucle infinito: Si no hay llamadas a herramientas, informar y pedir acción.
+        # Bug fix: Avoid infinite loop
+        msg = "Debes llamar a una herramienta para escribir código o llamar a CodigoCompletado si ya terminaste."
         return Command(
-            update={"messages": [respuesta]},
-            goto="agente_codificador" # LangGraph volverá aquí, pero si no cambiamos el prompt o el estado, seguirá igual.
+            update={"messages": [respuesta, HumanMessage(content=msg)]},
+            goto="agente_codificador"
         )
 
 def nodo_herramientas_codificador(state: ProjectState):

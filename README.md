@@ -6,6 +6,10 @@
 
 El proyecto implementa un grafo cíclico de estados (`StateGraph`) utilizando la arquitectura de agentes de LangChain, permitiendo la colaboración en tiempo real y la corrección de errores en un flujo iterativo. Además, incorpora un sistema de **Human-in-the-Loop (HITL)** para garantizar la calidad y el control humano sobre las decisiones críticas.
 
+### Gestión de Estado y Enrutamiento Dinámico
+- **Estado del Proyecto (`ProjectState`)**: Hereda de `MessagesState` de LangGraph, lo que permite la gestión automática del historial de mensajes (`messages`) entre los agentes y el usuario, además de mantener variables de estado globales como el plan de acción y los errores de terminal.
+- **Control de Flujo (`Command`)**: Se utiliza el objeto `Command` de LangGraph para el enrutamiento dinámico. Esto permite a cada agente decidir de manera autónoma cuál es el siguiente nodo a ejecutar (por ejemplo, ir a su nodo de herramientas, avanzar al siguiente agente o terminar el proceso) y actualizar el estado global de forma explícita.
+
 ### El Equipo de Agentes
 La lógica de todos los agentes ha sido refactorizada utilizando `ToolNode` y `ChatPromptTemplate` de LangGraph/LangChain, lo que garantiza una mayor modularidad y un manejo claro de los prompts del sistema.
 
@@ -56,7 +60,7 @@ La estructura del proyecto está organizada de la siguiente manera:
 │   │   └── __init__.py
 │   └── main.py             # Orquestador del Grafo (StateGraph con aristas explícitas)
 ├── mcp_server.py           # Punto de entrada para el servidor FastMCP
-├── requirements.txt        # Dependencias del proyecto (incluye ddgs)
+├── requirements.txt        # Dependencias del proyecto (incluye ddgs, langchain-experimental)
 ├── .env                    # Configuración de credenciales (no versionado)
 └── README.md               # Documentación del proyecto
 ```
@@ -86,6 +90,8 @@ source .venv/bin/activate  # En Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+**Nota sobre dependencias:** El proyecto requiere explícitamente `langchain-experimental` (incluido en `requirements.txt`) para el funcionamiento seguro de la herramienta de ejecución de comandos en terminal (`ShellTool`) utilizada por el Agente Revisor.
+
 ### 3. Variables de Entorno (.env)
 Crea un archivo `.env` en la raíz del proyecto:
 ```env
@@ -111,6 +117,28 @@ python mcp_server.py
 
 ### Flujo de Trabajo (HITL)
 El sistema utiliza el parámetro `approve` para gestionar las pausas de revisión (Aprobación del Plan y Revisión de Código), asegurando que el usuario mantenga el control total sobre los cambios realizados.
+
+## 🧪 Pruebas
+
+El proyecto incluye un conjunto de pruebas unitarias para verificar el correcto funcionamiento de los agentes y su interacción con las herramientas. Las pruebas están escritas utilizando `pytest` y `pytest-mock`.
+
+Para ejecutar todas las pruebas unitarias, puedes utilizar el script proporcionado:
+
+```bash
+./run_tests.sh
+```
+
+O ejecutar `pytest` directamente desde la raíz del proyecto:
+
+```bash
+pytest tests/
+```
+
+Para ejecutar una prueba específica, por ejemplo, la validación de aprobación del Agente Revisor:
+
+```bash
+pytest tests/test_agents.py::test_agente_revisor_approval
+```
 
 ---
 © 2026 AIDevTeam - Automatización Inteligente de Software.

@@ -1,19 +1,17 @@
-import os
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 from langchain_community.agent_toolkits import FileManagementToolkit
 from typing import List
 from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import ToolMessage, HumanMessage
 from langgraph.types import Command
 from langchain_core.tools import Tool
 from langgraph.prebuilt import ToolNode
-from app.settings.settings import Settings
 from app.models.llm_factory import get_llm
 from app.models.models import ProjectState
 from app.utils.files import File
 from functools import lru_cache
 
-settings = Settings()
 fileSystem = File(directory="prompts")
 
 class Paso(BaseModel):
@@ -59,18 +57,34 @@ def agente_planificador(state: ProjectState) -> Command:
         MessagesPlaceholder(variable_name="messages")
     ])
     
-    cadena = prompt_template | llm_con_herramientas
-    respuesta = cadena.invoke({"messages": state["messages"], "directorio": directorio})
+    prompt = prompt_template.invoke({"messages": state["messages"], "directorio": directorio})
+    respuesta = llm_con_herramientas.invoke(prompt)
     
     if respuesta.tool_calls:
         for tool_call in respuesta.tool_calls:
             if tool_call["name"] == "PlanDeAccion":
                 plan_generado = tool_call["args"]
                 
+                # Bug fix: Attach ToolMessages for each tool_call to satisfy API requirements
+                tool_messages = []
+                for tc in respuesta.tool_calls:
+                    if tc["name"] == "PlanDeAccion":
+                        arq = plan_generado.get('explicacion_arquitectura', 'desconocido')
+                        content = f"Plan de acción aceptado e iniciando fase de codificación para: {arq}"
+                    else:
+                        content = "Ignorado en favor del plan final"
+                    
+                    tool_messages.append(
+                        ToolMessage(
+                            tool_call_id=tc["id"],
+                            content=content,
+                        )
+                    )
+                
                 return Command(
                     update={
                         "plan_de_accion": plan_generado,
-                        "messages": [respuesta]
+                        "messages": [respuesta] + tool_messages
                     },
                     goto="agente_codificador"
                 )
@@ -80,8 +94,10 @@ def agente_planificador(state: ProjectState) -> Command:
             goto="nodo_herramientas_planificador"
         )
     else:
+        # Bug fix: Avoid infinite loop by asking for a tool call
+        msg = "Debes llamar a una herramienta para investigar o llamar a PlanDeAccion si ya terminaste."
         return Command(
-            update={"messages": [respuesta]},
+            update={"messages": [respuesta, HumanMessage(content=msg)]},
             goto="agente_planificador"
         )
 

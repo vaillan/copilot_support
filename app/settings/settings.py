@@ -1,4 +1,3 @@
-from pydantic import BaseModel
 from pydantic_settings import BaseSettings # type: ignore
 import os
 from pathlib import Path
