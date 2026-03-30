@@ -25,13 +25,20 @@ La lógica de todos los agentes ha sido refactorizada utilizando `ToolNode` y `C
 
 3.  **🪲 Agente Revisor (QA/Tester)**:
     - **Función**: Valida la integridad del código escrito mediante pruebas de ejecución.
-    - **Herramientas**: `ShellTool` para ejecución de comandos en terminal y verificación de sintaxis o tests.
+    - **Herramientas**: `SecureShellTool` para ejecución de comandos en terminal y verificación de sintaxis o tests.
     - **Bucle de Feedback**: Si detecta errores, devuelve el estado al Codificador con un reporte detallado.
 
 ### ⏸️ Flujo de Aprobación Manual (Human-in-the-Loop)
 El sistema está diseñado para pausar su ejecución en momentos clave, permitiendo la intervención humana:
 - **PAUSA 1 (Aprobación del Plan)**: Tras la generación del plan por el Arquitecto, el sistema se detiene para que el usuario valide el enfoque técnico antes de escribir código.
 - **PAUSA 2 (Revisión de Código)**: Una vez que el Programador escribe los archivos, el sistema se pausará nuevamente. Esto permite al usuario revisar el *Diff* (cambios en Git) y aprobar el código antes de que el QA ejecute las pruebas.
+
+## 🌍 Soporte Multi-Lenguaje y Seguridad
+
+AIDevTeam ha sido actualizado para soportar la ejecución y prueba de código en múltiples lenguajes de programación, incluyendo **C, C++, JavaScript (Node.js), PHP y Python**.
+
+- **Ejecución Segura (`SecureShellTool`)**: Se ha reemplazado la herramienta estándar de terminal por una implementación personalizada (`SecureShellTool`) que incluye un **timeout estricto de 15 segundos**. Esto previene bloqueos del sistema causados por bucles infinitos en el código generado por la IA.
+- **Entorno Estandarizado (`Dockerfile.env`)**: Se incluye un archivo `Dockerfile.env` que documenta las dependencias del sistema operativo necesarias (como `gcc`, `g++`, `nodejs`, `php-cli`) para garantizar que el Agente Revisor pueda compilar y ejecutar código en cualquier lenguaje soportado.
 
 ## 📁 Estructura del Proyecto y Módulos
 
@@ -55,11 +62,15 @@ La estructura del proyecto está organizada de la siguiente manera:
 │   ├── settings/           # Configuración dinámica y variables de entorno
 │   │   ├── settings.py     # Carga de variables desde .env (API Keys, Modelos)
 │   │   └── __init__.py
+│   ├── tools/              # Herramientas personalizadas para los agentes
+│   │   ├── secure_terminal.py # Implementación de SecureShellTool con timeout
+│   │   └── __init__.py
 │   ├── utils/              # Utilidades generales
 │   │   ├── files.py        # Gestión de lectura de archivos (ej. carga de prompts)
 │   │   └── __init__.py
 │   └── main.py             # Orquestador del Grafo (StateGraph con aristas explícitas)
 ├── mcp_server.py           # Punto de entrada para el servidor FastMCP
+├── Dockerfile.env          # Definición del entorno con compiladores e intérpretes
 ├── requirements.txt        # Dependencias del proyecto (incluye ddgs, langchain-experimental)
 ├── .env                    # Configuración de credenciales (no versionado)
 └── README.md               # Documentación del proyecto
@@ -70,6 +81,7 @@ La estructura del proyecto está organizada de la siguiente manera:
 - **`app/models/`**: Define las estructuras de datos fundamentales. `llm_factory.py` utiliza la función `init_chat_model`, permitiendo una inicialización dinámica y agnóstica de proveedores (Google, OpenAI, Anthropic, OpenRouter, etc.).
 - **`app/prompts/`**: Almacena los System Prompts de cada agente en archivos Markdown para facilitar su mantenimiento.
 - **`app/settings/`**: Centraliza la configuración de la aplicación utilizando `pydantic-settings`.
+- **`app/tools/`**: Contiene herramientas customizadas como `SecureShellTool` para garantizar la seguridad en la ejecución de código.
 - **`app/utils/`**: Proporciona utilidades auxiliares como la carga de prompts desde disco.
 - **`app/main.py`**: Orquestador principal. Define el `StateGraph` de LangGraph incluyendo aristas explícitas de retorno desde las herramientas hacia los agentes, asegurando un flujo de ejecución correcto y predecible.
 
@@ -78,6 +90,7 @@ La estructura del proyecto está organizada de la siguiente manera:
 ### 1. Requisitos Previos
 - Python 3.10 o superior.
 - Conexión a internet para búsqueda web.
+- (Opcional) Compiladores e intérpretes definidos en `Dockerfile.env` si se desea probar código en lenguajes distintos a Python.
 
 ### 2. Configuración del Entorno
 Clona el repositorio y configura el entorno virtual:
@@ -90,7 +103,7 @@ source .venv/bin/activate  # En Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-**Nota sobre dependencias:** El proyecto requiere explícitamente `langchain-experimental` (incluido en `requirements.txt`) para el funcionamiento seguro de la herramienta de ejecución de comandos en terminal (`ShellTool`) utilizada por el Agente Revisor.
+**Nota sobre dependencias:** El proyecto requiere explícitamente `langchain-experimental` (incluido en `requirements.txt`) para el funcionamiento de ciertas herramientas heredadas.
 
 ### 3. Variables de Entorno (.env)
 Crea un archivo `.env` en la raíz del proyecto:
