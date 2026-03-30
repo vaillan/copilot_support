@@ -15,17 +15,17 @@ La lógica de todos los agentes ha sido refactorizada utilizando `ToolNode` y `C
 
 1.  **🏗️ Agente Planificador (Arquitecto)**:
     - **Función**: Analiza los requerimientos del usuario y la estructura actual del proyecto.
-    - **Herramientas**: Búsqueda web avanzada (`ddgs`), exploración de archivos y lectura técnica (`FileManagementToolkit`).
+    - **Herramientas**: Búsqueda web avanzada (`DuckDuckGoSearchAPIWrapper`) y exploración de archivos y lectura técnica (`FileManagementToolkit` con permisos de `read_file` y `list_directory`).
     - **Salida**: Genera un `PlanDeAccion` estructurado que guía al resto del equipo.
 
 2.  **💻 Agente Codificador (Programador)**:
     - **Función**: Traduce el plan de acción en código ejecutable.
-    - **Herramientas**: `FileManagementToolkit` para manipulación segura de archivos (creación y edición).
+    - **Herramientas**: `FileManagementToolkit` para manipulación de archivos (permisos de `read_file` y `write_file`).
     - **Autocorrección**: Recibe retroalimentación del Revisor para aplicar parches inmediatos ante fallos.
 
 3.  **🪲 Agente Revisor (QA/Tester)**:
     - **Función**: Valida la integridad del código escrito mediante pruebas de ejecución.
-    - **Herramientas**: `SecureShellTool` para ejecución de comandos en terminal y verificación de sintaxis o tests.
+    - **Herramientas**: `ShellTool` para ejecución de comandos en terminal local y verificación de sintaxis o tests, y `FileManagementToolkit` (permiso de `read_file`).
     - **Bucle de Feedback**: Si detecta errores, devuelve el estado al Codificador con un reporte detallado.
 
 ### ⏸️ Flujo de Aprobación Manual (Human-in-the-Loop)
@@ -37,8 +37,7 @@ El sistema está diseñado para pausar su ejecución en momentos clave, permitie
 
 AIDevTeam ha sido actualizado para soportar la ejecución y prueba de código en múltiples lenguajes de programación, incluyendo **C, C++, JavaScript (Node.js), PHP y Python**.
 
-- **Ejecución Segura (`SecureShellTool`)**: Se ha reemplazado la herramienta estándar de terminal por una implementación personalizada (`SecureShellTool`) que incluye un **timeout estricto de 15 segundos**. Esto previene bloqueos del sistema causados por bucles infinitos en el código generado por la IA.
-- **Entorno Estandarizado (`Dockerfile.env`)**: Se incluye un archivo `Dockerfile.env` que documenta las dependencias del sistema operativo necesarias (como `gcc`, `g++`, `nodejs`, `php-cli`) para garantizar que el Agente Revisor pueda compilar y ejecutar código en cualquier lenguaje soportado.
+- **Ejecución Local (`ShellTool`)**: La ejecución de pruebas y comandos se realiza localmente utilizando el `ShellTool` estándar de `langchain_community.tools`. Esto permite al Agente Revisor interactuar directamente con el entorno del sistema para compilar y ejecutar código en cualquier lenguaje soportado que esté instalado en la máquina anfitriona.
 
 ## 📁 Estructura del Proyecto y Módulos
 
@@ -62,15 +61,14 @@ La estructura del proyecto está organizada de la siguiente manera:
 │   ├── settings/           # Configuración dinámica y variables de entorno
 │   │   ├── settings.py     # Carga de variables desde .env (API Keys, Modelos)
 │   │   └── __init__.py
-│   ├── tools/              # Herramientas personalizadas para los agentes
-│   │   ├── secure_terminal.py # Implementación de SecureShellTool con timeout
-│   │   └── __init__.py
 │   ├── utils/              # Utilidades generales
 │   │   ├── files.py        # Gestión de lectura de archivos (ej. carga de prompts)
 │   │   └── __init__.py
 │   └── main.py             # Orquestador del Grafo (StateGraph con aristas explícitas)
 ├── mcp_server.py           # Punto de entrada para el servidor FastMCP
-├── Dockerfile.env          # Definición del entorno con compiladores e intérpretes
+├── test_tool.py            # Script de prueba manual para herramientas
+├── test_graph.py           # Script de prueba manual para el flujo del grafo
+├── tech-lead-export.yaml   # Exportación de configuración del Tech Lead
 ├── requirements.txt        # Dependencias del proyecto (incluye ddgs, langchain-experimental)
 ├── .env                    # Configuración de credenciales (no versionado)
 └── README.md               # Documentación del proyecto
@@ -78,10 +76,9 @@ La estructura del proyecto está organizada de la siguiente manera:
 
 ### Propósito de los Módulos en `app/`
 - **`app/agents/`**: Contiene la lógica individual de cada agente. Refactorizados para usar `ToolNode` para la ejecución de herramientas y `ChatPromptTemplate` para la gestión de instrucciones.
-- **`app/models/`**: Define las estructuras de datos fundamentales. `llm_factory.py` utiliza la función `init_chat_model`, permitiendo una inicialización dinámica y agnóstica de proveedores (Google, OpenAI, Anthropic, OpenRouter, etc.).
+- **`app/models/`**: Define las estructuras de datos fundamentales. `llm_factory.py` utiliza la función `init_chat_model`, permitiendo una inicialización dinámica y agnóstica de proveedores (Google, OpenAI, Anthropic, etc.) y soporta explícitamente OpenRouter mediante la librería `langchain_openrouter`.
 - **`app/prompts/`**: Almacena los System Prompts de cada agente en archivos Markdown para facilitar su mantenimiento.
 - **`app/settings/`**: Centraliza la configuración de la aplicación utilizando `pydantic-settings`.
-- **`app/tools/`**: Contiene herramientas customizadas como `SecureShellTool` para garantizar la seguridad en la ejecución de código.
 - **`app/utils/`**: Proporciona utilidades auxiliares como la carga de prompts desde disco.
 - **`app/main.py`**: Orquestador principal. Define el `StateGraph` de LangGraph incluyendo aristas explícitas de retorno desde las herramientas hacia los agentes, asegurando un flujo de ejecución correcto y predecible.
 
@@ -90,7 +87,6 @@ La estructura del proyecto está organizada de la siguiente manera:
 ### 1. Requisitos Previos
 - Python 3.10 o superior.
 - Conexión a internet para búsqueda web.
-- (Opcional) Compiladores e intérpretes definidos en `Dockerfile.env` si se desea probar código en lenguajes distintos a Python.
 
 ### 2. Configuración del Entorno
 Clona el repositorio y configura el entorno virtual:
@@ -119,7 +115,7 @@ AIDevTeam funciona como un servidor **FastMCP**, permitiendo su integración con
 
 - **Servidor**: `mcp_server.py`
 - **Herramienta Principal**: `delegar_tarea_a_equipo_ia`
-- **Gestión de Sesión**: Utiliza un sistema de persistencia basado en `MemorySaver`. Cada directorio genera un `thread_id` único mediante un hash MD5.
+- **Gestión de Sesión**: Utiliza un sistema de persistencia basado en `MemorySaver`. Cada directorio genera un `thread_id` único utilizando un hash MD5 de la ruta absoluta del directorio del proyecto (`hashlib.md5(directorio_proyecto.encode()).hexdigest()`), lo que permite mantener historiales de conversación separados para diferentes proyectos simultáneamente.
 
 ## 💻 Uso
 
