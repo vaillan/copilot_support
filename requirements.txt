@@ -20,3 +20,4 @@ pytest
 pytest-mock
 flake8
 langchain-experimental
+aiosqlite

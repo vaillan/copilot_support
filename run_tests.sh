@@ -19,5 +19,10 @@ echo "Ejecutando linter (flake8)..."
 flake8 app/ --count --select=E9,F63,F7,F82 --show-source --statistics
 flake8 app/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-echo "Ejecutando pruebas con pytest..."
-pytest tests/ -v
+if [ "$1" == "--e2e" ]; then
+    echo "Ejecutando pruebas E2E con pytest..."
+    pytest tests/ -m e2e -v
+else
+    echo "Ejecutando pruebas unitarias con pytest (excluyendo E2E)..."
+    pytest tests/ -m "not e2e" -v
+fi

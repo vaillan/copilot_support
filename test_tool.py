@@ -10,5 +10,5 @@ state = ProjectState(
     codigo_escrito="",
     errores_terminal=""
 )
-res = nodo_herramientas_codificador(state)
+res = nodo_herramientas_codificador(state, config={})
 print(res)

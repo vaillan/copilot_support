@@ -25,7 +25,7 @@ def test_flujo_completo_exito(mock_llm, mock_file_system):
     mock_plan.return_value = mock_llm_plan
     mock_llm_plan.bind_tools.return_value.invoke.return_value = AIMessage(
         content="", 
-        tool_calls=[{"name": "PlanDeAccion", "args": {"explicacion_arquitectura": "test", "pasos": []}, "id": "1"}]
+        tool_calls=[{"name": "entregar_plan_de_accion", "args": {"explicacion_arquitectura": "test", "pasos": []}, "id": "1"}]
     )
     
     mock_llm_cod = MagicMock()
@@ -77,7 +77,7 @@ def test_flujo_con_errores_y_correccion(mock_llm, mock_file_system):
     mock_plan.return_value = mock_llm_plan
     mock_llm_plan.bind_tools.return_value.invoke.return_value = AIMessage(
         content="", 
-        tool_calls=[{"name": "PlanDeAccion", "args": {"explicacion_arquitectura": "test", "pasos": []}, "id": "1"}]
+        tool_calls=[{"name": "entregar_plan_de_accion", "args": {"explicacion_arquitectura": "test", "pasos": []}, "id": "1"}]
     )
     
     mock_llm_cod = MagicMock()
@@ -142,12 +142,12 @@ def test_flujo_sin_herramientas_evita_bucle(mock_llm, mock_file_system):
     mock_llm_plan = MagicMock()
     mock_plan.return_value = mock_llm_plan
     
-    # First call: no tools. Second call: PlanDeAccion
+    # First call: no tools. Second call: entregar_plan_de_accion
     mock_llm_plan.bind_tools.return_value.invoke.side_effect = [
         AIMessage(content="Hola, soy el planificador"),
         AIMessage(
             content="", 
-            tool_calls=[{"name": "PlanDeAccion", "args": {"explicacion_arquitectura": "test", "pasos": []}, "id": "1"}]
+            tool_calls=[{"name": "entregar_plan_de_accion", "args": {"explicacion_arquitectura": "test", "pasos": []}, "id": "1"}]
         )
     ]
     
@@ -171,7 +171,7 @@ def test_flujo_sin_herramientas_evita_bucle(mock_llm, mock_file_system):
     
     # Check messages to ensure HumanMessage was added
     messages = current_state.values["messages"]
-    # Initial HumanMessage + AIMessage (no tools) + HumanMessage (warning) + AIMessage (PlanDeAccion) + ToolMessage
+    # Initial HumanMessage + AIMessage (no tools) + HumanMessage (warning) + AIMessage (entregar_plan_de_accion) + ToolMessage
     assert len(messages) == 5
     assert isinstance(messages[2], HumanMessage)
     assert "Debes llamar a una herramienta" in messages[2].content

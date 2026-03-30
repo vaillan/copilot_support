@@ -24,9 +24,9 @@ def test_agente_planificador_tool_call(mock_get_file, mock_get_llm, mock_state):
     mock_get_llm.return_value = mock_llm
     mock_get_file.return_value = "system prompt"
     
-    # Simular llamada a herramienta PlanDeAccion
+    # Simular llamada a herramienta entregar_plan_de_accion
     tool_call = {
-        "name": "PlanDeAccion",
+        "name": "entregar_plan_de_accion",
         "args": {"explicacion_arquitectura": "test plan", "pasos": []},
         "id": "call_1"
     }

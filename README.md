@@ -11,6 +11,12 @@ El proyecto implementa un grafo cíclico de estados (`StateGraph`) utilizando la
 - **Control de Flujo (`Command`)**: Se utiliza el objeto `Command` de LangGraph para el enrutamiento dinámico. Esto permite a cada agente decidir de manera autónoma cuál es el siguiente nodo a ejecutar (por ejemplo, ir a su nodo de herramientas, avanzar al siguiente agente o terminar el proceso) y actualizar el estado global de forma explícita.
 - **Aristas Explícitas**: El grafo utiliza aristas explícitas para conectar los nodos de herramientas de vuelta a sus agentes correspondientes, asegurando un flujo de ejecución predecible y robusto.
 
+### Estabilidad y Prevención de Bucles
+Los agentes ahora gestionan explícitamente la creación de objetos `ToolMessage` y validan las respuestas del LLM para asegurar que siempre se llame a una herramienta o se finalice el proceso. Esto evita bucles infinitos y cumple con los requisitos estrictos de la API de LangGraph, garantizando un flujo de ejecución estable y predecible.
+
+### Investigación Web Autónoma
+El `agente_planificador` integra `DuckDuckGoSearchAPIWrapper` para buscar en internet documentación técnica actualizada, tutoriales y foros antes de generar el plan de acción. Esto permite al sistema tomar decisiones arquitectónicas basadas en las mejores prácticas más recientes.
+
 ### Soporte Multi-Proveedor de LLMs
 El sistema cuenta con una fábrica de modelos (`llm_factory.py`) que utiliza `init_chat_model` de LangChain para inicializar dinámicamente el LLM. Esto permite soportar múltiples proveedores de manera agnóstica, incluyendo **Google**, **OpenAI**, **Anthropic** y **OpenRouter**, facilitando el cambio de modelos sin modificar el código de los agentes.
 
@@ -19,6 +25,8 @@ El `agente_revisor` (QA) incorpora un motor de terminal utilizando `ShellTool`. 
 
 ### ⏸️ Configuración de Interrupciones (HITL)
 El sistema utiliza la funcionalidad `interrupt_before` de LangGraph para implementar un flujo de **Human-in-the-Loop (HITL)**. El grafo está configurado para pausar la ejecución antes de nodos críticos (como el `agente_codificador` o el `agente_revisor`), permitiendo al usuario inspeccionar el estado, revisar los cambios propuestos y aprobar la continuación del proceso.
+
+*Nota:* La herramienta MCP `delegar_tarea_a_equipo_ia` gestiona dinámicamente este flujo mediante el parámetro `approve`. Si el usuario rechaza los cambios (`approve=False`), el sistema enruta el flujo de vuelta al agente correspondiente (Planificador o Codificador) incluyendo el feedback del usuario para su corrección.
 
 ### Persistencia de Memoria
 El sistema utiliza `MemorySaver` para persistir el estado del grafo entre ejecuciones. Para gestionar múltiples proyectos, se utiliza un `thread_id` único generado mediante el hash MD5 de la ruta absoluta del directorio del proyecto:
@@ -50,6 +58,8 @@ La estructura del proyecto está organizada para maximizar la modularidad:
 ### Descripción de Módulos Clave
 - **`app/agents/`**: Contiene la lógica individual de cada agente (Planificador, Codificador, Revisor). Refactorizados para usar `ToolNode` y `ChatPromptTemplate`.
 - **`app/models/`**: Define las estructuras de datos fundamentales y la fábrica de LLMs (`llm_factory.py`), que permite una inicialización dinámica y agnóstica de proveedores.
+- **`app/prompts/`**: Los system prompts están externalizados en archivos Markdown y se cargan dinámicamente usando la utilidad `app.utils.files.File`, facilitando su edición sin tocar código Python.
+- **`app/settings/`**: Utiliza `pydantic-settings` para la validación robusta y tipada de las variables de entorno y la configuración global.
 - **`app/main.py`**: Orquestador principal. Define el `StateGraph` incluyendo la configuración de `interrupt_before` y la persistencia con `MemorySaver`.
 - **`tech-lead-export.yaml`**: Define un "Custom Mode" para Roo Code / Cline, estableciendo el rol de "Tech Lead" diseñado para delegar tareas al equipo de IA a través de MCP.
 
@@ -102,6 +112,7 @@ El proyecto incluye una suite exhaustiva de pruebas unitarias y de integración 
 ```bash
 ./run_tests.sh
 ```
+El script ahora soporta la ejecución separada de pruebas End-to-End (E2E) utilizando el flag `--e2e` (ej. `./run_tests.sh --e2e`), permitiendo aislar las pruebas unitarias de las de integración.
 
 ---
 © 2026 AIDevTeam - Automatización Inteligente de Software.

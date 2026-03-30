@@ -12,6 +12,7 @@ os.environ["FASTMCP_LOG_LEVEL"] = "INFO"
 from fastmcp import FastMCP
 import hashlib
 from langchain_core.messages import HumanMessage
+from langgraph.types import Command
 from app.main import crear_grafo
 
 
@@ -31,17 +32,54 @@ async def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str, 
         directorio_proyecto: La ruta absoluta de la carpeta actual.
         approve: Booleano para aprobar y continuar si el proceso está pausado esperando revisión humana.
     """
-    
     # Generamos un ID de sesión único por proyecto
     thread_id = hashlib.md5(directorio_proyecto.encode()).hexdigest()
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 50}
 
     try:
-        if approve:
-            # Si el usuario aprobó visualmente, reanudamos el grafo desde donde se quedó
-            resultado = await agentes_app.ainvoke(None, config) # type: ignore
+        estado_actual = await agentes_app.aget_state(config) # type: ignore
+        is_paused = len(estado_actual.next) > 0
+
+        if is_paused:
+            siguiente_nodo = estado_actual.next[0]
+            if approve:
+                # El usuario aprobó visualmente, reanudamos el grafo desde donde se quedó
+                resultado = await agentes_app.ainvoke(None, config) # type: ignore
+                # Loop para saltar pausas redundantes después de usar herramientas
+                estado_post = await agentes_app.aget_state(config) # type: ignore
+                while estado_post.next and estado_post.next[0] == "agente_codificador":
+                    msgs = estado_post.values.get("messages", [])
+                    if msgs and msgs[-1].type == "tool":
+                        resultado = await agentes_app.ainvoke(None, config) # type: ignore
+                        estado_post = await agentes_app.aget_state(config) # type: ignore
+                    else:
+                        break
+            else:
+                # El usuario declinó los cambios. Enrutamos de vuelta con el feedback.
+                if siguiente_nodo == "agente_revisor":
+                    # Estaba pausado antes del QA (revisión de código). Volvemos al codificador.
+                    comando = Command(
+                        goto="agente_codificador",
+                        update={
+                            "errores_terminal": f"El usuario rechazó el código con este feedback: {instruccion}",
+                            "messages": [HumanMessage(content=instruccion)]
+                        }
+                    )
+                    resultado = await agentes_app.ainvoke(comando, config) # type: ignore
+                elif siguiente_nodo == "agente_codificador":
+                    # Estaba pausado antes del codificador (revisión de plan). Volvemos al planificador.
+                    comando = Command(
+                        goto="agente_planificador",
+                        update={
+                            "messages": [HumanMessage(content=f"El usuario rechazó el plan: {instruccion}")]
+                        }
+                    )
+                    resultado = await agentes_app.ainvoke(comando, config) # type: ignore
+                else:
+                    # Fallback por si acaso
+                    resultado = await agentes_app.ainvoke(None, config) # type: ignore
         else:
-            # Si es una tarea nueva, iniciamos desde cero
+            # Si no está pausado, iniciamos una tarea nueva desde cero
             estado_inicial = {
                 "instruccion_usuario": instruccion,
                 "directorio_proyecto": directorio_proyecto,
@@ -64,7 +102,7 @@ async def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str, 
                     f"👀 ACCIÓN REQUERIDA:\n"
                     f"1. Revisa los cambios realizados en el sistema de archivos (puedes usar 'git diff' o tu explorador de archivos preferido).\n"
                     f"2. Si el código es correcto, llama a esta herramienta con approve=True para que el QA ejecute las pruebas.\n"
-                    f"3. Si el código requiere cambios, descarta las modificaciones y solicita al equipo que realice las correcciones necesarias."
+                    f"3. Si el código requiere cambios, descarta las modificaciones, pon approve=False e incluye en la instrucción lo que hay que corregir."
                 )
 
         codigo_escrito = resultado.get("codigo_escrito", "No se reportó código.")
