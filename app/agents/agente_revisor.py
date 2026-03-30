@@ -8,6 +8,7 @@ from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_core.tools import tool
 from langgraph.prebuilt import ToolNode
 from app.models.models import ProjectState
+from langchain_core.runnables import RunnableConfig
 from app.utils.files import File
 from app.settings.settings import Settings
 from functools import lru_cache
@@ -99,7 +100,7 @@ def agente_revisor(state: ProjectState) -> Command:
             goto="agente_revisor"
         )
 
-def nodo_herramientas_revisor(state: ProjectState):
+def nodo_herramientas_revisor(state: ProjectState, config: RunnableConfig):
     """
     Ejecuta las herramientas de revisión utilizando ToolNode de LangGraph.
     """
@@ -108,4 +109,4 @@ def nodo_herramientas_revisor(state: ProjectState):
     # Excluimos finalizar_revision del ToolNode porque la manejamos manualmente en el agente
     herramientas_ejecutables = [t for t in herramientas if t.name != "finalizar_revision"]
     nodo = ToolNode(herramientas_ejecutables)
-    return nodo.invoke(state)
+    return nodo.invoke(state, config=config)

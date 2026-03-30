@@ -9,6 +9,7 @@ from langchain_core.tools import Tool
 from langgraph.prebuilt import ToolNode
 from app.models.llm_factory import get_llm
 from app.models.models import ProjectState
+from langchain_core.runnables import RunnableConfig
 from app.utils.files import File
 from functools import lru_cache
 
@@ -101,11 +102,11 @@ def agente_planificador(state: ProjectState) -> Command:
             goto="agente_planificador"
         )
 
-def nodo_herramientas_planificador(state: ProjectState):
+def nodo_herramientas_planificador(state: ProjectState, config: RunnableConfig):
     """
     Ejecuta las herramientas de investigación utilizando ToolNode de LangGraph.
     """
     directorio = state.get("directorio_proyecto", "./")
     herramientas = _get_tools(directorio)
     nodo = ToolNode(herramientas)
-    return nodo.invoke(state)
+    return nodo.invoke(state, config=config)
