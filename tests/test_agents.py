@@ -19,12 +19,10 @@ def mock_state():
 @patch('app.agents.agente_planificador.get_llm')
 @patch('app.agents.agente_planificador.fileSystem.get_file_content')
 def test_agente_planificador_tool_call(mock_get_file, mock_get_llm, mock_state):
-    # Setup
     mock_llm = MagicMock()
     mock_get_llm.return_value = mock_llm
     mock_get_file.return_value = "system prompt"
     
-    # Simular llamada a herramienta entregar_plan_de_accion
     tool_call = {
         "name": "entregar_plan_de_accion",
         "args": {"explicacion_arquitectura": "test plan", "pasos": []},
@@ -32,44 +30,36 @@ def test_agente_planificador_tool_call(mock_get_file, mock_get_llm, mock_state):
     }
     mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(content="", tool_calls=[tool_call])
     
-    # Execute
     result = agente_planificador(mock_state)
     
-    # Assert
     assert isinstance(result, Command)
     assert result.goto == "agente_codificador"
     assert "plan_de_accion" in result.update
-    # Verificar que se añadieron ToolMessages
     messages = result.update["messages"]
-    assert len(messages) == 2 # AIMessage + ToolMessage
+    assert len(messages) == 2
     assert isinstance(messages[1], ToolMessage)
     assert messages[1].tool_call_id == "call_1"
 
 @patch('app.agents.agente_planificador.get_llm')
 @patch('app.agents.agente_planificador.fileSystem.get_file_content')
 def test_agente_planificador_no_tool_call(mock_get_file, mock_get_llm, mock_state):
-    # Setup
     mock_llm = MagicMock()
     mock_get_llm.return_value = mock_llm
     mock_get_file.return_value = "system prompt"
     
-    # Simular respuesta sin herramientas (debería provocar HumanMessage para evitar bucle)
     mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(content="Hola")
     
-    # Execute
     result = agente_planificador(mock_state)
     
-    # Assert
     assert result.goto == "agente_planificador"
     messages = result.update["messages"]
-    assert len(messages) == 2 # AIMessage + HumanMessage
+    assert len(messages) == 2
     assert isinstance(messages[1], HumanMessage)
     assert "Debes llamar a una herramienta" in messages[1].content
 
 @patch('app.agents.agente_codificador.get_llm')
 @patch('app.agents.agente_codificador.fileSystem.get_file_content')
 def test_agente_codificador_completion(mock_get_file, mock_get_llm, mock_state):
-    # Setup
     mock_llm = MagicMock()
     mock_get_llm.return_value = mock_llm
     mock_get_file.return_value = "system prompt"
@@ -81,10 +71,8 @@ def test_agente_codificador_completion(mock_get_file, mock_get_llm, mock_state):
     }
     mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(content="", tool_calls=[tool_call])
     
-    # Execute
     result = agente_codificador(mock_state)
     
-    # Assert
     assert result.goto == "agente_revisor"
     messages = result.update["messages"]
     assert len(messages) == 2
@@ -93,7 +81,6 @@ def test_agente_codificador_completion(mock_get_file, mock_get_llm, mock_state):
 @patch('app.agents.agente_revisor.get_llm')
 @patch('app.agents.agente_revisor.fileSystem.get_file_content')
 def test_agente_revisor_approval(mock_get_file, mock_get_llm, mock_state):
-    # Setup
     mock_llm = MagicMock()
     mock_get_llm.return_value = mock_llm
     mock_get_file.return_value = "system prompt"
@@ -105,10 +92,8 @@ def test_agente_revisor_approval(mock_get_file, mock_get_llm, mock_state):
     }
     mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(content="", tool_calls=[tool_call])
     
-    # Execute
     result = agente_revisor(mock_state)
     
-    # Assert
     from langgraph.graph import END
     assert result.goto == END
     messages = result.update["messages"]
@@ -177,9 +162,7 @@ def test_agente_codificador_con_errores(mock_get_file, mock_get_llm, mock_state)
     
     result = agente_codificador(mock_state)
     
-    # Verificar que el prompt enviado al LLM incluye el error
     call_args = mock_llm.bind_tools.return_value.invoke.call_args[0][0]
-    # call_args es un ChatPromptValue, podemos inspeccionar sus mensajes
     system_message = call_args.messages[0].content
     assert "Error de sintaxis en linea 10" in system_message
     assert result.goto == "agente_revisor"

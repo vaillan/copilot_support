@@ -14,7 +14,6 @@ def get_llm(temperature: float = 0.0):
     model_name = settings.LLM_MODEL if settings.LLM_MODEL else "gemini-1.5-pro"
     api_key = settings.LLM_API_KEY
     
-    # Mapeo de proveedores para init_chat_model
     provider_map = {
         "google": "google_genai",
         "openai": "openai",

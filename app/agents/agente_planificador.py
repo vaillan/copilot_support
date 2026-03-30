@@ -73,7 +73,6 @@ def agente_planificador(state: ProjectState) -> Command:
             if tool_call["name"] == "entregar_plan_de_accion":
                 plan_generado = tool_call["args"]
                 
-                # Bug fix: Attach ToolMessages for each tool_call to satisfy API requirements
                 tool_messages = []
                 for tc in respuesta.tool_calls:
                     if tc["name"] == "entregar_plan_de_accion":
@@ -102,7 +101,6 @@ def agente_planificador(state: ProjectState) -> Command:
             goto="nodo_herramientas_planificador"
         )
     else:
-        # Bug fix: Avoid infinite loop by asking for a tool call
         msg = "Debes llamar a una herramienta para investigar o llamar a entregar_plan_de_accion si ya terminaste."
         return Command(
             update={"messages": [respuesta, HumanMessage(content=msg)]},

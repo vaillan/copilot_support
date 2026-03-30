@@ -63,7 +63,6 @@ def agente_revisor(state: ProjectState) -> Command:
                 aprobado = tool_call["args"].get("aprobado", False)
                 errores = tool_call["args"].get("reporte_errores", "")
                 
-                # Bug fix: Attach ToolMessages for each tool_call
                 tool_messages = [
                     ToolMessage(
                         tool_call_id=tc["id"],
@@ -94,7 +93,6 @@ def agente_revisor(state: ProjectState) -> Command:
             goto="nodo_herramientas_revisor"
         )
     else:
-        # Bug fix: Avoid infinite loop
         return Command(
             update={"messages": [respuesta, HumanMessage(content="Debes llamar a una herramienta para probar el código o llamar a finalizar_revision si ya terminaste.")]},
             goto="agente_revisor"
@@ -106,7 +104,6 @@ def nodo_herramientas_revisor(state: ProjectState, config: RunnableConfig):
     """
     directorio = state.get("directorio_proyecto", "./")
     herramientas = _get_tools(directorio)
-    # Excluimos finalizar_revision del ToolNode porque la manejamos manualmente en el agente
     herramientas_ejecutables = [t for t in herramientas if t.name != "finalizar_revision"]
     nodo = ToolNode(herramientas_ejecutables)
     return nodo.invoke(state, config=config)

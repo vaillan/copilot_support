@@ -20,7 +20,6 @@ def mock_file_system():
 def test_flujo_completo_exito(mock_llm, mock_file_system):
     mock_plan, mock_cod, mock_rev = mock_llm
     
-    # Setup mocks
     mock_llm_plan = MagicMock()
     mock_plan.return_value = mock_llm_plan
     mock_llm_plan.bind_tools.return_value.invoke.return_value = AIMessage(
@@ -54,25 +53,21 @@ def test_flujo_completo_exito(mock_llm, mock_file_system):
         "errores_terminal": ""
     }
     
-    # Run to first interrupt (before agente_codificador)
     graph.invoke(state, config)
     current_state = graph.get_state(config)
     assert current_state.next == ('agente_codificador',)
     
-    # Resume to second interrupt (before agente_revisor)
     graph.invoke(None, config)
     current_state = graph.get_state(config)
     assert current_state.next == ('agente_revisor',)
     
-    # Resume to end
     graph.invoke(None, config)
     current_state = graph.get_state(config)
-    assert len(current_state.next) == 0 # END
+    assert len(current_state.next) == 0
 
 def test_flujo_con_errores_y_correccion(mock_llm, mock_file_system):
     mock_plan, mock_cod, mock_rev = mock_llm
     
-    # Setup mocks
     mock_llm_plan = MagicMock()
     mock_plan.return_value = mock_llm_plan
     mock_llm_plan.bind_tools.return_value.invoke.return_value = AIMessage(
@@ -89,7 +84,6 @@ def test_flujo_con_errores_y_correccion(mock_llm, mock_file_system):
     
     mock_llm_rev = MagicMock()
     mock_rev.return_value = mock_llm_rev
-    # First time rejects, second time approves
     mock_llm_rev.bind_tools.return_value.invoke.side_effect = [
         AIMessage(
             content="", 
@@ -113,26 +107,20 @@ def test_flujo_con_errores_y_correccion(mock_llm, mock_file_system):
         "errores_terminal": ""
     }
     
-    # Run to first interrupt (before agente_codificador)
     graph.invoke(state, config)
     assert graph.get_state(config).next == ('agente_codificador',)
     
-    # Resume to second interrupt (before agente_revisor)
     graph.invoke(None, config)
     assert graph.get_state(config).next == ('agente_revisor',)
     
-    # Resume, reviewer rejects, goes back to coder, interrupts before coder
     graph.invoke(None, config)
     assert graph.get_state(config).next == ('agente_codificador',)
     
-    # Check that error is in state
     assert graph.get_state(config).values["errores_terminal"] == "Falla test"
     
-    # Resume to reviewer
     graph.invoke(None, config)
     assert graph.get_state(config).next == ('agente_revisor',)
     
-    # Resume to end
     graph.invoke(None, config)
     assert len(graph.get_state(config).next) == 0
 
@@ -142,7 +130,6 @@ def test_flujo_sin_herramientas_evita_bucle(mock_llm, mock_file_system):
     mock_llm_plan = MagicMock()
     mock_plan.return_value = mock_llm_plan
     
-    # First call: no tools. Second call: entregar_plan_de_accion
     mock_llm_plan.bind_tools.return_value.invoke.side_effect = [
         AIMessage(content="Hola, soy el planificador"),
         AIMessage(
@@ -163,15 +150,12 @@ def test_flujo_sin_herramientas_evita_bucle(mock_llm, mock_file_system):
         "errores_terminal": ""
     }
     
-    # Run graph. It should run planner twice, then interrupt before coder.
     graph.invoke(state, config)
     
     current_state = graph.get_state(config)
     assert current_state.next == ('agente_codificador',)
     
-    # Check messages to ensure HumanMessage was added
     messages = current_state.values["messages"]
-    # Initial HumanMessage + AIMessage (no tools) + HumanMessage (warning) + AIMessage (entregar_plan_de_accion) + ToolMessage
     assert len(messages) == 5
     assert isinstance(messages[2], HumanMessage)
     assert "Debes llamar a una herramienta" in messages[2].content

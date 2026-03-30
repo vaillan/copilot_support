@@ -27,13 +27,10 @@ def test_nodo_herramientas_planificador(mock_tool_node, mock_state):
     config = {"configurable": {"thread_id": "1"}}
     result = nodo_herramientas_planificador(mock_state, config)
     
-    # Verificar que ToolNode fue instanciado
     mock_tool_node.assert_called_once()
     
-    # Verificar que se llamó a invoke con los parámetros correctos
     mock_instance.invoke.assert_called_once_with(mock_state, config=config)
     
-    # Verificar el resultado
     assert result == {"messages": ["resultado_planificador"]}
 
 @patch('app.agents.agente_codificador.ToolNode')
@@ -49,13 +46,10 @@ def test_nodo_herramientas_codificador(mock_tool_node, mock_state):
     config = {"configurable": {"thread_id": "1"}}
     result = nodo_herramientas_codificador(mock_state, config)
     
-    # Verificar que ToolNode fue instanciado
     mock_tool_node.assert_called_once()
     
-    # Verificar que se llamó a invoke con los parámetros correctos
     mock_instance.invoke.assert_called_once_with(mock_state, config=config)
     
-    # Verificar el resultado
     assert result == {"messages": ["resultado_codificador"]}
 
 @patch('app.agents.agente_revisor.ToolNode')
@@ -71,16 +65,12 @@ def test_nodo_herramientas_revisor(mock_tool_node, mock_state):
     config = {"configurable": {"thread_id": "1"}}
     result = nodo_herramientas_revisor(mock_state, config)
     
-    # Verificar que ToolNode fue instanciado
     mock_tool_node.assert_called_once()
     
-    # Verificar que la herramienta 'finalizar_revision' fue excluida
     herramientas_pasadas = mock_tool_node.call_args[0][0]
     nombres_herramientas = [t.name for t in herramientas_pasadas]
     assert "finalizar_revision" not in nombres_herramientas
     
-    # Verificar que se llamó a invoke con los parámetros correctos
     mock_instance.invoke.assert_called_once_with(mock_state, config=config)
     
-    # Verificar el resultado
     assert result == {"messages": ["resultado_revisor"]}

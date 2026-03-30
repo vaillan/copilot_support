@@ -63,7 +63,6 @@ def agente_codificador(state: ProjectState) -> Command:
             if tool_call["name"] == "CodigoCompletado":
                 resumen = tool_call["args"].get("resumen_cambios", "Código completado.")
                 
-                # Bug fix: Attach ToolMessages for each tool_call
                 tool_messages = []
                 for tc in respuesta.tool_calls:
                     if tc["name"] == "CodigoCompletado":
@@ -92,7 +91,6 @@ def agente_codificador(state: ProjectState) -> Command:
             goto="nodo_herramientas_codificador"
         )
     else:
-        # Bug fix: Avoid infinite loop
         msg = "Debes llamar a una herramienta para escribir código o llamar a CodigoCompletado si ya terminaste."
         return Command(
             update={"messages": [respuesta, HumanMessage(content=msg)]},
