@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import ToolMessage, HumanMessage
 from langgraph.types import Command
-from langchain_core.tools import Tool
+from langchain_core.tools import Tool, tool
 from langgraph.prebuilt import ToolNode
 from app.models.llm_factory import get_llm
 from app.models.models import ProjectState
@@ -20,9 +20,16 @@ class Paso(BaseModel):
     tarea: str = Field(description="Descripción técnica de lo que el codificador debe programar")
     requiere_test: bool = Field(description="True si este paso necesita una prueba unitaria")
 
-class PlanDeAccion(BaseModel):
+class PlanDeAccionInput(BaseModel):
     explicacion_arquitectura: str = Field(description="Breve explicación del enfoque técnico")
     pasos: List[Paso]
+
+@tool(args_schema=PlanDeAccionInput)
+def entregar_plan_de_accion(explicacion_arquitectura: str, pasos: List[Paso]) -> str:
+    """
+    Llama a esta herramienta EXCLUSIVAMENTE cuando hayas terminado de investigar y estés listo para entregar el plan.
+    """
+    return "Plan de acción aceptado e iniciando fase de codificación."
 
 @lru_cache(maxsize=10)
 def _get_tools(directorio: str):
@@ -49,7 +56,7 @@ def agente_planificador(state: ProjectState) -> Command:
     herramientas_investigacion = _get_tools(directorio)
     
     llm = get_llm(temperature=0.0)
-    llm_con_herramientas = llm.bind_tools(herramientas_investigacion + [PlanDeAccion])
+    llm_con_herramientas = llm.bind_tools(herramientas_investigacion + [entregar_plan_de_accion])
     
     prompt_sistema = fileSystem.get_file_content(file_name="planificador_prompt.md")
     
@@ -63,13 +70,13 @@ def agente_planificador(state: ProjectState) -> Command:
     
     if respuesta.tool_calls:
         for tool_call in respuesta.tool_calls:
-            if tool_call["name"] == "PlanDeAccion":
+            if tool_call["name"] == "entregar_plan_de_accion":
                 plan_generado = tool_call["args"]
                 
                 # Bug fix: Attach ToolMessages for each tool_call to satisfy API requirements
                 tool_messages = []
                 for tc in respuesta.tool_calls:
-                    if tc["name"] == "PlanDeAccion":
+                    if tc["name"] == "entregar_plan_de_accion":
                         arq = plan_generado.get('explicacion_arquitectura', 'desconocido')
                         content = f"Plan de acción aceptado e iniciando fase de codificación para: {arq}"
                     else:
@@ -96,7 +103,7 @@ def agente_planificador(state: ProjectState) -> Command:
         )
     else:
         # Bug fix: Avoid infinite loop by asking for a tool call
-        msg = "Debes llamar a una herramienta para investigar o llamar a PlanDeAccion si ya terminaste."
+        msg = "Debes llamar a una herramienta para investigar o llamar a entregar_plan_de_accion si ya terminaste."
         return Command(
             update={"messages": [respuesta, HumanMessage(content=msg)]},
             goto="agente_planificador"
