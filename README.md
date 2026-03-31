@@ -102,6 +102,30 @@ LLM_API_KEY=tu_api_key_aqui
 ```
 
 ## 🔌 Integración con MCP
+
+```json
+{
+  "mcpServers": {
+    "AIDevTeam": {
+      "command": "/home/valentin-ortiz/dev/copilot_support/.venv/bin/python",
+      "args": [
+        "/home/valentin-ortiz/dev/copilot_support/mcp_server.py"
+      ],
+      "env": {
+        "LLM_API_KEY": "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",
+        "LLM_MODEL": "stepfun/step-3.5-flash",
+        "LLM_PROVIDER": "open-router",
+        "FASTMCP_LOG_LEVEL": "CRITICAL"
+      },
+      "alwaysAllow": [
+        "delegar_tarea_a_equipo_ia"
+      ],
+      "timeout": 600
+    }
+  }
+}
+```
+
 AIDevTeam funciona como un servidor **FastMCP**. La herramienta principal `delegar_tarea_a_equipo_ia` permite invocar el flujo de trabajo desde editores compatibles.
 
 ## 🤖 Integración con Roo Code / Cline
