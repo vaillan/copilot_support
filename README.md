@@ -112,7 +112,7 @@ LLM_API_KEY=tu_api_key_aqui
         "/home/valentin-ortiz/dev/copilot_support/mcp_server.py"
       ],
       "env": {
-        "LLM_API_KEY": "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",
+        "LLM_API_KEY": "tu_api_key",
         "LLM_MODEL": "stepfun/step-3.5-flash",
         "LLM_PROVIDER": "open-router",
         "FASTMCP_LOG_LEVEL": "CRITICAL"
