@@ -95,7 +95,7 @@ LLM_MODEL="gemini-2.5-flash-lite" # Modelo LLM
 # Configuración de Proveedores a través de OpenRouter (https://openrouter.ai)
 LLM_PROVIDER="open-router"
 LLM_API_KEY="tu_openrouter_api_key"
-LLM_PROVIDER="nvidia/nemotron-3-super-120b-a12b:free" # Modelo LLM
+LLM_MODEL="nvidia/nemotron-3-super-120b-a12b:free" # Modelo LLM
 ```
 
 **Ejemplo para entorno local:**
@@ -104,7 +104,7 @@ LLM_PROVIDER="nvidia/nemotron-3-super-120b-a12b:free" # Modelo LLM
 LLM_PROVIDER="local" # El proveedor para modelos locales ejecuta el servidor ollama; dependiendo del modelo que tengas instalado localmente en tu PC, este se ejecutará en los agentes del MCP a través de ollama. 
 # Si utilizas modelos locales la siguiente variable 'LLM_API_KEY' puede dejarse vacía
 LLM_API_KEY="tu_openai_api_key"
-LLM_model="gemma4:e2b" # Modelo LLM
+LLM_MODEL="gemma4:e2b" # Modelo LLM
 ```
 
 ## 🔌 Integración con MCP
