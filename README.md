@@ -82,23 +82,29 @@ Crea un archivo `.env` en la raíz. El sistema es flexible y soporta múltiples 
 
 **Ejemplo para Google (por defecto):**
 ```env
-LLM_PROVIDER=google
-LLM_MODEL=gemini-1.5-pro
-LLM_API_KEY=tu_api_key_aqui
+# Proveedor de LLM
+# Configuración de ChatModels de LangChain (https://docs.langchain.com/oss/python/langchain/models#google-gemini)
+LLM_API_KEY="tu_gemini_api_key"
+LLM_PROVIDER="google" # Se corrigió "LLM_PROVER"; opciones: openai, anthropic
+LLM_MODEL="gemini-2.5-flash-lite"
 ```
 
 **Ejemplo para OpenRouter:**
 ```env
-LLM_PROVIDER=open-router
-LLM_MODEL=anthropic/claude-3.5-sonnet
-LLM_API_KEY=tu_api_key_aqui
+# Proveedor de LLM
+# Configuración de Proveedores a través de OpenRouter (https://openrouter.ai)
+LLM_PROVIDER="open-router"
+LLM_API_KEY="tu_openrouter_api_key"
+LLM_PROVIDER="nvidia/nemotron-3-super-120b-a12b:free"
 ```
 
-**Ejemplo para OpenAI:**
+**Ejemplo para entorno local:**
 ```env
-LLM_PROVIDER=openai
-LLM_MODEL=gpt-4o
-LLM_API_KEY=tu_api_key_aqui
+# Proveedor de LLM
+LLM_PROVIDER="local" # El proveedor para modelos locales ejecuta el servidor ollama; dependiendo del modelo que tengas instalado localmente en tu PC, este se ejecutará en los agentes del MCP a través de ollama. 
+# Si utilizas modelos locales la siguiente variable 'LLM_API_KEY' puede dejarse vacía
+LLM_API_KEY="tu_openai_api_key"
+LLM_model="gemma4:e2b"
 ```
 
 ## 🔌 Integración con MCP

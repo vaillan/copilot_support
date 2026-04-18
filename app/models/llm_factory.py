@@ -1,6 +1,7 @@
 from langchain.chat_models import init_chat_model
 from app.settings.settings import Settings
 from functools import lru_cache
+from langchain_ollama import ChatOllama
 
 settings = Settings()
 
@@ -18,7 +19,8 @@ def get_llm(temperature: float = 0.0):
         "google": "google_genai",
         "openai": "openai",
         "anthropic": "anthropic",
-        "open-router": "openrouter"
+        "open-router": "openrouter",
+        "local": "ollama"
     }
     
     mapped_provider = provider_map.get(provider, provider)
@@ -32,15 +34,20 @@ def get_llm(temperature: float = 0.0):
             max_retries=2,
             timeout=120,
         )
-        
-    try:
-        return init_chat_model(
-            model=model_name, 
-            model_provider=mapped_provider, 
-            temperature=temperature, 
-            api_key=api_key,
-            max_retries=2,
-            timeout=120
+    elif mapped_provider == "ollama":
+        return ChatOllama(
+            model=model_name,
+            temperature=temperature,
         )
-    except (ImportError, Exception) as e:
-        raise ValueError(f"Error al inicializar el modelo {model_name} con proveedor {mapped_provider}: {e}")
+    else:
+        try:
+            return init_chat_model(
+                model=model_name, 
+                model_provider=mapped_provider, 
+                temperature=temperature, 
+                api_key=api_key,
+                max_retries=2,
+                timeout=120
+            )
+        except (ImportError, Exception) as e:
+            raise ValueError(f"Error al inicializar el modelo {model_name} con proveedor {mapped_provider}: {e}")
