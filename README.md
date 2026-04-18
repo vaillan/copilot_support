@@ -144,5 +144,11 @@ El proyecto incluye una suite exhaustiva de pruebas unitarias y de integración 
 ```
 El script ahora soporta la ejecución separada de pruebas End-to-End (E2E) utilizando el flag `--e2e` (ej. `./run_tests.sh --e2e`), permitiendo aislar las pruebas unitarias de las de integración.
 
+## 🛡️ Términos de Uso
+
+Este servidor MCP se distribuye bajo un modelo de **Código Visible (Source Available)** para fines no comerciales. Se permite el acceso al código fuente para su auditoría, aprendizaje y uso privado.
+
+Queda estrictamente prohibida la explotación comercial, venta o redistribución de este software como parte de un producto o servicio de pago sin autorización previa por escrito del autor.
+
 ---
 © 2026 AIDevTeam - Automatización Inteligente de Software.
