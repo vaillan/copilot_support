@@ -11,6 +11,7 @@ langchain-core>=0.1
 langchain-community>=0.1
 langgraph-checkpoint-sqlite
 fastmcp
+langchain-openrouter
 ddgs
 pytest
 pytest-mock
@@ -18,3 +19,9 @@ flake8
 langchain-experimental
 aiosqlite
 langchain-ollama
+langchain[google-genai]
+langchain[openai]
+langchain[anthropic]
+langchain[openai]
+langchain[aws]
+langchain[huggingface]

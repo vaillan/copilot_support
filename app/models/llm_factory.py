@@ -42,7 +42,7 @@ def get_llm(temperature: float = 0.0):
                 temperature=temperature, 
                 api_key=api_key,
                 max_retries=2,
-                timeout=120
+                timeout=300
             )
         except (ImportError, Exception) as e:
             raise ValueError(f"Error al inicializar el modelo {model_name} con proveedor {mapped_provider}: {e}")

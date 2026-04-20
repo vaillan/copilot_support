@@ -32,7 +32,7 @@ async def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str, 
         approve: Booleano para aprobar y continuar si el proceso está pausado esperando revisión humana.
     """
     thread_id = hashlib.md5(directorio_proyecto.encode()).hexdigest()
-    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 50}
+    config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 100}
 
     try:
         estado_actual = await agentes_app.aget_state(config) # type: ignore

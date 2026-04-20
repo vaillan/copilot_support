@@ -42,17 +42,44 @@ La estructura del proyecto está organizada para maximizar la modularidad:
 
 ```text
 .
-├── app/
-│   ├── agents/             # Lógica de nodos de agentes (ToolNode, ChatPromptTemplate)
-│   ├── models/             # Esquemas de datos (ProjectState) y fábrica de LLMs
-│   ├── prompts/            # System Prompts en formato Markdown
-│   ├── settings/           # Configuración dinámica (pydantic-settings)
-│   ├── utils/              # Utilidades auxiliares
-│   └── main.py             # Orquestador del Grafo (StateGraph)
+├── .env                    # Variables de entorno
+├── .gitignore              # Archivos ignorados por git
+├── checkpoints.sqlite      # Base de datos de persistencia (MemorySaver)
+├── LICENSE                 # Licencia del proyecto
 ├── mcp_server.py           # Punto de entrada para el servidor FastMCP
-├── tech-lead-export.yaml   # Perfil personalizado (Custom Mode) para Roo Code / Cline
-├── tests/                  # Suite de pruebas unitarias y de integración
-└── README.md               # Documentación
+├── README.md               # Documentación
+├── requirements.txt        # Dependencias del proyecto
+├── run_tests.sh            # Script de ejecución de pruebas
+├── tech-lead-export.yaml   # Perfil personalizado para Roo Code / Cline
+├── test_graph.py           # Pruebas del grafo
+├── test_tool.py            # Pruebas de herramientas
+├── app/                    # Código fuente principal
+│   ├── agents/             # Lógica de nodos de agentes
+│   │   ├── agente_codificador.py
+│   │   ├── agente_planificador.py
+│   │   ├── agente_revisor.py
+│   │   └── __init__.py
+│   ├── models/             # Esquemas de datos y fábrica de LLMs
+│   │   ├── llm_factory.py
+│   │   └── models.py
+│   ├── prompts/            # System Prompts en Markdown
+│   │   ├── codificador_prompt.md
+│   │   ├── planificador_prompt.md
+│   │   └── revisor_prompt.md
+│   ├── settings/           # Configuración dinámica
+│   │   ├── settings.py
+│   │   └── __init__.py
+│   ├── utils/              # Utilidades auxiliares
+│   │   └── files.py
+│   └── main.py             # Orquestador del Grafo (StateGraph)
+└── tests/                  # Suite de pruebas unitarias y de integración
+    ├── conftest.py
+    ├── test_agents.py
+    ├── test_e2e.py
+    ├── test_files.py
+    ├── test_integration.py
+    ├── test_llm_factory.py
+    └── test_tool_nodes.py
 ```
 
 ### Descripción de Módulos Clave
