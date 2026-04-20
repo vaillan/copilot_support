@@ -39,7 +39,7 @@ def _get_tools(directorio: str):
         if t.name in ["read_file", "list_directory"]
     ]
     
-    searx = DuckDuckGoSearchAPIWrapper()
+    searx = DuckDuckGoSearchAPIWrapper(max_results=2)
     tool_busqueda = Tool(
         name="busqueda_web_duckduckgo",
         description="Busca en internet documentación técnica actualizada, tutoriales o foros.",
