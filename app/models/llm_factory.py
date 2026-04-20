@@ -10,6 +10,7 @@ def get_llm(temperature: float = 0.0):
     """
     Retorna una instancia del LLM configurado en los ajustes de forma agnóstica al proveedor.
     Utiliza init_chat_model, la mejor práctica en LangChain v1.0 para inicialización dinámica.
+    Documentación oficial de LangChain: https://docs.langchain.com/oss/python/langchain/models#azure 
     """
     provider = settings.LLM_PROVIDER.lower() if settings.LLM_PROVIDER else "google_genai"
     model_name = settings.LLM_MODEL if settings.LLM_MODEL else "gemini-1.5-pro"
@@ -20,21 +21,15 @@ def get_llm(temperature: float = 0.0):
         "openai": "openai",
         "anthropic": "anthropic",
         "open-router": "openrouter",
-        "local": "ollama"
+        "local": "ollama",
+        "azure":"azure_openai",
+        "aws-bedrock":"bedrock_converse",
+        "huggingface":"huggingface",
     }
     
     mapped_provider = provider_map.get(provider, provider)
     
-    if mapped_provider == "openrouter":
-        from langchain_openrouter import ChatOpenRouter
-        return ChatOpenRouter(
-            model=model_name, # type: ignore
-            api_key=api_key, # type: ignore
-            temperature=temperature,
-            max_retries=2,
-            timeout=120,
-        )
-    elif mapped_provider == "ollama":
+    if mapped_provider == "ollama":
         return ChatOllama(
             model=model_name,
             temperature=temperature,
