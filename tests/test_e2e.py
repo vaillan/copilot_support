@@ -48,12 +48,15 @@ def test_flujo_completo_e2e():
             estado_actual = graph.get_state(config)
             intentos += 1
             
-        assert len(estado_actual.next) > 0, "El grafo debería estar pausado"
-        assert estado_actual.next[0] == "agente_revisor", f"El grafo debería detenerse antes del revisor, se detuvo en {estado_actual.next}"
+        assert len(estado_actual.next) > 0, "El grafo deberia estar pausado"
+        assert estado_actual.next[0] == "agente_revisor", f"El grafo deberia detenerse antes del revisor, se detuvo en {estado_actual.next}"
         
-        graph.invoke(None, config)
-        estado_actual = graph.get_state(config)
-        assert len(estado_actual.next) == 0, "El grafo debería haber terminado"
+        while len(estado_actual.next) > 0 and intentos < max_intentos * 4:
+            graph.invoke(None, config)
+            estado_actual = graph.get_state(config)
+            intentos += 1
+
+        assert len(estado_actual.next) == 0, f"El grafo deberia haber terminado, pero se detuvo en {estado_actual.next}"
         
         assert os.path.exists(test_file), f"El archivo {test_file} no fue creado"
         

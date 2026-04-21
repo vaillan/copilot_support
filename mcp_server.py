@@ -74,7 +74,9 @@ async def delegar_tarea_a_equipo_ia(instruccion: str, directorio_proyecto: str, 
             estado_inicial = {
                 "instruccion_usuario": instruccion,
                 "directorio_proyecto": directorio_proyecto,
-                "messages":[HumanMessage(content=instruccion)]
+                "messages":[HumanMessage(content=instruccion)],
+                "revision_count": 0,
+                "loop_counter": 0
             }
             resultado = await agentes_app.ainvoke(estado_inicial, config) # type: ignore
 

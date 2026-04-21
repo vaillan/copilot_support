@@ -9,7 +9,9 @@ state = ProjectState(
     instruccion_usuario="test",
     plan_de_accion={"pasos": ["crea archivo.txt con hola"]},
     codigo_escrito="",
-    errores_terminal=""
+    errores_terminal="",
+    revision_count=0,
+    loop_counter=0
 )
 config = {"configurable": {"thread_id": "1"}}
 for event in graph.stream(state, config, stream_mode="values"):

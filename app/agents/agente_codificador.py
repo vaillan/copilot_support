@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from langchain_core.messages import ToolMessage, HumanMessage
 from langgraph.types import Command
+from langgraph.graph import END
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langgraph.prebuilt import ToolNode
@@ -30,6 +31,15 @@ def agente_codificador(state: ProjectState) -> Command:
     El Programador lee el plan de acción, escribe los archivos en el disco duro
     y corrige errores si el Revisor (QA) los encuentra.
     """
+    loop_counter = state.get("loop_counter", 0) + 1
+    if loop_counter > 15:
+        return Command(
+            update={
+                "messages": [HumanMessage(content="Error: Se ha excedido el límite máximo de iteraciones (15) en el Agente Codificador. El proceso se detiene para evitar un bucle infinito.")]
+            },
+            goto=END
+        )
+
     directorio = state.get("directorio_proyecto", "./")
     herramientas_codigo = _get_tools(directorio)
     
@@ -37,11 +47,12 @@ def agente_codificador(state: ProjectState) -> Command:
     llm_con_herramientas = llm.bind_tools(herramientas_codigo + [CodigoCompletado])
     
     errores = state.get("errores_terminal", "")
+    revision_count = state.get("revision_count", 0)
     prompt_sistema = fileSystem.get_file_content(file_name="codificador_prompt.md")
     
     if errores:
         prompt_sistema += (
-            f"\n\n ATENCIÓN: Tu código anterior falló las pruebas. "
+            f"\n\n ATENCIÓN: Tu código anterior falló las pruebas (Intento de revisión #{revision_count}). "
             f"Corrige los siguientes errores:\n{errores}"
         )
         
@@ -81,19 +92,26 @@ def agente_codificador(state: ProjectState) -> Command:
                     update={
                         "codigo_escrito": resumen,
                         "errores_terminal": "",
-                        "messages": [respuesta] + tool_messages
+                        "messages": [respuesta] + tool_messages,
+                        "loop_counter": loop_counter
                     },
                     goto="agente_revisor"
                 )
         
         return Command(
-            update={"messages": [respuesta]},
+            update={
+                "messages": [respuesta],
+                "loop_counter": loop_counter
+            },
             goto="nodo_herramientas_codificador"
         )
     else:
         msg = "Debes llamar a una herramienta para escribir código o llamar a CodigoCompletado si ya terminaste."
         return Command(
-            update={"messages": [respuesta, HumanMessage(content=msg)]},
+            update={
+                "messages": [respuesta, HumanMessage(content=msg)],
+                "loop_counter": loop_counter
+            },
             goto="agente_codificador"
         )
 

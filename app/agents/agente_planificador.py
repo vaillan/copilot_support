@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import ToolMessage, HumanMessage
 from langgraph.types import Command
+from langgraph.graph import END
 from langchain_core.tools import Tool, tool
 from langgraph.prebuilt import ToolNode
 from app.models.llm_factory import get_llm
@@ -52,6 +53,15 @@ def agente_planificador(state: ProjectState) -> Command:
     """
     Analiza el requerimiento, investiga el proyecto/internet y genera un plan.
     """
+    loop_counter = state.get("loop_counter", 0) + 1
+    if loop_counter > 15:
+        return Command(
+            update={
+                "messages": [HumanMessage(content="Error: Se ha excedido el límite máximo de iteraciones (15) en el Agente Planificador. El proceso se detiene para evitar un bucle infinito.")]
+            },
+            goto=END
+        )
+
     directorio = state.get("directorio_proyecto", "./")
     herramientas_investigacion = _get_tools(directorio)
     
@@ -91,19 +101,26 @@ def agente_planificador(state: ProjectState) -> Command:
                 return Command(
                     update={
                         "plan_de_accion": plan_generado,
-                        "messages": [respuesta] + tool_messages
+                        "messages": [respuesta] + tool_messages,
+                        "loop_counter": loop_counter
                     },
                     goto="agente_codificador"
                 )
         
         return Command(
-            update={"messages": [respuesta]},
+            update={
+                "messages": [respuesta],
+                "loop_counter": loop_counter
+            },
             goto="nodo_herramientas_planificador"
         )
     else:
         msg = "Debes llamar a una herramienta para investigar o llamar a entregar_plan_de_accion si ya terminaste."
         return Command(
-            update={"messages": [respuesta, HumanMessage(content=msg)]},
+            update={
+                "messages": [respuesta, HumanMessage(content=msg)],
+                "loop_counter": loop_counter
+            },
             goto="agente_planificador"
         )
 

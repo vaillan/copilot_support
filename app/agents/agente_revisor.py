@@ -41,6 +41,15 @@ def agente_revisor(state: ProjectState) -> Command:
     El Tester ejecuta el código en la terminal. Si hay errores, 
     devuelve el flujo al Codificador. Si todo está bien, termina el proceso.
     """
+    loop_counter = state.get("loop_counter", 0) + 1
+    if loop_counter > 15:
+        return Command(
+            update={
+                "messages": [HumanMessage(content="Error: Se ha excedido el límite máximo de iteraciones (15) en el Agente Revisor. El proceso se detiene para evitar un bucle infinito.")]
+            },
+            goto=END
+        )
+
     directorio = state.get("directorio_proyecto", "./")
     herramientas_qa = _get_tools(directorio)
     
@@ -75,26 +84,47 @@ def agente_revisor(state: ProjectState) -> Command:
                     return Command(
                         update={
                             "errores_terminal": "Ninguno. Código aprobado.",
-                            "messages": [respuesta] + tool_messages
+                            "messages": [respuesta] + tool_messages,
+                            "loop_counter": loop_counter
                         },
                         goto=END
                     )
                 else:
+                    revision_count = state.get("revision_count", 0) + 1
+                    if revision_count >= 3:
+                        return Command(
+                            update={
+                                "errores_terminal": f"Límite de revisiones alcanzado. Últimos errores: {errores}",
+                                "messages": [respuesta] + tool_messages + [HumanMessage(content="Se ha alcanzado el límite máximo de 3 revisiones. El proceso se detiene.")],
+                                "loop_counter": loop_counter,
+                                "revision_count": revision_count
+                            },
+                            goto=END
+                        )
+                    
                     return Command(
                         update={
                             "errores_terminal": errores,
-                            "messages": [respuesta] + tool_messages
+                            "messages": [respuesta] + tool_messages,
+                            "loop_counter": loop_counter,
+                            "revision_count": revision_count
                         },
                         goto="agente_codificador"
                     )
         
         return Command(
-            update={"messages": [respuesta]},
+            update={
+                "messages": [respuesta],
+                "loop_counter": loop_counter
+            },
             goto="nodo_herramientas_revisor"
         )
     else:
         return Command(
-            update={"messages": [respuesta, HumanMessage(content="Debes llamar a una herramienta para probar el código o llamar a finalizar_revision si ya terminaste.")]},
+            update={
+                "messages": [respuesta, HumanMessage(content="Debes llamar a una herramienta para probar el código o llamar a finalizar_revision si ya terminaste.")],
+                "loop_counter": loop_counter
+            },
             goto="agente_revisor"
         )
 

@@ -1,4 +1,5 @@
 from langgraph.graph import MessagesState
+from typing import Optional
 
 class ProjectState(MessagesState):
     """
@@ -10,6 +11,8 @@ class ProjectState(MessagesState):
     """
     instruccion_usuario: str
     directorio_proyecto: str
-    plan_de_accion: dict
-    codigo_escrito: str
-    errores_terminal: str
+    plan_de_accion: Optional[dict]
+    codigo_escrito: Optional[str]
+    errores_terminal: Optional[str]
+    revision_count: int
+    loop_counter: int
