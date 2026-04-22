@@ -102,7 +102,7 @@ def agente_planificador(state: ProjectState) -> Command:
                     update={
                         "plan_de_accion": plan_generado,
                         "messages": [respuesta] + tool_messages,
-                        "loop_counter": loop_counter
+                        "loop_counter": 0
                     },
                     goto="agente_codificador"
                 )

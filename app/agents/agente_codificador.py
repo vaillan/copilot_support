@@ -93,7 +93,7 @@ def agente_codificador(state: ProjectState) -> Command:
                         "codigo_escrito": resumen,
                         "errores_terminal": "",
                         "messages": [respuesta] + tool_messages,
-                        "loop_counter": loop_counter
+                        "loop_counter": 0
                     },
                     goto="agente_revisor"
                 )

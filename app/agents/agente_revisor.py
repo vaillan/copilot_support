@@ -17,11 +17,12 @@ settings = Settings()
 fileSystem = File(directory="prompts")
 
 @tool
-def finalizar_revision(aprobado: bool, reporte_errores: str = "") -> str:
+def finalizar_revision(aprobado: bool, requiere_pruebas: bool = True, reporte_errores: str = "") -> str:
     """
-    Llama a esta herramienta EXCLUSIVAMENTE cuando hayas terminado de probar el código.
-    - Si el código falla o tiene errores de sintaxis, pon aprobado=False y detalla los errores en 'reporte_errores'.
-    - Si el código pasa todas las pruebas y es perfecto, pon aprobado=True.
+    Llama a esta herramienta EXCLUSIVAMENTE cuando hayas terminado de evaluar el código.
+    - Si el código NO requiere pruebas (ej. documentación, HTML estático, o el plan indica que no requiere test), pon requiere_pruebas=False y aprobado=True.
+    - Si el código SÍ requiere pruebas y FALLA, pon requiere_pruebas=True, aprobado=False y detalla los errores en 'reporte_errores'.
+    - Si el código SÍ requiere pruebas y PASA exitosamente, pon requiere_pruebas=True y aprobado=True.
     """
     return "Revisión procesada."
 
@@ -39,13 +40,13 @@ def _get_tools(directorio: str):
 def agente_revisor(state: ProjectState) -> Command:
     """
     El Tester ejecuta el código en la terminal. Si hay errores, 
-    devuelve el flujo al Codificador. Si todo está bien, termina el proceso.
+    devuelve el flujo al Codificador. Si todo está bien o no requiere pruebas, termina el proceso.
     """
     loop_counter = state.get("loop_counter", 0) + 1
     if loop_counter > 15:
         return Command(
             update={
-                "messages": [HumanMessage(content="Error: Se ha excedido el límite máximo de iteraciones (15) en el Agente Revisor. El proceso se detiene para evitar un bucle infinito.")]
+                "messages":[HumanMessage(content="Error: Se ha excedido el límite máximo de iteraciones (15) en el Agente Revisor. El proceso se detiene para evitar un bucle infinito.")]
             },
             goto=END
         )
@@ -63,16 +64,24 @@ def agente_revisor(state: ProjectState) -> Command:
         MessagesPlaceholder(variable_name="messages")
     ])
     
-    prompt = prompt_template.invoke({"messages": state["messages"], "directorio": directorio, "codigo_escrito": state.get("codigo_escrito", "Sin reporte.")})
+    # Pasamos el plan de acción para que el QA sepa si el planificador exigió pruebas
+    prompt = prompt_template.invoke({
+        "messages": state["messages"], 
+        "directorio": directorio, 
+        "codigo_escrito": state.get("codigo_escrito", "Sin reporte."),
+        "plan": state.get("plan_de_accion", "Sin plan.")
+    })
+    
     respuesta = llm_con_herramientas.invoke(prompt)
     
     if respuesta.tool_calls:
         for tool_call in respuesta.tool_calls:
             if tool_call["name"] == "finalizar_revision":
                 aprobado = tool_call["args"].get("aprobado", False)
+                requiere_pruebas = tool_call["args"].get("requiere_pruebas", True)
                 errores = tool_call["args"].get("reporte_errores", "")
                 
-                tool_messages = [
+                tool_messages =[
                     ToolMessage(
                         tool_call_id=tc["id"],
                         content="Revisión finalizada con éxito." if tc["name"] == "finalizar_revision" else "Operación completada",
@@ -80,22 +89,36 @@ def agente_revisor(state: ProjectState) -> Command:
                     for tc in respuesta.tool_calls
                 ]
                 
-                if aprobado:
+                # NUEVA LÓGICA: Si no requiere pruebas, terminamos el bucle directamente
+                if not requiere_pruebas:
                     return Command(
                         update={
-                            "errores_terminal": "Ninguno. Código aprobado.",
+                            "errores_terminal": "No se requirieron pruebas para este código. Aprobado automáticamente.",
                             "messages": [respuesta] + tool_messages,
                             "loop_counter": loop_counter
                         },
                         goto=END
                     )
+                
+                # Si requiere pruebas y fue aprobado
+                elif aprobado:
+                    return Command(
+                        update={
+                            "errores_terminal": "Ninguno. Código probado y aprobado.",
+                            "messages": [respuesta] + tool_messages,
+                            "loop_counter": loop_counter
+                        },
+                        goto=END
+                    )
+                
+                # Si requiere pruebas y falló (aprobado=False)
                 else:
                     revision_count = state.get("revision_count", 0) + 1
                     if revision_count >= 3:
                         return Command(
                             update={
                                 "errores_terminal": f"Límite de revisiones alcanzado. Últimos errores: {errores}",
-                                "messages": [respuesta] + tool_messages + [HumanMessage(content="Se ha alcanzado el límite máximo de 3 revisiones. El proceso se detiene.")],
+                                "messages": [respuesta] + tool_messages +[HumanMessage(content="Se ha alcanzado el límite máximo de 3 revisiones. El proceso se detiene.")],
                                 "loop_counter": loop_counter,
                                 "revision_count": revision_count
                             },
@@ -105,8 +128,8 @@ def agente_revisor(state: ProjectState) -> Command:
                     return Command(
                         update={
                             "errores_terminal": errores,
-                            "messages": [respuesta] + tool_messages,
-                            "loop_counter": loop_counter,
+                            "messages":[respuesta] + tool_messages,
+                            "loop_counter": 0,
                             "revision_count": revision_count
                         },
                         goto="agente_codificador"
@@ -122,7 +145,7 @@ def agente_revisor(state: ProjectState) -> Command:
     else:
         return Command(
             update={
-                "messages": [respuesta, HumanMessage(content="Debes llamar a una herramienta para probar el código o llamar a finalizar_revision si ya terminaste.")],
+                "messages":[respuesta, HumanMessage(content="Debes llamar a una herramienta para probar el código o llamar a finalizar_revision si ya terminaste o si el código no requiere pruebas.")],
                 "loop_counter": loop_counter
             },
             goto="agente_revisor"
