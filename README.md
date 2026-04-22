@@ -130,7 +130,7 @@ LLM_MODEL="nvidia/nemotron-3-super-120b-a12b:free" # Modelo LLM
 # Proveedor de LLM
 LLM_PROVIDER="local" # El proveedor para modelos locales ejecuta el servidor ollama; dependiendo del modelo que tengas instalado localmente en tu PC, este se ejecutará en los agentes del MCP a través de ollama. 
 # Si utilizas modelos locales la siguiente variable 'LLM_API_KEY' puede dejarse vacía
-LLM_API_KEY="tu_openai_api_key"
+LLM_API_KEY=""
 LLM_MODEL="gemma4:e2b" # Modelo LLM
 ```
 
