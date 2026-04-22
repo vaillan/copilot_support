@@ -146,7 +146,7 @@ LLM_MODEL="gemma4:e2b" # Modelo LLM
       ],
       "env": {
         "LLM_API_KEY": "tu_api_key",
-        "LLM_MODEL": "stepfun/step-3.5-flash",
+        "LLM_MODEL": "step-3.5-flash",
         "LLM_PROVIDER": "open-router",
         "FASTMCP_LOG_LEVEL": "CRITICAL"
       },
