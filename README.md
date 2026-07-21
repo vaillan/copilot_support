@@ -8,7 +8,7 @@ El proyecto implementa un grafo cíclico de estados (`StateGraph`) utilizando la
 
 ### Gestión de Estado y Enrutamiento Dinámico
 - **Estado del Proyecto (`ProjectState`)**: Hereda de `MessagesState` de LangGraph, lo que permite la gestión automática del historial de mensajes (`messages`) entre los agentes y el usuario, además de mantener variables de estado globales como el plan de acción y los errores de terminal.
-- **Control de Flujo (`Command`)**: Se utiliza el objeto `Command` de LangGraph para el enrutamiento dinámico. Esto permite a cada agente decidir de manera autónoma cuál es el siguiente nodo a ejecutar (por ejemplo, ir a su nodo de herramientas, avanzar al siguiente agente o terminar el proceso) y actualizar el estado global de forma explícita.
+- **Control de Flujo (`Command`)**: Se utiliza el objeto `Command` de LangGraph para el enrutamiento dinámico. Esto permite a cada agente decidir de manera autónoma cuál es el siguiente nodo a ejecutar (por ejemplo, ir a su nodo de herramientas, avanzar al siguiente agente o terminar el proceso) y actualizar el estado global de forma explícitamente.
 - **Aristas Explícitas**: El grafo utiliza aristas explícitas para conectar los nodos de herramientas de vuelta a sus agentes correspondientes, asegurando un flujo de ejecución predecible y robusto.
 
 ### Estabilidad y Prevención de Bucles
@@ -50,7 +50,7 @@ La estructura del proyecto está organizada para maximizar la modularidad:
 ├── README.md               # Documentación
 ├── requirements.txt        # Dependencias del proyecto
 ├── run_tests.sh            # Script de ejecución de pruebas
-├── tech-lead-export.yaml   # Perfil personalizado para Roo Code / Cline
+├── tech-lead-export.yaml   # Perfil personalizado para Cline
 ├── test_graph.py           # Pruebas del grafo
 ├── test_tool.py            # Pruebas de herramientas
 ├── app/                    # Código fuente principal
@@ -88,7 +88,7 @@ La estructura del proyecto está organizada para maximizar la modularidad:
 - **`app/prompts/`**: Los system prompts están externalizados en archivos Markdown y se cargan dinámicamente usando la utilidad `app.utils.files.File`, facilitando su edición sin tocar código Python.
 - **`app/settings/`**: Utiliza `pydantic-settings` para la validación robusta y tipada de las variables de entorno y la configuración global.
 - **`app/main.py`**: Orquestador principal. Define el `StateGraph` incluyendo la configuración de `interrupt_before` y la persistencia con `MemorySaver`.
-- **`tech-lead-export.yaml`**: Define un "Custom Mode" para Roo Code / Cline, estableciendo el rol de "Tech Lead" diseñado para delegar tareas al equipo de IA a través de MCP.
+- **`tech-lead-export.yaml`**: Define un "Custom Mode" para Cline, estableciendo el rol de "Tech Lead" diseñado para delegar tareas al equipo de IA a través de MCP.
 
 ## 🛠️ Instalación y Configuración
 
@@ -161,8 +161,8 @@ LLM_MODEL="gemma4:e2b" # Modelo LLM
 
 AIDevTeam funciona como un servidor **FastMCP**. La herramienta principal `delegar_tarea_a_equipo_ia` permite invocar el flujo de trabajo desde editores compatibles.
 
-## 🤖 Integración con Roo Code / Cline
-El proyecto incluye un archivo `tech-lead-export.yaml` que define un "Custom Mode" (Tech Lead) para Roo Code (anteriormente Cline). Este perfil está diseñado específicamente para que el asistente actúe como un Gestor de Proyectos, delegando el trabajo pesado de programación al equipo de agentes de IA a través de la herramienta MCP, en lugar de escribir código manualmente. Para utilizarlo, simplemente importa este archivo en la configuración de Custom Modes de tu extensión.
+## 🤖 Integración con Cline
+El proyecto incluye un archivo `tech-lead-export.yaml` que define un "Custom Mode" (Tech Lead) para Cline. Este perfil está diseñado específicamente para que el asistente actúe como un Gestor de Proyectos, delegando el trabajo pesado de programación al equipo de agentes de IA a través de la herramienta MCP, en lugar de escribir código manualmente. Para utilizarlo, simplemente importa este archivo en la configuración de Custom Modes de tu extensión.
 
 ## 🧪 Pruebas
 El proyecto incluye una suite exhaustiva de pruebas unitarias y de integración utilizando `pytest` y `pytest-mock`, además de análisis estático de código. Ejecuta la suite completa de pruebas y linter (`flake8`) con:
