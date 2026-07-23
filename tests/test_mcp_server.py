@@ -1,7 +1,8 @@
 import pytest
 import asyncio
+import anyio
 from unittest.mock import patch, MagicMock, AsyncMock
-from mcp_server import visualizar_cambios, delegar_tarea_a_equipo_ia, obtener_git_diff
+from mcp_server import visualizar_cambios, delegar_tarea_a_equipo_ia, obtener_git_diff, notificar_progreso
 
 def test_visualizar_cambios_sin_parametros():
     resultado = asyncio.run(visualizar_cambios())
@@ -52,3 +53,82 @@ def test_delegar_tarea_pausa_2_muestra_cambios(mock_ainvoke, mock_aget_state):
     assert "PAUSA 2 (REVISIÓN DE CÓDIGO)" in resultado
     assert "📝 CAMBIOS REALIZADOS:" in resultado
     assert "Creado archivo app/utils/helpers.py con funciones aux." in resultado
+
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
+def test_delegar_tarea_con_contexto_notificaciones(mock_ainvoke, mock_aget_state):
+    mock_state_inicial = MagicMock()
+    mock_state_inicial.next = []
+    
+    mock_state_pausado = MagicMock()
+    mock_state_pausado.next = ["agente_codificador"]
+    mock_state_pausado.values = {"plan_de_accion": "Plan de prueba"}
+
+    mock_aget_state.side_effect = [mock_state_inicial, mock_state_pausado]
+
+    mock_ctx = AsyncMock()
+    mock_ctx.info = AsyncMock()
+    mock_ctx.report_progress = AsyncMock()
+
+    resultado = asyncio.run(delegar_tarea_a_equipo_ia(
+        instruccion="Crear nueva funcion",
+        directorio_proyecto="./",
+        ctx=mock_ctx
+    ))
+
+    assert "PAUSA 1: El Arquitecto propone este plan" in resultado
+    assert mock_ctx.info.called
+    assert mock_ctx.report_progress.called
+
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
+def test_delegar_tarea_aprobacion_y_completado(mock_ainvoke, mock_aget_state):
+    mock_state_pausado = MagicMock()
+    mock_state_pausado.next = ["agente_revisor"]
+
+    mock_state_final = MagicMock()
+    mock_state_final.next = []
+    mock_state_final.values = {
+        "codigo_escrito": "Se implementaron las funciones requeridas.",
+        "errores_terminal": "0 errores en tests"
+    }
+
+    mock_aget_state.side_effect = [mock_state_pausado, mock_state_final, mock_state_final]
+
+    mock_ctx = AsyncMock()
+
+    resultado = asyncio.run(delegar_tarea_a_equipo_ia(
+        instruccion="Aprobar revision",
+        directorio_proyecto="./",
+        approve=True,
+        tarea_id="task_456",
+        ctx=mock_ctx
+    ))
+
+    assert "✅ Tarea completada exitosamente" in resultado
+    assert "Se implementaron las funciones requeridas." in resultado
+
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+def test_delegar_tarea_timeout_excedido(mock_aget_state):
+    async def _lento(*args, **kwargs):
+        await asyncio.sleep(2)
+
+    mock_aget_state.side_effect = _lento
+
+    with patch.dict("os.environ", {"MCP_TASK_TIMEOUT_SECONDS": "1"}):
+        resultado = asyncio.run(delegar_tarea_a_equipo_ia(
+            instruccion="Tarea muy pesada",
+            directorio_proyecto="./",
+            tarea_id="task_timeout"
+        ))
+
+    assert "🚨 Timeout:" in resultado
+    assert "excedió el límite máximo de ejecución" in resultado
+
+def test_notificar_progreso_captura_broken_resource_error():
+    mock_ctx = AsyncMock()
+    mock_ctx.info.side_effect = anyio.BrokenResourceError
+    # No debe lanzar excepción
+    asyncio.run(notificar_progreso(mock_ctx, "Mensaje de prueba"))
+
+
