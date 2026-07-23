@@ -163,8 +163,7 @@ AIDevTeam funciona como un servidor **FastMCP** que expone herramientas avanzada
         "FASTMCP_LOG_LEVEL": "CRITICAL"
       },
       "alwaysAllow": [
-        "delegar_tarea_a_equipo_ia",
-        "visualizar_cambios"
+        "delegar_tarea_a_equipo_ia"
       ],
       "timeout": 600
     }
@@ -174,7 +173,7 @@ AIDevTeam funciona como un servidor **FastMCP** que expone herramientas avanzada
 
 ### Herramientas MCP Disponibles
 
-#### 1. `delegar_tarea_a_equipo_ia`
+#### `delegar_tarea_a_equipo_ia`
 Úsala para delegar tareas complejas de programación a un equipo de 3 agentes autónomos (Arquitecto, Programador y QA).
 - **Parámetros**:
   - `instruccion` (string, requerido): Lo que el usuario quiere construir, o el feedback detallado si se está rechazando una pausa.
@@ -182,15 +181,7 @@ AIDevTeam funciona como un servidor **FastMCP** que expone herramientas avanzada
   - `approve` (boolean, opcional, por defecto `false`): Booleano para aprobar y continuar si el proceso está pausado esperando revisión humana.
   - `tarea_id` (string, opcional): ID de la tarea. Obligatorio si estás aprobando o rechazando una pausa. Déjalo vacío para iniciar una tarea nueva.
 
-#### 2. `visualizar_cambios`
-Úsala para consultar el estado actual de una tarea o los cambios detallados en disco.
-- **Parámetros**:
-  - `tarea_id` (string, opcional): ID de la tarea para consultar el resumen de cambios registrado por los agentes (`codigo_escrito`) y el estado actual del flujo.
-  - `directorio_proyecto` (string, opcional): Ruta de la carpeta del proyecto para consultar diffs/archivos modificados en disco.
-- **Funcionalidad**:
-  - Consulta el resumen de cambios registrado por los agentes.
-  - Muestra el estado actual del flujo (si está pausado o finalizado).
-  - Obtiene los cambios detallados en disco ejecutando `git diff` o `git status -s` en el directorio del proyecto.
+> **Nota sobre la visualización de cambios**: La visualización de cambios en disco (`git diff` / `git status`) se realiza de manera automática en tiempo real mediante notificaciones de progreso emitidas a la pantalla de Zoo Code durante la ejecución de los agentes.
 
 ## 🤖 Integración con Cline
 El proyecto incluye un archivo `tech-lead-export.yaml` que define un "Custom Mode" (Tech Lead) para Cline. Este perfil está diseñado específicamente para que el asistente actúe como un Gestor de Proyectos, delegando el trabajo pesado de programación al equipo de agentes de IA a través de la herramienta MCP, en lugar de escribir código manualmente. Para utilizarlo, simplemente importa este archivo en la configuración de Custom Modes de tu extensión.
