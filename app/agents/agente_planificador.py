@@ -75,7 +75,11 @@ def agente_planificador(state: ProjectState) -> Command:
         MessagesPlaceholder(variable_name="messages")
     ])
     
-    prompt = prompt_template.invoke({"messages": state["messages"], "directorio": directorio})
+    # Optimización de contexto: enviar mensaje inicial y los últimos 8 mensajes
+    msgs = state.get("messages", [])
+    mensajes_contexto = [msgs[0]] + msgs[-8:] if len(msgs) > 9 else msgs
+
+    prompt = prompt_template.invoke({"messages": mensajes_contexto, "directorio": directorio})
     respuesta = llm_con_herramientas.invoke(prompt)
     
     if respuesta.tool_calls:
@@ -115,6 +119,22 @@ def agente_planificador(state: ProjectState) -> Command:
             goto="nodo_herramientas_planificador"
         )
     else:
+        # Si la respuesta es de texto y llevamos 2 o más reintentos sin herramientas, derivamos un plan con el contenido generado
+        if loop_counter >= 2 and respuesta.content:
+            text_content = str(respuesta.content)
+            plan_generado = {
+                "explicacion_arquitectura": text_content[:200],
+                "pasos": [{"archivo": "main.py", "tarea": state.get("instruccion_usuario", text_content), "requiere_test": False}]
+            }
+            return Command(
+                update={
+                    "plan_de_accion": plan_generado,
+                    "messages": [respuesta],
+                    "loop_counter": 0
+                },
+                goto="agente_codificador"
+            )
+
         msg = "Debes llamar a una herramienta para investigar o llamar a entregar_plan_de_accion si ya terminaste."
         return Command(
             update={

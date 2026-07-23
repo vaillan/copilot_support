@@ -62,8 +62,13 @@ def agente_codificador(state: ProjectState) -> Command:
     ])
     
     plan = state.get("plan_de_accion", "Sin plan.")
+    
+    # Optimización de contexto: enviar mensaje inicial y los últimos 8 mensajes
+    msgs = state.get("messages", [])
+    mensajes_contexto = [msgs[0]] + msgs[-8:] if len(msgs) > 9 else msgs
+
     prompt = prompt_template.invoke({
-        "messages": state["messages"], 
+        "messages": mensajes_contexto, 
         "directorio": directorio, 
         "plan": plan
     })
@@ -106,6 +111,19 @@ def agente_codificador(state: ProjectState) -> Command:
             goto="nodo_herramientas_codificador"
         )
     else:
+        # Si la respuesta es de texto sin herramientas y llevamos 2 o más reintentos, avanzamos a revisión
+        if loop_counter >= 2 and respuesta.content:
+            resumen = str(respuesta.content)[:200]
+            return Command(
+                update={
+                    "codigo_escrito": resumen,
+                    "errores_terminal": "",
+                    "messages": [respuesta],
+                    "loop_counter": 0
+                },
+                goto="agente_revisor"
+            )
+
         msg = "Debes llamar a una herramienta para escribir código o llamar a CodigoCompletado si ya terminaste."
         return Command(
             update={

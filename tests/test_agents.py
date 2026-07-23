@@ -253,3 +253,27 @@ def test_agente_revisor_herramienta_terminal(mock_get_file, mock_get_llm, mock_s
     messages = update["messages"]
     assert len(messages) == 1
     assert isinstance(messages[0], AIMessage)
+
+@patch('app.agents.agente_revisor.get_llm')
+@patch('app.agents.agente_revisor.fileSystem.get_file_content')
+def test_agente_revisor_comando_duplicado_evita_bucle(mock_get_file, mock_get_llm, mock_state):
+    mock_llm = MagicMock()
+    mock_get_llm.return_value = mock_llm
+    mock_get_file.return_value = "system prompt"
+    
+    tool_call = {
+        "name": "terminal",
+        "args": {"commands": ["pytest"]},
+        "id": "call_term"
+    }
+    prev_ai_message = AIMessage(content="", tool_calls=[tool_call])
+    mock_state["messages"] = [HumanMessage(content="test"), prev_ai_message]
+    
+    mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(content="", tool_calls=[tool_call])
+    
+    result = agente_revisor(mock_state)
+    
+    assert isinstance(result, Command)
+    assert result.goto == END
+    update = result.update or {}
+    assert "detección de comandos redundantes" in update.get("errores_terminal", "")

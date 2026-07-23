@@ -1,5 +1,7 @@
+import sys
+from contextlib import redirect_stdout
 from langgraph.graph import END
-from langchain_core.messages import ToolMessage, HumanMessage
+from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 from langgraph.types import Command
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from app.models.llm_factory import get_llm
@@ -15,6 +17,11 @@ from functools import lru_cache
 
 settings = Settings()
 fileSystem = File(directory="prompts")
+
+class SafeShellTool(ShellTool):
+    def _run(self, commands, run_manager=None):
+        with redirect_stdout(sys.stderr):
+            return super()._run(commands, run_manager=run_manager)
 
 @tool
 def finalizar_revision(aprobado: bool, requiere_pruebas: bool = True, reporte_errores: str = "") -> str:
@@ -33,7 +40,7 @@ def _get_tools(directorio: str):
         t for t in toolkit_archivos.get_tools() 
         if t.name == "read_file"
     ]
-    terminal = ShellTool()
+    terminal = SafeShellTool()
     herramientas = [terminal, finalizar_revision] + herramientas_lectura
     return herramientas
 
@@ -113,9 +120,13 @@ def agente_revisor(state: ProjectState) -> Command:
         MessagesPlaceholder(variable_name="messages")
     ])
     
+    # Optimización de contexto: enviar mensaje inicial y los últimos 8 mensajes
+    msgs = state.get("messages", [])
+    mensajes_contexto = [msgs[0]] + msgs[-8:] if len(msgs) > 9 else msgs
+
     # Pasamos el plan de acción para que el QA sepa si el planificador exigió pruebas
     prompt = prompt_template.invoke({
-        "messages": state["messages"], 
+        "messages": mensajes_contexto, 
         "directorio": directorio, 
         "codigo_escrito": state.get("codigo_escrito", "Sin reporte."),
         "plan": state.get("plan_de_accion", "Sin plan.")
@@ -124,6 +135,14 @@ def agente_revisor(state: ProjectState) -> Command:
     respuesta = llm_con_herramientas.invoke(prompt)
     
     if respuesta.tool_calls:
+        # Extraer comandos de terminal ejecutados previamente en el historial
+        comandos_previos = []
+        for m in msgs:
+            if isinstance(m, AIMessage) and m.tool_calls:
+                for tc in m.tool_calls:
+                    if tc.get("name") == "terminal":
+                        comandos_previos.append(str(tc.get("args")))
+
         for tool_call in respuesta.tool_calls:
             if tool_call["name"] == "finalizar_revision":
                 aprobado = tool_call["args"].get("aprobado", False)
@@ -182,6 +201,22 @@ def agente_revisor(state: ProjectState) -> Command:
                             "revision_count": revision_count
                         },
                         goto="agente_codificador"
+                    )
+
+            elif tool_call["name"] == "terminal":
+                args_str = str(tool_call.get("args"))
+                if args_str in comandos_previos:
+                    # Detección de comando duplicado: evitar ejecutar el mismo comando repetidamente
+                    return Command(
+                        update={
+                            "errores_terminal": "Ninguno. Verificación finalizada por detección de comandos redundantes en terminal.",
+                            "messages": [
+                                respuesta,
+                                HumanMessage(content="El comando de terminal ya fue ejecutado previamente. Se concluye la revisión para evitar un bucle de ejecución.")
+                            ],
+                            "loop_counter": loop_counter
+                        },
+                        goto=END
                     )
         
         return Command(
