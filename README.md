@@ -7,18 +7,27 @@
 El proyecto implementa un grafo cíclico de estados (`StateGraph`) utilizando la arquitectura de agentes de LangChain, permitiendo la colaboración en tiempo real y la corrección de errores en un flujo iterativo.
 
 ### Gestión de Estado y Enrutamiento Dinámico
-- **Estado del Proyecto (`ProjectState`)**: Hereda de `MessagesState` de LangGraph, lo que permite la gestión automática del historial de mensajes (`messages`) entre los agentes y el usuario, además de mantener variables de estado globales como el plan de acción y los errores de terminal.
-- **Control de Flujo (`Command`)**: Se utiliza el objeto `Command` de LangGraph para el enrutamiento dinámico. Esto permite a cada agente decidir de manera autónoma cuál es el siguiente nodo a ejecutar (por ejemplo, ir a su nodo de herramientas, avanzar al siguiente agente o terminar el proceso) y actualizar el estado global de forma explícitamente.
+- **Estado del Proyecto (`ProjectState`)**: Hereda de `MessagesState` de LangGraph, lo que permite la gestión automática del historial de mensajes (`messages`) entre los agentes y el usuario, además de mantener variables de estado globales como el plan de acción, los errores de terminal, y contadores de control (`loop_counter`, `revision_count`).
+- **Control de Flujo (`Command`)**: Se utiliza el objeto `Command` de LangGraph para el enrutamiento dinámico. Esto permite a cada agente decidir de manera autónoma cuál es el siguiente nodo a ejecutar (por ejemplo, ir a su nodo de herramientas, avanzar al siguiente agente o terminar el proceso) y actualizar el estado global de forma explícita.
 - **Aristas Explícitas**: El grafo utiliza aristas explícitas para conectar los nodos de herramientas de vuelta a sus agentes correspondientes, asegurando un flujo de ejecución predecible y robusto.
 
 ### Estabilidad y Prevención de Bucles
-Los agentes ahora gestionan explícitamente la creación de objetos `ToolMessage` y validan las respuestas del LLM para asegurar que siempre se llame a una herramienta o se finalice el proceso. Esto evita bucles infinitos y cumple con los requisitos estrictos de la API de LangGraph, garantizando un flujo de ejecución estable y predecible.
+Para garantizar la robustez y evitar ejecuciones infinitas en entornos de producción, el sistema implementa estrictos mecanismos de control y límites de iteración:
+- **Límites de Iteraciones por Agente**:
+  - **Agente Planificador**: Límite máximo de **15 iteraciones** (`loop_counter > 15`). Si se excede, el proceso se detiene de forma segura con un mensaje de error.
+  - **Agente Codificador**: Límite máximo de **15 iteraciones** (`loop_counter > 15`). Si se excede, se detiene el proceso para evitar el consumo innecesario de tokens.
+  - **Agente Revisor**: Límite máximo de **5 iteraciones** (`loop_counter > 5`). Si se alcanza el límite y se detectan errores en las herramientas, se devuelve el flujo al Codificador (siempre que no se haya superado el límite de revisiones). Si no hay errores, se aprueba automáticamente.
+- **Límite de Revisiones (Ciclo Codificador-Revisor)**:
+  - Se establece un límite estricto de **máximo 3 intentos de corrección** (`revision_count >= 3`) entre el Codificador y el Revisor. Si el código sigue fallando las pruebas después del tercer intento, el proceso se detiene y se reportan los últimos errores detectados, evitando bucles infinitos de corrección.
+- **Optimización de Verificación Rápida**:
+  - Si ningún paso del plan de acción requiere pruebas (`requiere_test=False` en todos los pasos), el Agente Revisor **aprueba automáticamente** el código sin ejecutar comandos en la terminal, optimizando significativamente el tiempo de ejecución.
+  - Si el modelo responde con texto sugiriendo aprobación o no requiere pruebas, o si responde con texto sin llamar a herramientas tras 2 intentos, se finaliza la revisión automáticamente para evitar bloqueos.
 
 ### Investigación Web Autónoma
 El `agente_planificador` integra `DuckDuckGoSearchAPIWrapper` para buscar en internet documentación técnica actualizada, tutoriales y foros antes de generar el plan de acción. Esto permite al sistema tomar decisiones arquitectónicas basadas en las mejores prácticas más recientes.
 
 ### Soporte Multi-Proveedor de LLMs
-El sistema cuenta con una fábrica de modelos (`llm_factory.py`) que utiliza `init_chat_model` de LangChain para inicializar dinámicamente el LLM. Esto permite soportar múltiples proveedores de manera agnóstica, incluyendo **Google**, **OpenAI**, **Anthropic** y **OpenRouter**, facilitando el cambio de modelos sin modificar el código de los agentes.
+El sistema cuenta con una fábrica de modelos (`llm_factory.py`) que utiliza `init_chat_model` de LangChain para inicializar dinámicamente el LLM. Esto permite soportar múltiples proveedores de manera agnóstica, incluyendo **Google**, **OpenAI**, **Anthropic**, **OpenRouter** y **Ollama** (local), facilitando el cambio de modelos sin modificar el código de los agentes.
 
 ### Motor de Terminal y Feedback Loop
 El `agente_revisor` (QA) incorpora un motor de terminal utilizando `ShellTool`. Esto le permite ejecutar el código generado y correr pruebas reales en el entorno del sistema operativo. Si se detectan errores de sintaxis o fallos en las pruebas, el revisor captura la salida de la terminal y retroalimenta automáticamente al `agente_codificador` para que realice las correcciones necesarias, creando un ciclo de mejora continua.
@@ -26,15 +35,15 @@ El `agente_revisor` (QA) incorpora un motor de terminal utilizando `ShellTool`. 
 ### ⏸️ Configuración de Interrupciones (HITL)
 El sistema utiliza la funcionalidad `interrupt_before` de LangGraph para implementar un flujo de **Human-in-the-Loop (HITL)**. El grafo está configurado para pausar la ejecución antes de nodos críticos (como el `agente_codificador` o el `agente_revisor`), permitiendo al usuario inspeccionar el estado, revisar los cambios propuestos y aprobar la continuación del proceso.
 
-*Nota:* La herramienta MCP `delegar_tarea_a_equipo_ia` gestiona dinámicamente este flujo mediante el parámetro `approve`. Si el usuario rechaza los cambios (`approve=False`), el sistema enruta el flujo de vuelta al agente correspondiente (Planificador o Codificador) incluyendo el feedback del usuario para su corrección.
+#### Flujo de Aprobación/Rechazo Mejorado:
+- **Aprobación (`approve=True`)**: Reanuda la ejecución del grafo. El sistema incluye un mecanismo de salto automático para omitir interrupciones redundantes causadas por el retorno de herramientas de archivos, asegurando una transición fluida.
+- **Rechazo (`approve=False`)**:
+  - **En Pausa 1 (Plan de Acción)**: Si el usuario rechaza el plan propuesto por el Arquitecto, el flujo se redirige de vuelta al `agente_planificador` junto con el feedback del usuario, y se reinicia el contador de bucles (`loop_counter = 0`).
+  - **En Pausa 2 (Revisión de Código)**: Si el usuario rechaza el código generado por el Programador, el flujo se redirige de vuelta al `agente_codificador` con el feedback detallado, reiniciando tanto el contador de bucles como el de revisiones (`loop_counter = 0`, `revision_count = 0`) para dar una oportunidad limpia de corrección.
+- **Generación de IDs Únicos**: Al iniciar una nueva tarea, si no se proporciona un `tarea_id`, el sistema genera automáticamente un identificador único con el formato `task_xxxxxxxx` para aislar la sesión.
 
 ### Persistencia de Memoria
-El sistema utiliza `MemorySaver` para persistir el estado del grafo entre ejecuciones. Para gestionar múltiples proyectos, se utiliza un `thread_id` único generado mediante el hash MD5 de la ruta absoluta del directorio del proyecto:
-```python
-import hashlib
-thread_id = hashlib.md5(directorio_proyecto.encode()).hexdigest()
-```
-Esto garantiza que cada proyecto mantenga su propio historial de conversación y estado de forma aislada.
+El sistema utiliza `MemorySaver` para persistir el estado del grafo entre ejecuciones. Para gestionar múltiples proyectos, se utiliza un `thread_id` único generado mediante el hash MD5 de la ruta absoluta del directorio del proyecto o mediante el identificador único de tarea (`tarea_id`). Esto garantiza que cada proyecto mantenga su propio historial de conversación y estado de forma aislada.
 
 ## 📁 Estructura del Proyecto
 
@@ -136,6 +145,9 @@ LLM_MODEL="gemma4:e2b" # Modelo LLM
 
 ## 🔌 Integración con MCP
 
+AIDevTeam funciona como un servidor **FastMCP** que expone herramientas avanzadas para interactuar con el ecosistema de agentes.
+
+### Configuración del Servidor MCP (mcpServers)
 ```json
 {
   "mcpServers": {
@@ -151,7 +163,8 @@ LLM_MODEL="gemma4:e2b" # Modelo LLM
         "FASTMCP_LOG_LEVEL": "CRITICAL"
       },
       "alwaysAllow": [
-        "delegar_tarea_a_equipo_ia"
+        "delegar_tarea_a_equipo_ia",
+        "visualizar_cambios"
       ],
       "timeout": 600
     }
@@ -159,7 +172,25 @@ LLM_MODEL="gemma4:e2b" # Modelo LLM
 }
 ```
 
-AIDevTeam funciona como un servidor **FastMCP**. La herramienta principal `delegar_tarea_a_equipo_ia` permite invocar el flujo de trabajo desde editores compatibles.
+### Herramientas MCP Disponibles
+
+#### 1. `delegar_tarea_a_equipo_ia`
+Úsala para delegar tareas complejas de programación a un equipo de 3 agentes autónomos (Arquitecto, Programador y QA).
+- **Parámetros**:
+  - `instruccion` (string, requerido): Lo que el usuario quiere construir, o el feedback detallado si se está rechazando una pausa.
+  - `directorio_proyecto` (string, requerido): La ruta absoluta de la carpeta del proyecto actual.
+  - `approve` (boolean, opcional, por defecto `false`): Booleano para aprobar y continuar si el proceso está pausado esperando revisión humana.
+  - `tarea_id` (string, opcional): ID de la tarea. Obligatorio si estás aprobando o rechazando una pausa. Déjalo vacío para iniciar una tarea nueva.
+
+#### 2. `visualizar_cambios`
+Úsala para consultar el estado actual de una tarea o los cambios detallados en disco.
+- **Parámetros**:
+  - `tarea_id` (string, opcional): ID de la tarea para consultar el resumen de cambios registrado por los agentes (`codigo_escrito`) y el estado actual del flujo.
+  - `directorio_proyecto` (string, opcional): Ruta de la carpeta del proyecto para consultar diffs/archivos modificados en disco.
+- **Funcionalidad**:
+  - Consulta el resumen de cambios registrado por los agentes.
+  - Muestra el estado actual del flujo (si está pausado o finalizado).
+  - Obtiene los cambios detallados en disco ejecutando `git diff` o `git status -s` en el directorio del proyecto.
 
 ## 🤖 Integración con Cline
 El proyecto incluye un archivo `tech-lead-export.yaml` que define un "Custom Mode" (Tech Lead) para Cline. Este perfil está diseñado específicamente para que el asistente actúe como un Gestor de Proyectos, delegando el trabajo pesado de programación al equipo de agentes de IA a través de la herramienta MCP, en lugar de escribir código manualmente. Para utilizarlo, simplemente importa este archivo en la configuración de Custom Modes de tu extensión.
@@ -169,7 +200,7 @@ El proyecto incluye una suite exhaustiva de pruebas unitarias y de integración 
 ```bash
 ./run_tests.sh
 ```
-El script ahora soporta la ejecución separada de pruebas End-to-End (E2E) utilizando el flag `--e2e` (ej. `./run_tests.sh --e2e`), permitiendo aislar las pruebas unitarias de las de integración.
+El script soporta la ejecución separada de pruebas End-to-End (E2E) utilizando el flag `--e2e` (ej. `./run_tests.sh --e2e`), permitiendo aislar las pruebas unitarias de las de integración.
 
 ## 🛡️ Términos de Uso
 
