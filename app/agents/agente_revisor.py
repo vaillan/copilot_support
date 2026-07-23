@@ -43,13 +43,62 @@ def agente_revisor(state: ProjectState) -> Command:
     devuelve el flujo al Codificador. Si todo está bien o no requiere pruebas, termina el proceso.
     """
     loop_counter = state.get("loop_counter", 0) + 1
-    if loop_counter > 15:
-        return Command(
-            update={
-                "messages":[HumanMessage(content="Error: Se ha excedido el límite máximo de iteraciones (15) en el Agente Revisor. El proceso se detiene para evitar un bucle infinito.")]
-            },
-            goto=END
-        )
+    
+    # 0. Verificación rápida del plan: Si ningún paso del plan requiere test, aprobamos automáticamente.
+    plan = state.get("plan_de_accion")
+    if isinstance(plan, dict) and "pasos" in plan:
+        pasos = plan.get("pasos", [])
+        if pasos and all(isinstance(p, dict) and not p.get("requiere_test", True) for p in pasos):
+            return Command(
+                update={
+                    "errores_terminal": "No se requirieron pruebas para este plan. Aprobado automáticamente.",
+                    "messages": [HumanMessage(content="Revisión omitida: ningún paso del plan requiere pruebas. Código aprobado automáticamente.")],
+                    "loop_counter": 0
+                },
+                goto=END
+            )
+
+    # Prevenir bucles infinitos en el agente revisor
+    if loop_counter > 5:
+        messages = state.get("messages", [])
+        errores_detectados = ""
+        for m in reversed(messages):
+            if isinstance(m, ToolMessage) and m.content:
+                content_str = str(m.content)
+                if "error" in content_str.lower() or "fail" in content_str.lower() or "exception" in content_str.lower():
+                    errores_detectados = content_str
+                    break
+
+        if errores_detectados:
+            revision_count = state.get("revision_count", 0) + 1
+            if revision_count >= 3:
+                return Command(
+                    update={
+                        "errores_terminal": f"Límite de iteraciones y revisiones alcanzado. Últimos errores: {errores_detectados}",
+                        "messages": [HumanMessage(content="Límite máximo de iteraciones de pruebas alcanzado con errores. Proceso detenido.")],
+                        "loop_counter": loop_counter,
+                        "revision_count": revision_count
+                    },
+                    goto=END
+                )
+            return Command(
+                update={
+                    "errores_terminal": f"Errores detectados tras múltiples intentos de prueba: {errores_detectados}",
+                    "messages": [HumanMessage(content=f"Pruebas no concluidas adecuadamente. Errores detectados: {errores_detectados}")],
+                    "loop_counter": 0,
+                    "revision_count": revision_count
+                },
+                goto="agente_codificador"
+            )
+        else:
+            return Command(
+                update={
+                    "errores_terminal": "Ninguno. Verificación completada tras múltiples iteraciones sin errores.",
+                    "messages": [HumanMessage(content="Finalización automática del Revisor por límite de iteraciones sin detección de errores.")],
+                    "loop_counter": loop_counter
+                },
+                goto=END
+            )
 
     directorio = state.get("directorio_proyecto", "./")
     herramientas_qa = _get_tools(directorio)
@@ -81,7 +130,7 @@ def agente_revisor(state: ProjectState) -> Command:
                 requiere_pruebas = tool_call["args"].get("requiere_pruebas", True)
                 errores = tool_call["args"].get("reporte_errores", "")
                 
-                tool_messages =[
+                tool_messages = [
                     ToolMessage(
                         tool_call_id=tc["id"],
                         content="Revisión finalizada con éxito." if tc["name"] == "finalizar_revision" else "Operación completada",
@@ -89,7 +138,7 @@ def agente_revisor(state: ProjectState) -> Command:
                     for tc in respuesta.tool_calls
                 ]
                 
-                # NUEVA LÓGICA: Si no requiere pruebas, terminamos el bucle directamente
+                # Si no requiere pruebas, terminamos el bucle directamente
                 if not requiere_pruebas:
                     return Command(
                         update={
@@ -118,7 +167,7 @@ def agente_revisor(state: ProjectState) -> Command:
                         return Command(
                             update={
                                 "errores_terminal": f"Límite de revisiones alcanzado. Últimos errores: {errores}",
-                                "messages": [respuesta] + tool_messages +[HumanMessage(content="Se ha alcanzado el límite máximo de 3 revisiones. El proceso se detiene.")],
+                                "messages": [respuesta] + tool_messages + [HumanMessage(content="Se ha alcanzado el límite máximo de 3 revisiones. El proceso se detiene.")],
                                 "loop_counter": loop_counter,
                                 "revision_count": revision_count
                             },
@@ -128,7 +177,7 @@ def agente_revisor(state: ProjectState) -> Command:
                     return Command(
                         update={
                             "errores_terminal": errores,
-                            "messages":[respuesta] + tool_messages,
+                            "messages": [respuesta] + tool_messages,
                             "loop_counter": 0,
                             "revision_count": revision_count
                         },
@@ -143,9 +192,33 @@ def agente_revisor(state: ProjectState) -> Command:
             goto="nodo_herramientas_revisor"
         )
     else:
+        # Si la respuesta en texto sugiere aprobación o no requiere pruebas
+        contenido_texto = str(respuesta.content).lower()
+        palabras_aprobacion = ["aprobado", "correcto", "sin errores", "exitoso", "no requiere", "paso las pruebas", "pasó las pruebas"]
+        if any(p in contenido_texto for p in palabras_aprobacion):
+            return Command(
+                update={
+                    "errores_terminal": "Ninguno. Código aprobado en revisión.",
+                    "messages": [respuesta],
+                    "loop_counter": loop_counter
+                },
+                goto=END
+            )
+
+        if loop_counter >= 2:
+            # Si el modelo sigue respondiendo con texto sin llamar a herramientas tras 2 intentos
+            return Command(
+                update={
+                    "errores_terminal": "No se ejecutaron pruebas de terminal pero la revisión se concluyó sin errores reportados.",
+                    "messages": [respuesta, HumanMessage(content="Finalizando revisión tras respuestas continuas en texto.")],
+                    "loop_counter": loop_counter
+                },
+                goto=END
+            )
+
         return Command(
             update={
-                "messages":[respuesta, HumanMessage(content="Debes llamar a una herramienta para probar el código o llamar a finalizar_revision si ya terminaste o si el código no requiere pruebas.")],
+                "messages": [respuesta, HumanMessage(content="Debes llamar a una herramienta para probar el código o llamar a finalizar_revision si ya terminaste o si el código no requiere pruebas.")],
                 "loop_counter": loop_counter
             },
             goto="agente_revisor"
@@ -159,4 +232,9 @@ def nodo_herramientas_revisor(state: ProjectState, config: RunnableConfig):
     herramientas = _get_tools(directorio)
     herramientas_ejecutables = [t for t in herramientas if t.name != "finalizar_revision"]
     nodo = ToolNode(herramientas_ejecutables)
-    return nodo.invoke(state, config=config)
+    try:
+        return nodo.invoke(state, config=config)
+    except Exception as e:
+        return {
+            "messages": [HumanMessage(content=f"Error al ejecutar herramienta de revisión: {str(e)}")]
+        }

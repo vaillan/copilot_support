@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from langchain_core.messages import AIMessage, ToolMessage, HumanMessage
 from langgraph.types import Command
+from langgraph.graph import END
 from app.agents.agente_planificador import agente_planificador
 from app.agents.agente_codificador import agente_codificador
 from app.agents.agente_revisor import agente_revisor
@@ -13,7 +14,9 @@ def mock_state():
         "directorio_proyecto": "./",
         "plan_de_accion": None,
         "codigo_escrito": "",
-        "errores_terminal": ""
+        "errores_terminal": "",
+        "loop_counter": 0,
+        "revision_count": 0
     }
 
 @patch('app.agents.agente_planificador.get_llm')
@@ -34,8 +37,9 @@ def test_agente_planificador_tool_call(mock_get_file, mock_get_llm, mock_state):
     
     assert isinstance(result, Command)
     assert result.goto == "agente_codificador"
-    assert "plan_de_accion" in result.update
-    messages = result.update["messages"]
+    update = result.update or {}
+    assert "plan_de_accion" in update
+    messages = update["messages"]
     assert len(messages) == 2
     assert isinstance(messages[1], ToolMessage)
     assert messages[1].tool_call_id == "call_1"
@@ -52,7 +56,8 @@ def test_agente_planificador_no_tool_call(mock_get_file, mock_get_llm, mock_stat
     result = agente_planificador(mock_state)
     
     assert result.goto == "agente_planificador"
-    messages = result.update["messages"]
+    update = result.update or {}
+    messages = update["messages"]
     assert len(messages) == 2
     assert isinstance(messages[1], HumanMessage)
     assert "Debes llamar a una herramienta" in messages[1].content
@@ -74,7 +79,8 @@ def test_agente_codificador_completion(mock_get_file, mock_get_llm, mock_state):
     result = agente_codificador(mock_state)
     
     assert result.goto == "agente_revisor"
-    messages = result.update["messages"]
+    update = result.update or {}
+    messages = update["messages"]
     assert len(messages) == 2
     assert isinstance(messages[1], ToolMessage)
 
@@ -94,11 +100,43 @@ def test_agente_revisor_approval(mock_get_file, mock_get_llm, mock_state):
     
     result = agente_revisor(mock_state)
     
-    from langgraph.graph import END
     assert result.goto == END
-    messages = result.update["messages"]
+    update = result.update or {}
+    messages = update["messages"]
     assert len(messages) == 2
     assert isinstance(messages[1], ToolMessage)
+
+def test_agente_revisor_plan_sin_tests(mock_state):
+    mock_state["plan_de_accion"] = {
+        "pasos": [
+            {"archivo": "README.md", "tarea": "Actualizar doc", "requiere_test": False}
+        ]
+    }
+    result = agente_revisor(mock_state)
+    assert result.goto == END
+    update = result.update or {}
+    assert "Aprobado automáticamente" in update.get("errores_terminal", "")
+
+def test_agente_revisor_max_loop_limit(mock_state):
+    mock_state["loop_counter"] = 6
+    result = agente_revisor(mock_state)
+    assert result.goto == END
+    update = result.update or {}
+    assert "Verificación completada" in update.get("errores_terminal", "")
+
+@patch('app.agents.agente_revisor.get_llm')
+@patch('app.agents.agente_revisor.fileSystem.get_file_content')
+def test_agente_revisor_texto_aprobado(mock_get_file, mock_get_llm, mock_state):
+    mock_llm = MagicMock()
+    mock_get_llm.return_value = mock_llm
+    mock_get_file.return_value = "system prompt"
+    
+    mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(content="El código es correcto y paso las pruebas sin errores.")
+    
+    result = agente_revisor(mock_state)
+    assert result.goto == END
+    update = result.update or {}
+    assert "Código aprobado" in update.get("errores_terminal", "")
 
 @patch('app.agents.agente_planificador.get_llm')
 @patch('app.agents.agente_planificador.fileSystem.get_file_content')
@@ -118,7 +156,8 @@ def test_agente_planificador_investigacion(mock_get_file, mock_get_llm, mock_sta
     
     assert isinstance(result, Command)
     assert result.goto == "nodo_herramientas_planificador"
-    messages = result.update["messages"]
+    update = result.update or {}
+    messages = update["messages"]
     assert len(messages) == 1
     assert isinstance(messages[0], AIMessage)
 
@@ -140,7 +179,8 @@ def test_agente_codificador_herramienta_archivo(mock_get_file, mock_get_llm, moc
     
     assert isinstance(result, Command)
     assert result.goto == "nodo_herramientas_codificador"
-    messages = result.update["messages"]
+    update = result.update or {}
+    messages = update["messages"]
     assert len(messages) == 1
     assert isinstance(messages[0], AIMessage)
 
@@ -185,8 +225,9 @@ def test_agente_revisor_rechazo(mock_get_file, mock_get_llm, mock_state):
     
     assert isinstance(result, Command)
     assert result.goto == "agente_codificador"
-    assert result.update["errores_terminal"] == "Falla test"
-    messages = result.update["messages"]
+    update = result.update or {}
+    assert update["errores_terminal"] == "Falla test"
+    messages = update["messages"]
     assert len(messages) == 2
     assert isinstance(messages[1], ToolMessage)
 
@@ -208,6 +249,7 @@ def test_agente_revisor_herramienta_terminal(mock_get_file, mock_get_llm, mock_s
     
     assert isinstance(result, Command)
     assert result.goto == "nodo_herramientas_revisor"
-    messages = result.update["messages"]
+    update = result.update or {}
+    messages = update["messages"]
     assert len(messages) == 1
     assert isinstance(messages[0], AIMessage)
