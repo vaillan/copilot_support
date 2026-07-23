@@ -1,5 +1,6 @@
 import os
 import sys
+import subprocess
 
 class MuteStderr:
     def write(self, x): pass
@@ -19,6 +20,88 @@ import uuid
 mcp = FastMCP("AIDevTeam")
 
 agentes_app = crear_grafo()
+
+def obtener_git_diff(directorio: str) -> str:
+    """Intenta obtener el diff de git o los archivos modificados en el directorio especificado."""
+    if not directorio or not os.path.exists(directorio):
+        return ""
+    try:
+        res = subprocess.run(
+            ["git", "diff"], 
+            cwd=directorio, 
+            capture_output=True, 
+            text=True, 
+            encoding="utf-8",
+            errors="replace",
+            timeout=5
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+            
+        res_stat = subprocess.run(
+            ["git", "status", "-s"], 
+            cwd=directorio, 
+            capture_output=True, 
+            text=True, 
+            encoding="utf-8",
+            errors="replace",
+            timeout=5
+        )
+        if res_stat.returncode == 0 and res_stat.stdout.strip():
+            return f"Archivos modificados/creados (git status):\n{res_stat.stdout.strip()}"
+    except Exception:
+        pass
+    return ""
+
+
+@mcp.tool()
+async def visualizar_cambios(
+    tarea_id: str = "",
+    directorio_proyecto: str = ""
+) -> str:
+    """
+    Visualiza los cambios que se van realizando en el proyecto o el resumen de cambios de una tarea específica.
+    
+    Args:
+        tarea_id: ID de la tarea para consultar el resumen de cambios registrado por los agentes.
+        directorio_proyecto: Ruta de la carpeta del proyecto para consultar diffs/archivos modificados.
+    """
+    partes = []
+    
+    dir_a_consultar = directorio_proyecto
+    
+    if tarea_id:
+        config = {"configurable": {"thread_id": tarea_id}}
+        try:
+            estado = await agentes_app.aget_state(config) # type: ignore
+            values = estado.values if hasattr(estado, "values") else {}
+            
+            if not dir_a_consultar:
+                dir_a_consultar = values.get("directorio_proyecto", "")
+                
+            codigo_escrito = values.get("codigo_escrito")
+            if codigo_escrito:
+                partes.append(f"📋 RESUMEN DE CAMBIOS (Tarea '{tarea_id}'):\n{codigo_escrito}")
+            else:
+                partes.append(f"ℹ️ La tarea '{tarea_id}' aún no ha registrado un resumen de cambios.")
+                
+            if estado.next:
+                partes.append(f"📌 Estado actual del flujo: Pausado antes de '{estado.next[0]}'")
+            else:
+                partes.append("📌 Estado actual del flujo: Finalizado")
+        except Exception as e:
+            partes.append(f"⚠️ No se pudo obtener el estado de la tarea '{tarea_id}': {str(e)}")
+
+    if dir_a_consultar:
+        diff_git = obtener_git_diff(dir_a_consultar)
+        if diff_git:
+            partes.append(f"🔍 CAMBIOS DETALLADOS EN DISCO (Git Diff / Status en '{dir_a_consultar}'):\n{diff_git}")
+            
+    if not partes:
+        return "No se proporcionó un 'tarea_id' válido ni un 'directorio_proyecto' con cambios detectables."
+        
+    return "\n\n".join(partes)
+
 
 @mcp.tool()
 async def delegar_tarea_a_equipo_ia(
@@ -57,8 +140,8 @@ async def delegar_tarea_a_equipo_ia(
                 estado_post = await agentes_app.aget_state(config) # type: ignore
                 
                 # Bucle para saltar las interrupciones causadas por el retorno de las herramientas
-                while estado_post.next and estado_post.next[0] in["agente_codificador", "agente_revisor"]:
-                    msgs = estado_post.values.get("messages",[])
+                while estado_post.next and estado_post.next[0] in ["agente_codificador", "agente_revisor"]:
+                    msgs = estado_post.values.get("messages", [])
                     if msgs and msgs[-1].type == "tool":
                         resultado = await agentes_app.ainvoke(None, config) # type: ignore
                         estado_post = await agentes_app.aget_state(config) # type: ignore
@@ -82,7 +165,7 @@ async def delegar_tarea_a_equipo_ia(
                     comando = Command(
                         goto="agente_planificador",
                         update={
-                            "messages":[HumanMessage(content=f"El usuario rechazó el plan de acción: {instruccion}")],
+                            "messages": [HumanMessage(content=f"El usuario rechazó el plan de acción: {instruccion}")],
                             "loop_counter": 0 
                         }
                     )
@@ -93,7 +176,7 @@ async def delegar_tarea_a_equipo_ia(
             estado_inicial = {
                 "instruccion_usuario": instruccion,
                 "directorio_proyecto": directorio_proyecto,
-                "messages":[HumanMessage(content=instruccion)],
+                "messages": [HumanMessage(content=instruccion)],
                 "revision_count": 0,
                 "loop_counter": 0
             }
@@ -115,8 +198,10 @@ async def delegar_tarea_a_equipo_ia(
                 )
                 
             elif siguiente_nodo == "agente_revisor":
+                codigo_escrito = estado.values.get("codigo_escrito", "No se registró un resumen de cambios.")
                 return (
                     f"⏸️ PAUSA 2 (REVISIÓN DE CÓDIGO): El Programador ha terminado de escribir los archivos.\n\n"
+                    f"📝 CAMBIOS REALIZADOS:\n{codigo_escrito}\n\n"
                     f"👀 ACCIÓN REQUERIDA:\n"
                     f"1. Revisa los cambios en el proyecto.\n"
                     f"2. Si el código es correcto, llama a esta herramienta con approve=True y tarea_id='{tarea_id}' para que el QA ejecute las pruebas.\n"
@@ -124,8 +209,9 @@ async def delegar_tarea_a_equipo_ia(
                 )
 
         # Si no hay 'next', el grafo llegó a END
-        codigo_escrito = resultado.get("codigo_escrito", "No se reportó código.")
-        errores_qa = resultado.get("errores_terminal", "Sin errores.")
+        values = estado.values if hasattr(estado, "values") else {}
+        codigo_escrito = values.get("codigo_escrito") or (resultado.get("codigo_escrito") if isinstance(resultado, dict) else "No se reportó código.")
+        errores_qa = values.get("errores_terminal") or (resultado.get("errores_terminal") if isinstance(resultado, dict) else "Sin errores.")
         
         reporte_final = (
             f"✅ Tarea completada exitosamente por el equipo LangGraph.\n"
