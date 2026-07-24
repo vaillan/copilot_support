@@ -274,8 +274,10 @@ async def delegar_tarea_a_equipo_ia(
         await notificar_progreso(ctx, msg_timeout, 100, 100)
         return f"{msg_timeout} Por favor, reintenta dividiendo la instrucción en pasos más específicos o verifica el estado de la tarea con tarea_id='{tarea_id}'."
     except BaseException as e:
-        await notificar_progreso(ctx, f"🚨 Error en la tarea '{tarea_id}': {str(e)}", 100, 100)
-        return f"🚨 El equipo de agentes falló con un error interno: {str(e)}"
+        msg_err = f"🚨 El equipo de agentes falló con un error interno en tarea '{tarea_id}': {str(e)}"
+        sys.stderr.write(f"{msg_err}\n")
+        await notificar_progreso(ctx, msg_err, 100, 100)
+        return msg_err
 
 
 if __name__ == "__main__":

@@ -1,11 +1,11 @@
 import sys
+import subprocess
 from contextlib import redirect_stdout
 from langgraph.graph import END
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 from langgraph.types import Command
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from app.models.llm_factory import get_llm
-from langchain_community.tools import ShellTool
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_core.tools import tool
 from langgraph.prebuilt import ToolNode
@@ -18,10 +18,50 @@ from functools import lru_cache
 settings = Settings()
 fileSystem = File(directory="prompts")
 
-class SafeShellTool(ShellTool):
-    def _run(self, commands, run_manager=None):
-        with redirect_stdout(sys.stderr):
-            return super()._run(commands, run_manager=run_manager)
+@tool
+def terminal(commands: list[str] | str) -> str:
+    """
+    Ejecuta comandos en la terminal de forma totalmente aislada e inofensiva para el servidor MCP.
+    Pasa una lista de comandos o una cadena de comando (ej. "pytest" o ["pytest"]).
+    """
+    if isinstance(commands, str):
+        lista_comandos = [commands]
+    elif isinstance(commands, list):
+        lista_comandos = commands
+    else:
+        return "Error: Formato de comandos inválido. Proporciona una cadena o lista de cadenas."
+
+    resultados = []
+    for cmd in lista_comandos:
+        if not isinstance(cmd, str) or not cmd.strip():
+            continue
+        try:
+            res = subprocess.run(
+                cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+                stdin=subprocess.DEVNULL
+            )
+            stdout = res.stdout.strip() if res.stdout else ""
+            stderr = res.stderr.strip() if res.stderr else ""
+            salida = []
+            if stdout:
+                salida.append(f"STDOUT:\n{stdout}")
+            if stderr:
+                salida.append(f"STDERR:\n{stderr}")
+            if not salida:
+                salida.append(f"Comando '{cmd}' ejecutado con código de salida {res.returncode} (sin salida).")
+            resultados.append(f"$ {cmd}\nCódigo de salida: {res.returncode}\n" + "\n".join(salida))
+        except subprocess.TimeoutExpired:
+            resultados.append(f"$ {cmd}\n🚨 Timeout: El comando excedió el tiempo límite de 30 segundos.")
+        except BaseException as e:
+            resultados.append(f"$ {cmd}\n🚨 Error al ejecutar comando: {str(e)}")
+
+    return "\n\n---\n\n".join(resultados) if resultados else "No se ejecutaron comandos válidos."
 
 @tool
 def finalizar_revision(aprobado: bool, requiere_pruebas: bool = True, reporte_errores: str = "") -> str:
@@ -40,7 +80,6 @@ def _get_tools(directorio: str):
         t for t in toolkit_archivos.get_tools() 
         if t.name == "read_file"
     ]
-    terminal = SafeShellTool()
     herramientas = [terminal, finalizar_revision] + herramientas_lectura
     return herramientas
 
@@ -262,6 +301,7 @@ def agente_revisor(state: ProjectState) -> Command:
 def nodo_herramientas_revisor(state: ProjectState, config: RunnableConfig):
     """
     Ejecuta las herramientas de revisión utilizando ToolNode de LangGraph.
+    Captura de forma segura cualquier BaseException para evitar caídas en el TaskGroup de MCP.
     """
     directorio = state.get("directorio_proyecto", "./")
     herramientas = _get_tools(directorio)
@@ -269,7 +309,7 @@ def nodo_herramientas_revisor(state: ProjectState, config: RunnableConfig):
     nodo = ToolNode(herramientas_ejecutables)
     try:
         return nodo.invoke(state, config=config)
-    except Exception as e:
+    except BaseException as e:
         return {
             "messages": [HumanMessage(content=f"Error al ejecutar herramienta de revisión: {str(e)}")]
         }

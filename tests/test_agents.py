@@ -277,3 +277,10 @@ def test_agente_revisor_comando_duplicado_evita_bucle(mock_get_file, mock_get_ll
     assert result.goto == END
     update = result.update or {}
     assert "detección de comandos redundantes" in update.get("errores_terminal", "")
+
+def test_herramienta_terminal_aislada():
+    from app.agents.agente_revisor import terminal
+    res = terminal.invoke({"commands": "echo hola"})
+    assert "$ echo hola" in res
+    assert "hola" in res
+

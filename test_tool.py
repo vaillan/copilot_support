@@ -10,5 +10,5 @@ state = ProjectState(
     codigo_escrito="",
     errores_terminal=""
 )
-res = nodo_herramientas_codificador(state, config={})
+res = nodo_herramientas_codificador(state, config={"configurable": {"thread_id": "test_thread"}})
 print(res)
