@@ -1,204 +1,212 @@
-# Copilot Support - Sistema Multiagente de Desarrollo de Software
+# AIDevTeam - Ecosistema de Agentes de Desarrollo IA
 
-Un sistema autónomo multiagente para el desarrollo, refactorización y prueba de software de manera iterativa. Basado en **LangGraph**, servidor **MCP (Model Context Protocol)** por SSE (Server-Sent Events), soporte multiproveedor de LLM (Google Gemini y OpenAI) con resiliencia y fallback automático, e interfaz CLI interactiva construida con **Rich**.
+**AIDevTeam** es una plataforma avanzada de agentes autónomos diseñada para automatizar el ciclo de vida del desarrollo de software (SDLC). Utilizando **LangGraph** para la orquestación y el **Model Context Protocol (MCP)** para la interoperabilidad, AIDevTeam permite delegar tareas complejas de programación a un equipo virtual de expertos en IA.
 
----
+## 🚀 Arquitectura del Sistema
 
-## 🚀 Características Principales
+El proyecto implementa un grafo cíclico de estados (`StateGraph`) utilizando la arquitectura de agentes de LangChain, permitiendo la colaboración en tiempo real y la corrección de errores en un flujo iterativo.
 
-- **Orquestación Multiagente con LangGraph**: Flujo de trabajo cíclico y directed por estados (`ProjectState`) compuesto por tres agentes autónomos especializados: **Planificador**, **Codificador** y **Revisor/Tester**.
-- **Servidor MCP con Transporte SSE**: Integración estandarizada bajo el Model Context Protocol sobre transporte SSE (Server-Sent Events) en FastAPI (`mcp.server.fastmcp`), permitiendo ser consumido por clientes MCP como Claude Desktop, IDEs o servicios remotos.
-- **LLM Factory Multiproveedor**:
-  - Soporte nativo para **Google Gemini** (`gemini-2.5-flash`, `gemini-1.5-pro`) y **OpenAI** (`gpt-4o`, `gpt-4o-mini`).
-  - **Mecanismo de Fallback Automático**: Si el proveedor primario falla (ej. problemas de API key o cuotas), el sistema conmuta sin interrupción al proveedor alternativo.
-- **Interfaz CLI Interactiva con Rich**: Experiencia interactiva en terminal con formateo de consola, paneles coloridos, tablas de estado y loaders visuales.
-- **Gestión Modular de Prompts**: Prompts definidos en archivos Markdown independientes (`prompts/`) con soporte de carga dinámica.
-- **Resiliencia y Control de Ciclos Infinitos**:
-  - Contadores de bucle integrados por agente (`loop_counter`).
-  - Límite global de intentos de revisión de código (`revision_count <= 3`).
-  - Detección automática de comandos redundantes en terminal.
-  - Optimización dinámica de la ventana de contexto de mensajes.
+### Gestión de Estado y Enrutamiento Dinámico
+- **Estado del Proyecto (`ProjectState`)**: Hereda de `MessagesState` de LangGraph, lo que permite la gestión automática del historial de mensajes (`messages`) entre los agentes y el usuario, además de mantener variables de estado globales como el plan de acción, los errores de terminal, y contadores de control (`loop_counter`, `revision_count`).
+- **Control de Flujo (`Command`)**: Se utiliza el objeto `Command` de LangGraph para el enrutamiento dinámico. Esto permite a cada agente decidir de manera autónoma cuál es el siguiente nodo a ejecutar (por ejemplo, ir a su nodo de herramientas, avanzar al siguiente agente o terminar el proceso) y actualizar el estado global de forma explícita.
+- **Aristas Explícitas**: El grafo utiliza aristas explícitas para conectar los nodos de herramientas de vuelta a sus agentes correspondientes, asegurando un flujo de ejecución predecible y robusto.
 
----
+### Estabilidad y Prevención de Bucles
+Para garantizar la robustez y evitar ejecuciones infinitas en entornos de producción, el sistema implementa estrictos mecanismos de control y límites de iteración:
+- **Límites de Iteraciones por Agente**:
+  - **Agente Planificador**: Límite máximo de **15 iteraciones** (`loop_counter > 15`). Si se excede, el proceso se detiene de forma segura con un mensaje de error.
+  - **Agente Codificador**: Límite máximo de **15 iteraciones** (`loop_counter > 15`). Si se excede, se detiene el proceso para evitar el consumo innecesario de tokens.
+  - **Agente Revisor**: Límite máximo de **5 iteraciones** (`loop_counter > 5`). Si se alcanza el límite y se detectan errores en las herramientas, se devuelve el flujo al Codificador (siempre que no se haya superado el límite de revisiones). Si no hay errores, se aprueba automáticamente.
+- **Límite de Revisiones (Ciclo Codificador-Revisor)**:
+  - Se establece un límite estricto de **máximo 3 intentos de corrección** (`revision_count >= 3`) entre el Codificador y el Revisor. Si el código sigue fallando las pruebas después del tercer intento, el proceso se detiene y se reportan los últimos errores detectados, evitando bucles infinitos de corrección.
+- **Optimización de Verificación Rápida**:
+  - Si ningún paso del plan de acción requiere pruebas (`requiere_test=False` en todos los pasos), el Agente Revisor **aprueba automáticamente** el código sin ejecutar comandos en la terminal, optimizando significativamente el tiempo de ejecución.
+  - Si el modelo responde con texto sugiriendo aprobación o no requiere pruebas, o si responde con texto sin llamar a herramientas tras 2 intentos, se finaliza la revisión automáticamente para evitar bloqueos.
 
-## 🏗️ Arquitectura de Agentes
+### Investigación Web Autónoma
+El `agente_planificador` integra `DuckDuckGoSearchAPIWrapper` para buscar en internet documentación técnica actualizada, tutoriales y foros antes de generar el plan de acción. Esto permite al sistema tomar decisiones arquitectónicas basadas en las mejores prácticas más recientes.
 
-El flujo de trabajo está modelado como un **Grafo Dirigido en LangGraph**. Los agentes colaboran actualizando un estado compartido denominado `ProjectState`.
+### Soporte Multi-Proveedor de LLMs
+El sistema cuenta con una fábrica de modelos (`llm_factory.py`) que utiliza `init_chat_model` de LangChain para inicializar dinámicamente el LLM. Esto permite soportar múltiples proveedores de manera agnóstica, incluyendo **Google**, **OpenAI**, **Anthropic**, **OpenRouter** y **Ollama** (local), facilitando el cambio de modelos sin modificar el código de los agentes.
 
-```mermaid
-graph TD
-    Start([Inicio / Instrucción]) --> Planificador[Agente Planificador]
-    
-    Planificador -->|Investiga proyecto / web| Planificador
-    Planificador -->|Genera Plan de Acción| Codificador[Agente Codificador]
-    
-    Codificador -->|Escribe / Modifica Archivos| Revisor[Agente Revisor / QA]
-    
-    Revisor -->|Ejecuta Tests en Terminal| Revisor
-    Revisor -->|Pruebas Fallidas / Reporte Errores| Codificador
-    Revisor -->|Pruebas Exitosas / Sin Tests| End([Fin / Finalizado])
-```
+### Motor de Terminal y Feedback Loop
+El `agente_revisor` (QA) incorpora un motor de terminal utilizando `ShellTool`. Esto le permite ejecutar el código generado y correr pruebas reales en el entorno del sistema operativo. Si se detectan errores de sintaxis o fallos en las pruebas, el revisor captura la salida de la terminal y retroalimenta automáticamente al `agente_codificador` para que realice las correcciones necesarias, creando un ciclo de mejora continua.
 
-### 🧠 Componentes y Agentes
+### ⏸️ Configuración de Interrupciones (HITL)
+El sistema utiliza la funcionalidad `interrupt_before` de LangGraph para implementar un flujo de **Human-in-the-Loop (HITL)**. El grafo está configurado para pausar la ejecución antes de nodos críticos (como el `agente_codificador` o el `agente_revisor`), permitiendo al usuario inspeccionar el estado, revisar los cambios propuestos y aprobar la continuación del proceso.
 
-1. **Estado del Proyecto (`ProjectState`)**:
-   - `messages`: Historial optimizado de interacción entre modelos y herramientas.
-   - `directorio_proyecto`: Ruta raíz del código fuente bajo desarrollo.
-   - `instruccion_usuario`: Requerimiento inicial o tarea a resolver.
-   - `plan_de_accion`: Estructura generada por el planificador (`explicacion_arquitectura` y lista de `pasos` con bandera `requiere_test`).
-   - `codigo_escrito`: Resumen de modificaciones de código realizadas.
-   - `errores_terminal`: Salida de errores recopilados durante la ejecución de pruebas.
-   - `loop_counter`: Control de iteraciones máximas por nodo.
-   - `revision_count`: Contador de intentos de corrección del QA (máximo 3).
+#### Flujo de Aprobación/Rechazo Mejorado:
+- **Aprobación (`approve=True`)**: Reanuda la ejecución del grafo. El sistema incluye un mecanismo de salto automático para omitir interrupciones redundantes causadas por el retorno de herramientas de archivos, asegurando una transición fluida.
+- **Rechazo (`approve=False`)**:
+  - **En Pausa 1 (Plan de Acción)**: Si el usuario rechaza el plan propuesto por el Arquitecto, el flujo se redirige de vuelta al `agente_planificador` junto con el feedback del usuario, y se reinicia el contador de bucles (`loop_counter = 0`).
+  - **En Pausa 2 (Revisión de Código)**: Si el usuario rechaza el código generado por el Programador, el flujo se redirige de vuelta al `agente_codificador` con el feedback detallado, reiniciando tanto el contador de bucles como el de revisiones (`loop_counter = 0`, `revision_count = 0`) para dar una oportunidad limpia de corrección.
+- **Generación de IDs Únicos**: Al iniciar una nueva tarea, si no se proporciona un `tarea_id`, el sistema genera automáticamente un identificador único con el formato `task_xxxxxxxx` para aislar la sesión.
 
-2. **Agente Planificador (`agente_planificador`)**:
-   - **Misión**: Analizar los requerimientos y la estructura del proyecto objetivo.
-   - **Herramientas**: Lectura de archivos (`read_file`, `list_directory`), búsqueda web en internet (`busqueda_web_duckduckgo`) y entrega de plan (`entregar_plan_de_accion`).
-   - **Salida**: Genera un plan de acción técnico en formato JSON/Pydantic que detalla los archivos a modificar y si cada paso requiere o no pruebas unitarias.
+### 📡 Notificaciones de Progreso y Timeout Configurable
+El servidor MCP integra un sistema de notificaciones en tiempo real (`notificar_progreso`) con formato porcentual `[XX%]` e informativos enviados a través del contexto de FastMCP, brindando retroalimentación constante durante el avance del equipo de agentes. Además, las tareas soportan un tiempo máximo de ejecución configurable mediante la variable de entorno `MCP_TASK_TIMEOUT_SECONDS` (300s por defecto), cancelando de forma segura procesos colgados o de larga duración.
 
-3. **Agente Codificador (`agente_codificador`)**:
-   - **Misión**: Implementar o modificar el código fuente según las especificaciones del plan.
-   - **Herramientas**: `read_file`, `write_file` y `CodigoCompletado`.
-   - **Recuperación ante fallos**: Si el Revisor detecta errores, el Codificador recibe el reporte de terminal (`errores_terminal`) para aplicar las correcciones pertinentes.
-
-4. **Agente Revisor / QA (`agente_revisor`)**:
-   - **Misión**: Validar la solución mediante la ejecución autónoma de pruebas y comandos de sistema.
-   - **Herramientas**: `terminal` (ejecución aislada con timeout de 30s), `read_file` y `finalizar_revision`.
-   - **Aprobación Inteligente**:
-     - Omitido/Aprobado automáticamente si el plan no requirió pruebas.
-     - Redirección al Codificador si detecta excepciones o pruebas fallidas.
-     - Finalización exitosa cuando el software cumple todos los requerimientos.
-
----
-
-## 📋 Requisitos Previos
-
-- **Python**: 3.10 o superior.
-- **Claves API de Proveedores LLM**:
-  - Al menos una clave API válida: `OPENAI_API_KEY` o `GEMINI_API_KEY`.
-
----
-
-## ⚙️ Configuración del Entorno (`.env`)
-
-Crea un archivo `.env` en la raíz del proyecto basándote en la siguiente plantilla:
-
-```env
-# Claves de API de LLM
-OPENAI_API_KEY=sk-...
-GEMINI_API_KEY=AIzaSy...
-
-# Proveedor de LLM por defecto ("gemini" o "openai")
-DEFAULT_LLM_PROVIDER=gemini
-
-# Modelos específicos (Opcional)
-OPENAI_MODEL_NAME=gpt-4o-mini
-GEMINI_MODEL_NAME=gemini-2.5-flash
-
-# Configuración del Servidor MCP
-MCP_HOST=0.0.0.0
-MCP_PORT=8001
-```
-
----
-
-## 📦 Instalación
-
-1. **Clonar el repositorio y navegar al directorio**:
-   ```bash
-   cd copilot_support
-   ```
-
-2. **Crear y activar un entorno virtual**:
-   - En Linux/macOS:
-     ```bash
-     python -m venv venv
-     source venv/bin/activate
-     ```
-   - En Windows:
-     ```cmd
-     python -m venv venv
-     venv\Scripts\activate
-     ```
-
-3. **Instalar dependencias**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
----
-
-## 💻 Modos de Uso
-
-### 1. Interfaz de Línea de Comandos (CLI Interactive)
-
-Ejecuta el asistente directamente desde tu terminal utilizando una interfaz rica con `rich`:
-
-```bash
-python cli.py
-```
-
-- Selecciona el directorio del proyecto a modificar.
-- Proporciona la instrucción de desarrollo en lenguaje natural.
-- Observa la ejecución en tiempo real de cada agente (Planificador, Codificador y Revisor).
-
-### 2. Servidor MCP con SSE (Model Context Protocol)
-
-Inicia el servidor MCP para integrar el sistema multiagente con clientes MCP (ej. Claude Desktop):
-
-```bash
-python server_mcp.py
-```
-
-El servidor se iniciará en el puerto especificado (por defecto `http://0.0.0.0:8001/sse`).
-
-#### Herramienta MCP Expuesta:
-- **`ejecutar_agente_desarrollo`**:
-  - `directorio_proyecto` (string): Ruta relativa o absoluta del proyecto a desarrollar.
-  - `instruccion_usuario` (string): Requerimiento de software a implementar.
-
-### 3. Ejecución de Pruebas Unitarias
-
-Para verificar que el sistema y sus componentes funcionan correctamente:
-
-```bash
-pytest
-```
-
----
+### Persistencia de Memoria
+El sistema utiliza `MemorySaver` para persistir el estado del grafo entre ejecuciones. Para gestionar múltiples proyectos, se utiliza un `thread_id` único generado mediante el hash MD5 de la ruta absoluta del directorio del proyecto o mediante el identificador único de tarea (`tarea_id`). Esto garantiza que cada proyecto mantenga su propio historial de conversación y estado de forma aislada.
 
 ## 📁 Estructura del Proyecto
 
+La estructura del proyecto está organizada para maximizar la modularidad:
+
 ```text
-copilot_support/
-├── app/
-│   ├── agents/
-│   │   ├── agente_planificador.py    # Agente de investigación y planificación
-│   │   ├── agente_codificador.py     # Agente de generación y modificación de código
-│   │   └── agente_revisor.py         # Agente de pruebas y validación QA
-│   ├── graph/
-│   │   └── agent_graph.py            # Construcción y compilación del grafo LangGraph
-│   ├── models/
-│   │   ├── llm_factory.py            # Fábrica multiproveedor con fallback Gemini/OpenAI
-│   │   └── models.py                 # Definición del estado del grafo (ProjectState)
-│   ├── settings/
-│   │   └── settings.py               # Gestión de variables de entorno con Pydantic Settings
-│   └── utils/
-│       └── files.py                  # Utilidades de lectura y gestión de prompts
-├── prompts/
-│   ├── planificador_prompt.md        # Prompt de sistema para el Planificador
-│   ├── codificador_prompt.md         # Prompt de sistema para el Codificador
-│   └── revisor_prompt.md             # Prompt de sistema para el Revisor
-├── cli.py                            # Interfaz CLI interactiva construida con Rich
-├── server_mcp.py                     # Servidor MCP con soporte SSE (FastMCP)
-├── requirements.txt                  # Lista de dependencias de Python
-└── README.md                         # Documentación general del proyecto
+.
+├── .env                    # Variables de entorno
+├── .gitignore              # Archivos ignorados por git
+├── checkpoints.sqlite      # Base de datos de persistencia (MemorySaver)
+├── LICENSE                 # Licencia del proyecto
+├── mcp_server.py           # Punto de entrada para el servidor FastMCP
+├── README.md               # Documentación
+├── requirements.txt        # Dependencias del proyecto
+├── run_tests.sh            # Script de ejecución de pruebas
+├── tech-lead-export.yaml   # Perfil personalizado para Cline
+├── test_graph.py           # Pruebas del grafo
+├── test_tool.py            # Pruebas de herramientas
+├── app/                    # Código fuente principal
+│   ├── agents/             # Lógica de nodos de agentes
+│   │   ├── agente_codificador.py
+│   │   ├── agente_planificador.py
+│   │   ├── agente_revisor.py
+│   │   └── __init__.py
+│   ├── models/             # Esquemas de datos y fábrica de LLMs
+│   │   ├── llm_factory.py
+│   │   └── models.py
+│   ├── prompts/            # System Prompts en Markdown
+│   │   ├── codificador_prompt.md
+│   │   ├── planificador_prompt.md
+│   │   └── revisor_prompt.md
+│   ├── settings/           # Configuración dinámica
+│   │   ├── settings.py
+│   │   └── __init__.py
+│   ├── utils/              # Utilidades auxiliares
+│   │   └── files.py
+│   └── main.py             # Orquestador del Grafo (StateGraph)
+└── tests/                  # Suite de pruebas unitarias y de integración
+    ├── conftest.py
+    ├── test_agents.py
+    ├── test_e2e.py
+    ├── test_files.py
+    ├── test_integration.py
+    ├── test_llm_factory.py
+    └── test_tool_nodes.py
 ```
 
+### Descripción de Módulos Clave
+- **`app/agents/`**: Contiene la lógica individual de cada agente (Planificador, Codificador, Revisor). Refactorizados para usar `ToolNode` y `ChatPromptTemplate`.
+- **`app/models/`**: Define las estructuras de datos fundamentales y la fábrica de LLMs (`llm_factory.py`), que permite una inicialización dinámica y agnóstica de proveedores.
+- **`app/prompts/`**: Los system prompts están externalizados en archivos Markdown y se cargan dinámicamente usando la utilidad `app.utils.files.File`, facilitando su edición sin tocar código Python.
+- **`app/settings/`**: Utiliza `pydantic-settings` para la validación robusta y tipada de las variables de entorno y la configuración global.
+- **`app/main.py`**: Orquestador principal. Define el `StateGraph` incluyendo la configuración de `interrupt_before` y la persistencia con `MemorySaver`.
+- **`mcp_server.py`**: Implementa el servidor FastMCP, exponiendo la herramienta de delegación de tareas, gestionando notificaciones de progreso en tiempo real y manejando timeouts configurables.
+- **`tech-lead-export.yaml`**: Define un "Custom Mode" para Cline, estableciendo el rol de "Tech Lead" diseñado para delegar tareas al equipo de IA a través de MCP.
+
+## 🛠️ Instalación y Configuración
+
+### 1. Requisitos Previos
+- Python 3.10 o superior.
+
+### 2. Configuración del Entorno
+```bash
+git clone <repository-url>
+cd copilot_support
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 3. Variables de Entorno (.env)
+Crea un archivo `.env` en la raíz. El sistema es flexible y soporta múltiples proveedores:
+
+**Ejemplo para Google (por defecto):**
+```env
+# Proveedor de LLM
+# Configuración de ChatModels de LangChain (https://docs.langchain.com/oss/python/langchain/models#google-gemini)
+LLM_API_KEY="tu_gemini_api_key"
+LLM_PROVIDER="google" # opciones: openai, anthropic
+LLM_MODEL="gemini-2.5-flash-lite" # Modelo LLM
+```
+
+**Ejemplo para OpenRouter:**
+```env
+# Proveedor de LLM
+# Configuración de Proveedores a través de OpenRouter (https://openrouter.ai)
+LLM_PROVIDER="open-router"
+LLM_API_KEY="tu_openrouter_api_key"
+LLM_MODEL="nvidia/nemotron-3-super-120b-a12b:free" # Modelo LLM
+```
+
+**Ejemplo para entorno local:**
+```env
+# Proveedor de LLM
+LLM_PROVIDER="local" # El proveedor para modelos locales ejecuta el servidor ollama; dependiendo del modelo que tengas instalado localmente en tu PC, este se ejecutará en los agentes del MCP a través de ollama. 
+# Si utilizas modelos locales la siguiente variable 'LLM_API_KEY' puede dejarse vacía
+LLM_API_KEY=""
+LLM_MODEL="gemma4:e2b" # Modelo LLM
+```
+
+## 🔌 Integración con MCP
+
+AIDevTeam funciona como un servidor **FastMCP** que expone herramientas avanzadas para interactuar con el ecosistema de agentes.
+
+### Configuración del Servidor MCP (mcpServers)
+```json
+{
+  "mcpServers": {
+    "AIDevTeam": {
+      "command": "/home/valentin-ortiz/dev/copilot_support/.venv/bin/python",
+      "args": [
+        "/home/valentin-ortiz/dev/copilot_support/mcp_server.py"
+      ],
+      "env": {
+        "LLM_API_KEY": "tu_api_key",
+        "LLM_MODEL": "step-3.5-flash",
+        "LLM_PROVIDER": "open-router",
+        "FASTMCP_LOG_LEVEL": "CRITICAL"
+      },
+      "alwaysAllow": [
+        "delegar_tarea_a_equipo_ia",
+        "visualizar_cambios"
+      ],
+      "timeout": 600
+    }
+  }
+}
+```
+
+### Herramientas MCP Disponibles
+
+#### 1. `delegar_tarea_a_equipo_ia`
+Úsala para delegar tareas complejas de programación a un equipo de 3 agentes autónomos (Arquitecto, Programador y QA).
+- **Parámetros**:
+  - `instruccion` (string, requerido): Instrucción detallada de lo que el usuario quiere construir, o el feedback cuando se rechaza o comenta una pausa activa.
+  - `directorio_proyecto` (string, requerido): Ruta absoluta de la carpeta del proyecto actual.
+  - `approve` (boolean, opcional, por defecto `false`): Booleano para aprobar y continuar cuando el proceso se encuentra pausado en un punto de revisión humana.
+  - `tarea_id` (string, opcional): Identificador de la tarea. Es obligatorio si estás aprobando o rechazando una pausa activa. Déjalo vacío para iniciar una tarea nueva (se asignará un ID con formato `task_xxxxxxxx`).
+- **Notificaciones de Progreso y Timeouts**:
+  - La herramienta reporta avances en tiempo real en formato porcentaje `[XX%]` a través del contexto de FastMCP.
+  - La ejecución está protegida por un timeout configurable mediante la variable de entorno `MCP_TASK_TIMEOUT_SECONDS` (300 segundos por defecto).
+
+#### 2. Función Auxiliar Interna: Inspección de Estado y Cambios (`visualizar_cambios`)
+El servidor gestiona internamente la función `visualizar_cambios` para consultar el estado actual del flujo (`codigo_escrito`, resumen del plan y estado de pausa) y capturar los diffs o estado de archivos en disco (`git diff` / `git status -s`), integrando esta información en los reportes de respuesta entregados al cliente MCP.
+
+## 🤖 Integración con Cline
+El proyecto incluye un archivo `tech-lead-export.yaml` que define un "Custom Mode" (Tech Lead) para Cline. Este perfil está diseñado específicamente para que el asistente actúe como un Gestor de Proyectos, delegando el trabajo pesado de programación al equipo de agentes de IA a través de la herramienta MCP, en lugar de escribir código manualmente. Para utilizarlo, simplemente importa este archivo en la configuración de Custom Modes de tu extensión.
+
+## 🧪 Pruebas
+El proyecto incluye una suite exhaustiva de pruebas unitarias y de integración utilizando `pytest` y `pytest-mock`, además de análisis estático de código. Ejecuta la suite completa de pruebas y linter (`flake8`) con:
+```bash
+./run_tests.sh
+```
+El script soporta la ejecución separada de pruebas End-to-End (E2E) utilizando el flag `--e2e` (ej. `./run_tests.sh --e2e`), permitiendo aislar las pruebas unitarias de las de integración.
+
+## 🛡️ Términos de Uso
+
+Este servidor MCP se distribuye bajo un modelo de **Código Visible (Source Available)** para fines no comerciales. Se permite el acceso al código fuente para su auditoría, aprendizaje y uso privado.
+
+Queda estrictamente prohibida la explotación comercial, venta o redistribución de este software como parte de un producto o servicio de pago sin autorización previa por escrito del autor.
+
 ---
-
-## 🛡️ Licencia y Uso
-
-Este proyecto está bajo la licencia **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)**.
-
-Este servidor MCP y sistema multiagente está destinado **exclusivamente para uso personal, fines educativos y de aprendizaje**. Queda **estrictamente prohibido** cualquier uso comercial, venta, distribución, monetización o empaquetado del proyecto como un producto o servicio comercial.
+© 2026 AIDevTeam - Automatización Inteligente de Software.
