@@ -6,7 +6,7 @@ Un sistema autónomo multiagente para el desarrollo, refactorización y prueba d
 
 ## 🚀 Características Principales
 
-- **Orquestación Multiagente con LangGraph**: Flujo de trabajo cíclico y dirigido por estados (`ProjectState`) compuesto por tres agentes autónomos especializados: **Planificador**, **Codificador** y **Revisor/Tester**.
+- **Orquestación Multiagente con LangGraph**: Flujo de trabajo cíclico y directed por estados (`ProjectState`) compuesto por tres agentes autónomos especializados: **Planificador**, **Codificador** y **Revisor/Tester**.
 - **Servidor MCP con Transporte SSE**: Integración estandarizada bajo el Model Context Protocol sobre transporte SSE (Server-Sent Events) en FastAPI (`mcp.server.fastmcp`), permitiendo ser consumido por clientes MCP como Claude Desktop, IDEs o servicios remotos.
 - **LLM Factory Multiproveedor**:
   - Soporte nativo para **Google Gemini** (`gemini-2.5-flash`, `gemini-1.5-pro`) y **OpenAI** (`gpt-4o`, `gpt-4o-mini`).
@@ -197,6 +197,8 @@ copilot_support/
 
 ---
 
-## 🛡️ Licencia y Contribuciones
+## 🛡️ Licencia y Uso
 
-Este proyecto se distribuye bajo la licencia MIT. ¡Siéntete libre de contribuir mediante Pull Requests o creando Issues para nuevas funcionalidades o reporte de errores!
+Este proyecto está bajo la licencia **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)**.
+
+Este servidor MCP y sistema multiagente está destinado **exclusivamente para uso personal, fines educativos y de aprendizaje**. Queda **estrictamente prohibido** cualquier uso comercial, venta, distribución, monetización o empaquetado del proyecto como un producto o servicio comercial.
