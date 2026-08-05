@@ -131,4 +131,31 @@ def test_notificar_progreso_captura_broken_resource_error():
     # No debe lanzar excepción
     asyncio.run(notificar_progreso(mock_ctx, "Mensaje de prueba"))
 
+def test_notificar_progreso_con_progress_token():
+    mock_ctx = AsyncMock()
+    mock_meta = MagicMock()
+    mock_meta.progressToken = "token_123"
+    mock_ctx.request_context.meta = mock_meta
+    
+    asyncio.run(notificar_progreso(mock_ctx, "Ejecutando paso 1", progreso=30, total=100))
+    
+    mock_ctx.report_progress.assert_called_once_with(30, total=100, message="Ejecutando paso 1")
+    mock_ctx.info.assert_called_once_with("Ejecutando paso 1")
 
+def test_notificar_progreso_fallback_sin_progress_token():
+    mock_ctx = AsyncMock()
+    mock_meta = MagicMock()
+    mock_meta.progressToken = None
+    mock_ctx.request_context.meta = mock_meta
+    
+    asyncio.run(notificar_progreso(mock_ctx, "Ejecutando paso sin token", progreso=25, total=100))
+    
+    assert mock_ctx.report_progress.called
+    mock_ctx.info.assert_called_once_with("[25%] Ejecutando paso sin token")
+
+def test_notificar_progreso_fallback_sin_request_context():
+    mock_ctx = AsyncMock(spec=["info", "report_progress"])
+    
+    asyncio.run(notificar_progreso(mock_ctx, "Mensaje directo", progreso=50, total=100))
+    
+    mock_ctx.info.assert_called_once_with("[50%] Mensaje directo")

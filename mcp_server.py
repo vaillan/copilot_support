@@ -25,18 +25,65 @@ mcp = FastMCP("AIDevTeam")
 agentes_app = crear_grafo()
 
 async def notificar_progreso(ctx: Optional[Context], mensaje: str, progreso: Optional[int] = None, total: int = 100):
-    """Envía mensajes de log y progreso en tiempo real a la interfaz de Zoo Code si hay Context."""
+    """
+    Envía mensajes de log y progreso en tiempo real a la interfaz de Zoo Code si hay Context.
+    Pasa el parámetro 'message=mensaje' a 'report_progress' e incluye un mecanismo de respaldo
+    por si el progressToken es None o no es provisto por la sesión, garantizando que Zoo Code
+    muestre las notificaciones de progreso con texto descriptivo.
+    """
     if ctx is None:
         return
     try:
-        if hasattr(ctx, "info"):
-            res = ctx.info(mensaje)
-            if asyncio.iscoroutine(res):
-                await res
+        # Detectar si existe un progressToken válido en el contexto de la petición
+        has_progress_token = False
+        try:
+            if (
+                hasattr(ctx, "request_context")
+                and ctx.request_context is not None
+                and hasattr(ctx.request_context, "meta")
+                and ctx.request_context.meta is not None
+                and getattr(ctx.request_context.meta, "progressToken", None) is not None
+            ):
+                has_progress_token = True
+        except Exception:
+            has_progress_token = False
+
+        progreso_val = progreso if progreso is not None else 0
+
+        # Intentar reportar progreso estructurado pasando 'message=mensaje'
         if progreso is not None and hasattr(ctx, "report_progress"):
-            res = ctx.report_progress(progreso, total)
+            try:
+                res = ctx.report_progress(progreso_val, total=total, message=mensaje)
+                if asyncio.iscoroutine(res):
+                    await res
+            except TypeError:
+                try:
+                    res = ctx.report_progress(progreso_val, total, mensaje)
+                    if asyncio.iscoroutine(res):
+                        await res
+                except TypeError:
+                    res = ctx.report_progress(progreso_val, total)
+                    if asyncio.iscoroutine(res):
+                        await res
+
+        # Mecanismo de respaldo (Fallback)
+        # Si progressToken es None o la sesión no lo provee, formateamos el mensaje
+        # con el avance porcentual [XX%] para asegurar que Zoo Code reciba el texto.
+        if progreso is not None and not has_progress_token:
+            pct = int((progreso_val / total) * 100) if total > 0 else progreso_val
+            mensaje_formateado = f"[{pct}%] {mensaje}"
+        else:
+            mensaje_formateado = mensaje
+
+        if hasattr(ctx, "info"):
+            res = ctx.info(mensaje_formateado)
             if asyncio.iscoroutine(res):
                 await res
+
+        if not has_progress_token:
+            sys.stderr.write(f"[PROGRESO] {mensaje_formateado}\n")
+            sys.stderr.flush()
+
     except BaseException:
         pass
 
