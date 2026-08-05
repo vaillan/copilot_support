@@ -143,11 +143,11 @@ LLM_API_KEY=""
 LLM_MODEL="gemma4:e2b" # Modelo LLM
 ```
 
-## 🔌 Integración con MCP
+## 🔌 Integración y Herramientas del Servidor MCP
 
-AIDevTeam funciona como un servidor **FastMCP** que expone herramientas avanzadas para interactuar con el ecosistema de agentes.
+AIDevTeam se ejecuta como un servidor **FastMCP** (`mcp_server.py`) que proporciona acceso a la orquestación del equipo de desarrollo y expone herramientas para clientes MCP (como Cline, Claude Desktop, Zoo Code, etc.).
 
-### Configuración del Servidor MCP (mcpServers)
+### Configuración del Servidor MCP (`mcpServers`)
 ```json
 {
   "mcpServers": {
@@ -160,7 +160,8 @@ AIDevTeam funciona como un servidor **FastMCP** que expone herramientas avanzada
         "LLM_API_KEY": "tu_api_key",
         "LLM_MODEL": "step-3.5-flash",
         "LLM_PROVIDER": "open-router",
-        "FASTMCP_LOG_LEVEL": "CRITICAL"
+        "FASTMCP_LOG_LEVEL": "CRITICAL",
+        "MCP_TASK_TIMEOUT_SECONDS": "300"
       },
       "alwaysAllow": [
         "delegar_tarea_a_equipo_ia"
@@ -171,17 +172,89 @@ AIDevTeam funciona como un servidor **FastMCP** que expone herramientas avanzada
 }
 ```
 
-### Herramientas MCP Disponibles
+---
 
-#### `delegar_tarea_a_equipo_ia`
-Úsala para delegar tareas complejas de programación a un equipo de 3 agentes autónomos (Arquitecto, Programador y QA).
+### 🛠️ Herramientas MCP Disponibles
+
+#### 1. Herramienta Pública del Servidor MCP (`FastMCP`)
+
+##### `delegar_tarea_a_equipo_ia`
+Es la herramienta principal expuesta a los clientes MCP para iniciar o continuar la ejecución del flujo de desarrollo con el equipo de 3 agentes autónomos (Arquitecto, Programador y QA).
+
+- **Firma**:
+  ```python
+  async def delegar_tarea_a_equipo_ia(
+      instruccion: str,
+      directorio_proyecto: str,
+      approve: bool = False,
+      tarea_id: str = "",
+      ctx: Optional[Context] = None
+  ) -> str
+  ```
+
 - **Parámetros**:
-  - `instruccion` (string, requerido): Lo que el usuario quiere construir, o el feedback detallado si se está rechazando una pausa.
-  - `directorio_proyecto` (string, requerido): La ruta absoluta de la carpeta del proyecto actual.
-  - `approve` (boolean, opcional, por defecto `false`): Booleano para aprobar y continuar si el proceso está pausado esperando revisión humana.
-  - `tarea_id` (string, opcional): ID de la tarea. Obligatorio si estás aprobando o rechazando una pausa. Déjalo vacío para iniciar una tarea nueva.
+  - `instruccion` (`string`, **requerido**): Descripción de la tarea a construir para una tarea nueva, o el feedback/instrucciones de corrección si se rechaza una pausa (`approve=False`).
+  - `directorio_proyecto` (`string`, **requerido**): Ruta absoluta del directorio donde se desarrollará o modificará el código.
+  - `approve` (`boolean`, *opcional*, defecto `False`): `True` para aprobar la fase actual y continuar el flujo cuando el sistema está pausado. `False` para indicar rechazo o proporcionar feedback.
+  - `tarea_id` (`string`, *opcional*, defecto `""`): Identificador único de la tarea.
+    - **OBLIGATORIO** al aprobar (`approve=True`) o rechazar (`approve=False`) una sesión pausada.
+    - Si se deja vacío (`""`) al iniciar una nueva solicitud, el servidor genera automáticamente un ID único con el formato `task_xxxxxxxx`.
+  - `ctx` (`Context`, *opcional/inyectado*): Objeto de contexto de FastMCP utilizado para enviar logs e informes de progreso en tiempo real.
 
-> **Nota sobre la visualización de cambios**: La visualización de cambios en disco (`git diff` / `git status`) se realiza de manera automática en tiempo real mediante notificaciones de progreso emitidas a la pantalla de Zoo Code durante la ejecución de los agentes.
+- **Comportamiento e Interacción Human-in-the-Loop (HITL)**:
+  1. **Inicio de Tarea**:
+     - Se invoca con `instruccion` y `directorio_proyecto`.
+     - Retorna en la **Pausa 1** con el plan de acción estructurado generado por el Agente Planificador.
+  2. **Pausa 1 (Aprobación/Rechazo del Plan de Acción)**:
+     - **Aprobar (`approve=True`, `tarea_id='task_...'`)**: El Agente Codificador toma el plan y comienza a escribir los archivos necesarios.
+     - **Rechazar (`approve=False`, `tarea_id='task_...'`, `instruccion='feedback...'`)**: Regresa al Agente Planificador para ajustar el plan según el feedback.
+  3. **Pausa 2 (Aprobación/Rechazo del Código Generado)**:
+     - Muestra el resumen de cambios realizados en disco e inspección mediante `git diff` / `git status`.
+     - **Aprobar (`approve=True`, `tarea_id='task_...'`)**: Avanza al Agente Revisor (QA) para ejecutar pruebas unitarias/de integración en la terminal.
+     - **Rechazar (`approve=False`, `tarea_id='task_...'`, `instruccion='feedback...'`)**: Redirige al Agente Codificador para corregir o rehacer el código.
+  4. **Notificaciones de Progreso y Timeouts**:
+     - Notifica avances periódicos (`notificar_progreso`) a la interfaz cliente MCP.
+     - Regulado por la variable de entorno `MCP_TASK_TIMEOUT_SECONDS` (por defecto `300` segundos / 5 minutos) mediante `asyncio.wait_for`.
+
+---
+
+#### 2. Herramientas Internas de los Agentes de IA
+
+Durante la ejecución del flujo de LangGraph dentro del servidor MCP, cada agente autónomo tiene asignadas herramientas específicas para llevar a cabo su rol:
+
+##### 🧠 Agente Planificador (Arquitecto)
+* **`busqueda_web_duckduckgo`**:
+  * **Descripción**: Realiza búsquedas técnicas en la web usando DuckDuckGo para consultar documentación actualizada, librerías y mejores prácticas antes de proyectar una solución.
+  * **Parámetro**: `query` (`string`).
+* **`entregar_plan_de_accion`**:
+  * **Descripción**: Notifica la conclusión de la fase de planificación entregando el plan estructurado en pasos.
+  * **Parámetros**: `explicacion_arquitectura` (`string`), `pasos` (`list[PasoPlan]`). Cada paso incluye `archivo`, `tarea` y `requiere_test`.
+
+##### 💻 Agente Codificador (Programador)
+* **`read_file`**:
+  * **Descripción**: Lee el contenido completo de un archivo en el proyecto.
+  * **Parámetro**: `file_path` (`string`).
+* **`write_file`**:
+  * **Descripción**: Escribe, crea o sobrescribe el contenido de un archivo en el proyecto.
+  * **Parámetros**: `file_path` (`string`), `text` (`string`), `append` (`boolean`, opcional).
+* **`CodigoCompletado`**:
+  * **Descripción**: Confirma que el desarrollo de los archivos ha concluido y envía un resumen detallado de los cambios realizados.
+  * **Parámetro**: `resumen_cambios` (`string`).
+
+##### 🧪 Agente Revisor (QA / Testing)
+* **`terminal`**:
+  * **Descripción**: Ejecuta comandos de terminal/shell en el sistema operativo dentro del directorio del proyecto (ej. `pytest`, `python -m unittest`, linter, etc.) con timeout y captura de stdout/stderr.
+  * **Parámetro**: `command` (`string`).
+* **`read_file`**:
+  * **Descripción**: Lee archivos para inspeccionar el código fuente o los resultados de las pruebas.
+  * **Parámetro**: `file_path` (`string`).
+* **`finalizar_revision`**:
+  * **Descripción**: Notifica la finalización de la evaluación de QA indicando si el código fue aprobado o si se detectaron fallos que requieran reintento.
+  * **Parámetros**: `aprobado` (`boolean`), `requiere_pruebas` (`boolean`), `reporte_errores` (`string`, opcional).
+
+> **Nota sobre la visualización de cambios**: La inspección de cambios en disco (`git diff` / `git status`) se realiza automáticamente en tiempo real mediante funciones auxiliares internas e informes de progreso emitidos al cliente MCP durante las interrupciones del flujo.
+
+---
 
 ## 🤖 Integración con Cline
 El proyecto incluye un archivo `tech-lead-export.yaml` que define un "Custom Mode" (Tech Lead) para Cline. Este perfil está diseñado específicamente para que el asistente actúe como un Gestor de Proyectos, delegando el trabajo pesado de programación al equipo de agentes de IA a través de la herramienta MCP, en lugar de escribir código manualmente. Para utilizarlo, simplemente importa este archivo en la configuración de Custom Modes de tu extensión.
@@ -197,7 +270,7 @@ El script soporta la ejecución separada de pruebas End-to-End (E2E) utilizando 
 
 Este servidor MCP se distribuye bajo un modelo de **Código Visible (Source Available)** para fines no comerciales. Se permite el acceso al código fuente para su auditoría, aprendizaje y uso privado.
 
-Queda estrictamente prohibida la explotación comercial, venta o redistribución de este software como parte de un producto o servicio de pago sin autorización previa por escrito del autor.
+Queda strictly prohibida la explotación comercial, venta o redistribución de este software como parte de un producto o servicio de pago sin autorización previa por escrito del autor.
 
 ---
 © 2026 AIDevTeam - Automatización Inteligente de Software.
