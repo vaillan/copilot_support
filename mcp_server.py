@@ -330,11 +330,26 @@ async def delegar_tarea_a_equipo_ia(
                 msg_pausa1 = f"⏸️ PAUSA 1: Plan de acción listo. Esperando revisión del usuario (tarea '{tarea_id}')."
                 await notificar_progreso(ctx, msg_pausa1, 40, 100)
                 return (
-                    f"⏸️ PAUSA 1: El Arquitecto propone este plan:\n{plan}\n\n"
-                    f"Por favor, revisa el plan. Si estás de acuerdo, llama a esta herramienta con:\n"
-                    f"- approve=True\n"
-                    f"- tarea_id='{tarea_id}'\n"
-                    f"Si no estás de acuerdo, pon approve=False y escribe tus cambios en 'instruccion'."
+                    f"================================================================================\n"
+                    f"🛑 INTERRUPCIÓN: PAUSA DE APROBACIÓN HUMANA REQUERIDA (PAUSA 1)\n"
+                    f"================================================================================\n\n"
+                    f"⏸️ PAUSA 1: El Arquitecto propone este plan:\n\n"
+                    f"--------------------------------------------------------------------------------\n"
+                    f"📋 PLAN DE ACCIÓN PROPUESTO:\n"
+                    f"--------------------------------------------------------------------------------\n"
+                    f"{plan}\n"
+                    f"--------------------------------------------------------------------------------\n\n"
+                    f"🆔 ID de Tarea: `{tarea_id}`\n\n"
+                    f"⚠️ INSTRUCCIONES CRÍTICAS PARA EL CLIENTE MCP (ZOO CODE / ASISTENTE):\n"
+                    f"1. DETÉN la ejecución inmediatamente. NO llames a herramientas automáticamente.\n"
+                    f"2. Presenta el plan de acción anterior al usuario y solicita su aprobación explícita.\n"
+                    f"3. Espera a que el usuario confirme antes de realizar cualquier otra acción.\n\n"
+                    f"👉 GUÍA DE REANUDACIÓN O FEEDBACK PARA EL USUARIO:\n"
+                    f"• SI APRUEBAS EL PLAN:\n"
+                    f"  Llama a la herramienta con: approve=True, tarea_id='{tarea_id}', directorio_proyecto='{directorio_proyecto}'\n\n"
+                    f"• SI RECHAZAS O SOLICITAS CAMBIOS EN EL PLAN:\n"
+                    f"  Llama a la herramienta con: approve=False, tarea_id='{tarea_id}', instruccion='<tu feedback>', directorio_proyecto='{directorio_proyecto}'\n"
+                    f"================================================================================"
                 )
                 
             elif siguiente_nodo == "agente_revisor":
@@ -344,13 +359,28 @@ async def delegar_tarea_a_equipo_ia(
                 if diff_git:
                     msg_cambios += f"\n\n🔍 Cambios detectados en disco:\n{diff_git}"
                 await notificar_progreso(ctx, msg_cambios, 70, 100)
+                bloque_git = f"\n\n🔍 CAMBIOS EN DISCO (Git Diff / Status):\n{diff_git}" if diff_git else ""
                 return (
+                    f"================================================================================\n"
+                    f"🛑 INTERRUPCIÓN: PAUSA DE APROBACIÓN HUMANA REQUERIDA (PAUSA 2)\n"
+                    f"================================================================================\n\n"
                     f"⏸️ PAUSA 2 (REVISIÓN DE CÓDIGO): El Programador ha terminado de escribir los archivos.\n\n"
-                    f"📝 CAMBIOS REALIZADOS:\n{codigo_escrito}\n\n"
-                    f"👀 ACCIÓN REQUERIDA:\n"
-                    f"1. Revisa los cambios en el proyecto.\n"
-                    f"2. Si el código es correcto, llama a esta herramienta con approve=True y tarea_id='{tarea_id}' para que el QA ejecute las pruebas.\n"
-                    f"3. Si requiere cambios, pon approve=False, tarea_id='{tarea_id}' e incluye en la instrucción lo que hay que corregir."
+                    f"--------------------------------------------------------------------------------\n"
+                    f"📝 CAMBIOS REALIZADOS:\n"
+                    f"--------------------------------------------------------------------------------\n"
+                    f"{codigo_escrito}{bloque_git}\n"
+                    f"--------------------------------------------------------------------------------\n\n"
+                    f"🆔 ID de Tarea: `{tarea_id}`\n\n"
+                    f"⚠️ INSTRUCCIONES CRÍTICAS PARA EL CLIENTE MCP (ZOO CODE / ASISTENTE):\n"
+                    f"1. DETÉN la ejecución inmediatamente. NO llames a herramientas automáticamente.\n"
+                    f"2. Muestra los cambios realizados al usuario y solicita su revisión y aprobación explícita.\n"
+                    f"3. Espera la confirmación del usuario antes de proceder a la fase de pruebas QA.\n\n"
+                    f"👉 GUÍA DE REANUDACIÓN O FEEDBACK PARA EL USUARIO:\n"
+                    f"• SI APRUEBAS LOS CAMBIOS:\n"
+                    f"  Llama a la herramienta con: approve=True, tarea_id='{tarea_id}', directorio_proyecto='{directorio_proyecto}'\n\n"
+                    f"• SI SOLICITAS CORRECCIONES EN EL CÓDIGO:\n"
+                    f"  Llama a la herramienta con: approve=False, tarea_id='{tarea_id}', instruccion='<tu feedback>', directorio_proyecto='{directorio_proyecto}'\n"
+                    f"================================================================================"
                 )
 
         # Si no hay 'next', el grafo llegó a END

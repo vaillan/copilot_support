@@ -50,9 +50,13 @@ def test_delegar_tarea_pausa_2_muestra_cambios(mock_ainvoke, mock_aget_state):
         tarea_id="task_test"
     ))
 
+    assert "🛑 INTERRUPCIÓN: PAUSA DE APROBACIÓN HUMANA REQUERIDA (PAUSA 2)" in resultado
     assert "PAUSA 2 (REVISIÓN DE CÓDIGO)" in resultado
     assert "📝 CAMBIOS REALIZADOS:" in resultado
     assert "Creado archivo app/utils/helpers.py con funciones aux." in resultado
+    assert "⚠️ INSTRUCCIONES CRÍTICAS PARA EL CLIENTE MCP (ZOO CODE / ASISTENTE):" in resultado
+    assert "DETÉN la ejecución inmediatamente." in resultado
+    assert "👉 GUÍA DE REANUDACIÓN O FEEDBACK PARA EL USUARIO:" in resultado
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
 @patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
@@ -76,7 +80,13 @@ def test_delegar_tarea_con_contexto_notificaciones(mock_ainvoke, mock_aget_state
         ctx=mock_ctx
     ))
 
+    assert "🛑 INTERRUPCIÓN: PAUSA DE APROBACIÓN HUMANA REQUERIDA (PAUSA 1)" in resultado
     assert "PAUSA 1: El Arquitecto propone este plan" in resultado
+    assert "📋 PLAN DE ACCIÓN PROPUESTO:" in resultado
+    assert "Plan de prueba" in resultado
+    assert "⚠️ INSTRUCCIONES CRÍTICAS PARA EL CLIENTE MCP (ZOO CODE / ASISTENTE):" in resultado
+    assert "DETÉN la ejecución inmediatamente." in resultado
+    assert "👉 GUÍA DE REANUDACIÓN O FEEDBACK PARA EL USUARIO:" in resultado
     assert mock_ctx.info.called
     assert mock_ctx.report_progress.called
 
@@ -204,6 +214,7 @@ def test_delegar_tarea_sin_auto_approve_mantiene_pausa(mock_ainvoke, mock_aget_s
             auto_approve=False
         ))
 
+    assert "🛑 INTERRUPCIÓN: PAUSA DE APROBACIÓN HUMANA REQUERIDA (PAUSA 1)" in resultado
     assert "PAUSA 1: El Arquitecto propone este plan" in resultado
     assert "Plan manual" in resultado
 
