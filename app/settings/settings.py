@@ -30,3 +30,6 @@ class Settings(BaseSettings):
     REVIEWER_API_KEY: str = os.getenv("REVIEWER_API_KEY", "")
     REVIEWER_MODEL: str = os.getenv("REVIEWER_MODEL", "")
     REVIEWER_PROVIDER: str = os.getenv("REVIEWER_PROVIDER", "")
+
+    LLM_REQUESTS_PER_SECOND: float = float(os.getenv("LLM_REQUESTS_PER_SECOND", "0.0"))
+    LLM_CHECKS_PER_SECOND: float = float(os.getenv("LLM_CHECKS_PER_SECOND", "10.0"))

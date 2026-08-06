@@ -1,4 +1,5 @@
 from langchain.chat_models import init_chat_model
+from langchain_core.rate_limiters import InMemoryRateLimiter
 from app.settings.settings import Settings
 from functools import lru_cache
 from langchain_ollama import ChatOllama
@@ -21,21 +22,37 @@ def _create_llm(provider: str, model_name: str, api_key: str, temperature: float
     mod = model_name if model_name else "gemini-1.5-pro"
     mapped_provider = provider_map.get(prov, prov)
     
-    if mapped_provider == "ollama":
-        return ChatOllama(
-            model=mod,
-            temperature=temperature,
+    rate_limiter = None
+    requests_per_second = getattr(settings, "LLM_REQUESTS_PER_SECOND", 0.0)
+    if requests_per_second and requests_per_second > 0:
+        checks_per_second = getattr(settings, "LLM_CHECKS_PER_SECOND", 10.0)
+        check_every_n_seconds = 1.0 / checks_per_second if checks_per_second > 0 else 0.1
+        rate_limiter = InMemoryRateLimiter(
+            requests_per_second=requests_per_second,
+            check_every_n_seconds=check_every_n_seconds
         )
+    
+    if mapped_provider == "ollama":
+        kwargs = {
+            "model": mod,
+            "temperature": temperature,
+        }
+        if rate_limiter:
+            kwargs["rate_limiter"] = rate_limiter
+        return ChatOllama(**kwargs)
     else:
         try:
-            return init_chat_model(
-                model=mod, 
-                model_provider=mapped_provider, 
-                temperature=temperature, 
-                api_key=api_key,
-                max_retries=5,
-                timeout=10000
-            )
+            kwargs = {
+                "model": mod,
+                "model_provider": mapped_provider,
+                "temperature": temperature,
+                "api_key": api_key,
+                "max_retries": 5,
+                "timeout": 10000
+            }
+            if rate_limiter:
+                kwargs["rate_limiter"] = rate_limiter
+            return init_chat_model(**kwargs)
         except (ImportError, Exception) as e:
             raise ValueError(f"Error al inicializar el modelo {mod} con proveedor {mapped_provider}: {e}")
 
@@ -75,4 +92,3 @@ def get_reviewer_llm(temperature: float = 0.0):
     model = settings.REVIEWER_MODEL or settings.LLM_MODEL
     api_key = settings.REVIEWER_API_KEY or settings.LLM_API_KEY
     return _create_llm(provider, model, api_key, temperature)
-
