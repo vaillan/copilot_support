@@ -20,11 +20,7 @@ class CodigoCompletado(BaseModel):
 @lru_cache(maxsize=10)
 def _get_tools(directorio: str):
     toolkit_archivos = FileManagementToolkit(root_dir=directorio)
-    herramientas = [
-        t for t in toolkit_archivos.get_tools() 
-        if t.name in ["read_file", "write_file"]
-    ]
-    return herramientas
+    return toolkit_archivos.get_tools()
 
 def agente_codificador(state: ProjectState) -> Command:
     """
@@ -93,7 +89,7 @@ def agente_codificador(state: ProjectState) -> Command:
         for tool_call in respuesta.tool_calls:
             if tool_call["name"] == "CodigoCompletado":
                 if not has_written_files:
-                    msg_error = "Error: No has modificado ni creado ningún archivo usando la herramienta 'write_file'. Debes escribir el código correspondiente antes de llamar a 'CodigoCompletado'."
+                    msg_error = "Error: No hast modificado ni creado ningún archivo usando la herramienta 'write_file'. Debes escribir el código correspondiente antes de llamar a 'CodigoCompletado'."
                     return Command(
                         update={
                             "messages": [respuesta, HumanMessage(content=msg_error)],

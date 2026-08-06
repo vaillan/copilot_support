@@ -44,16 +44,23 @@ def test_delegar_tarea_pausa_2_muestra_cambios(mock_ainvoke, mock_aget_state):
     }
     mock_aget_state.return_value = mock_state_pausado
 
+    mock_ctx = AsyncMock()
     resultado = asyncio.run(delegar_tarea_a_equipo_ia(
         instruccion="Crear helpers",
         directorio_proyecto="./",
-        tarea_id="task_test"
+        tarea_id="task_test",
+        ctx=mock_ctx
     ))
 
     assert "ATENCIÓN ASISTENTE DE IA" in resultado
     assert "Revisión de Código Desarrollado (Pausa 2)" in resultado
     assert "Creado archivo app/utils/helpers.py con funciones aux." in resultado
     assert "INSTRUCCIONES PARA EL USUARIO HUMANO" in resultado
+    
+    # Verificar que mock_ctx.info recibió la notificación que incluye el markdown completo de pausa 2
+    info_calls = [call.args[0] for call in mock_ctx.info.call_args_list]
+    markdown_notificado = any("Revisión de Código Desarrollado (Pausa 2)" in call and "Creado archivo app/utils/helpers.py" in call for call in info_calls)
+    assert markdown_notificado, "El mensaje enviado a notificar_progreso (ctx.info) en PAUSA 2 debe incluir el Markdown completo."
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
 @patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
@@ -83,6 +90,11 @@ def test_delegar_tarea_con_contexto_notificaciones(mock_ainvoke, mock_aget_state
     assert "INSTRUCCIONES PARA EL USUARIO HUMANO" in resultado
     assert mock_ctx.info.called
     assert mock_ctx.report_progress.called
+
+    # Verificar que mock_ctx.info recibió la notificación que incluye el markdown completo de pausa 1
+    info_calls = [call.args[0] for call in mock_ctx.info.call_args_list]
+    markdown_notificado = any("Formulario de Aprobación de Plan de Acción" in call and "Plan de prueba" in call for call in info_calls)
+    assert markdown_notificado, "El mensaje enviado a notificar_progreso (ctx.info) en PAUSA 1 debe incluir el Markdown completo."
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
 @patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)

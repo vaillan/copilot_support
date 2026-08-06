@@ -408,9 +408,7 @@ async def delegar_tarea_a_equipo_ia(
                     explicacion = str(plan)
                     pasos = []
                 
-                msg_pausa1 = f"⏸️ PAUSA 1: Plan de acción listo. Esperando revisión del usuario (tarea '{tarea_id}')."
-                await notificar_progreso(ctx, msg_pausa1, 40, 100)
-                return generar_markdown_pausa(
+                markdown_pausa = generar_markdown_pausa(
                     tarea_id=tarea_id,
                     tipo_pausa="PAUSA_1",
                     titulo="Formulario de Aprobación de Plan de Acción",
@@ -418,15 +416,14 @@ async def delegar_tarea_a_equipo_ia(
                     pasos=pasos,
                     directorio_proyecto=directorio_proyecto
                 )
+                msg_pausa1 = f"⏸️ PAUSA 1: Plan de acción listo. Esperando revisión del usuario (tarea '{tarea_id}').\n\n{markdown_pausa}"
+                await notificar_progreso(ctx, msg_pausa1, 40, 100)
+                return markdown_pausa
                 
             elif siguiente_nodo == "agente_revisor":
                 codigo_escrito = estado.values.get("codigo_escrito", "No se registró un resumen de cambios.")
                 diff_git = obtener_git_diff(directorio_proyecto)
-                msg_cambios = f"⏸️ PAUSA 2: Código escrito. Esperando aprobación antes de pruebas QA (tarea '{tarea_id}')."
-                if diff_git:
-                    msg_cambios += f"\n\n🔍 Cambios detectados en disco:\n{diff_git}"
-                await notificar_progreso(ctx, msg_cambios, 70, 100)
-                return generar_markdown_pausa(
+                markdown_pausa = generar_markdown_pausa(
                     tarea_id=tarea_id,
                     tipo_pausa="PAUSA_2",
                     titulo="Revisión de Código Desarrollado (Pausa 2)",
@@ -434,6 +431,9 @@ async def delegar_tarea_a_equipo_ia(
                     diff_git=diff_git,
                     directorio_proyecto=directorio_proyecto
                 )
+                msg_cambios = f"⏸️ PAUSA 2: Código escrito. Esperando aprobación antes de pruebas QA (tarea '{tarea_id}').\n\n{markdown_pausa}"
+                await notificar_progreso(ctx, msg_cambios, 70, 100)
+                return markdown_pausa
 
         # Si no hay 'next', el grafo llegó a END
         values = estado.values if hasattr(estado, "values") else {}

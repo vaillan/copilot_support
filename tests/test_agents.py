@@ -293,3 +293,14 @@ def test_herramienta_terminal_aislada():
     assert "$ echo hola" in res
     assert "hola" in res
 
+
+def test_get_tools_agente_codificador():
+    from app.agents.agente_codificador import _get_tools
+    tools = _get_tools("./")
+    tool_names = [t.name for t in tools]
+    assert "read_file" in tool_names
+    assert "write_file" in tool_names
+    assert "file_delete" in tool_names
+    assert "copy_file" in tool_names
+    assert "move_file" in tool_names
+    assert "list_directory" in tool_names
