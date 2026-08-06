@@ -109,6 +109,105 @@ def test_delegar_tarea_aprobacion_y_completado(mock_ainvoke, mock_aget_state):
     assert "Se implementaron las funciones requeridas." in resultado
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
+def test_delegar_tarea_auto_approve_parametro(mock_ainvoke, mock_aget_state):
+    mock_state_inicial = MagicMock()
+    mock_state_inicial.next = []
+
+    mock_state_pausa_1 = MagicMock()
+    mock_state_pausa_1.next = ["agente_codificador"]
+    mock_state_pausa_1.values = {"plan_de_accion": "Plan de prueba", "messages": []}
+
+    mock_state_pausa_2 = MagicMock()
+    mock_state_pausa_2.next = ["agente_revisor"]
+    mock_state_pausa_2.values = {"codigo_escrito": "Código generado", "messages": []}
+
+    mock_state_final = MagicMock()
+    mock_state_final.next = []
+    mock_state_final.values = {
+        "codigo_escrito": "Código generado y verificado",
+        "errores_terminal": "0 errores"
+    }
+
+    mock_aget_state.side_effect = [
+        mock_state_inicial,
+        mock_state_pausa_1,
+        mock_state_pausa_2,
+        mock_state_final
+    ]
+
+    resultado = asyncio.run(delegar_tarea_a_equipo_ia(
+        instruccion="Crear componente completo",
+        directorio_proyecto="./",
+        auto_approve=True
+    ))
+
+    assert "✅ Tarea completada exitosamente" in resultado
+    assert "Código generado y verificado" in resultado
+    assert mock_ainvoke.call_count == 3
+
+@pytest.mark.parametrize("env_val", ["true", "1", "yes", "TRUE", " Yes "])
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
+def test_delegar_tarea_auto_approve_env_var(mock_ainvoke, mock_aget_state, env_val):
+    mock_state_inicial = MagicMock()
+    mock_state_inicial.next = []
+
+    mock_state_pausa_1 = MagicMock()
+    mock_state_pausa_1.next = ["agente_codificador"]
+    mock_state_pausa_1.values = {"plan_de_accion": "Plan auto", "messages": []}
+
+    mock_state_pausa_2 = MagicMock()
+    mock_state_pausa_2.next = ["agente_revisor"]
+    mock_state_pausa_2.values = {"codigo_escrito": "Código auto", "messages": []}
+
+    mock_state_final = MagicMock()
+    mock_state_final.next = []
+    mock_state_final.values = {
+        "codigo_escrito": "Código final via env var",
+        "errores_terminal": "0 errores"
+    }
+
+    mock_aget_state.side_effect = [
+        mock_state_inicial,
+        mock_state_pausa_1,
+        mock_state_pausa_2,
+        mock_state_final
+    ]
+
+    with patch.dict("os.environ", {"MCP_AUTO_APPROVE": env_val}):
+        resultado = asyncio.run(delegar_tarea_a_equipo_ia(
+            instruccion="Crear servicio",
+            directorio_proyecto="./",
+            auto_approve=False
+        ))
+
+    assert "✅ Tarea completada exitosamente" in resultado
+    assert "Código final via env var" in resultado
+
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
+def test_delegar_tarea_sin_auto_approve_mantiene_pausa(mock_ainvoke, mock_aget_state):
+    mock_state_inicial = MagicMock()
+    mock_state_inicial.next = []
+
+    mock_state_pausa_1 = MagicMock()
+    mock_state_pausa_1.next = ["agente_codificador"]
+    mock_state_pausa_1.values = {"plan_de_accion": "Plan manual"}
+
+    mock_aget_state.side_effect = [mock_state_inicial, mock_state_pausa_1]
+
+    with patch.dict("os.environ", {"MCP_AUTO_APPROVE": "false"}):
+        resultado = asyncio.run(delegar_tarea_a_equipo_ia(
+            instruccion="Crear modulo manual",
+            directorio_proyecto="./",
+            auto_approve=False
+        ))
+
+    assert "PAUSA 1: El Arquitecto propone este plan" in resultado
+    assert "Plan manual" in resultado
+
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
 def test_delegar_tarea_timeout_excedido(mock_aget_state):
     async def _lento(*args, **kwargs):
         await asyncio.sleep(2)

@@ -117,7 +117,8 @@ def obtener_git_diff(directorio: str) -> str:
             stdin=subprocess.DEVNULL
         )
         if res_stat.returncode == 0 and res_stat.stdout.strip():
-            return f"Archivos modificados/creados (git status):\n{res_stat.stdout.strip()}"
+            stdout_clean = res_stat.stdout.strip()
+            return f"Archivos modificados/creados (git status):\n{stdout_clean}"
     except Exception:
         pass
     return ""
@@ -133,7 +134,8 @@ async def visualizar_cambios(
     Nota: Ya no está expuesta como herramienta MCP para los agentes LLM.
     """
     with redirect_stdout(sys.stderr):
-        await notificar_progreso(ctx, f"🔍 Consultando cambios para tarea '{tarea_id}' en '{directorio_proyecto}'...", 10, 100)
+        msg_consultando = f"🔍 Consultando cambios para tarea '{tarea_id}' en '{directorio_proyecto}'..."
+        await notificar_progreso(ctx, msg_consultando, 10, 100)
         partes = []
         
         dir_a_consultar = directorio_proyecto
@@ -149,21 +151,28 @@ async def visualizar_cambios(
                     
                 codigo_escrito = values.get("codigo_escrito")
                 if codigo_escrito:
-                    partes.append(f"📋 RESUMEN DE CAMBIOS (Tarea '{tarea_id}'):\n{codigo_escrito}")
+                    msg_resumen = f"📋 RESUMEN DE CAMBIOS (Tarea '{tarea_id}'):\n{codigo_escrito}"
+                    partes.append(msg_resumen)
                 else:
-                    partes.append(f"ℹ️ La tarea '{tarea_id}' aún no ha registrado un resumen de cambios.")
+                    msg_sin_resumen = f"ℹ️ La tarea '{tarea_id}' aún no ha registrado un resumen de cambios."
+                    partes.append(msg_sin_resumen)
                     
                 if estado.next:
-                    partes.append(f"📌 Estado actual del flujo: Pausado antes de '{estado.next[0]}'")
+                    siguiente_nodo = estado.next[0]
+                    msg_estado = f"📌 Estado actual del flujo: Pausado antes de '{siguiente_nodo}'"
+                    partes.append(msg_estado)
                 else:
                     partes.append("📌 Estado actual del flujo: Finalizado")
             except Exception as e:
-                partes.append(f"⚠️ No se pudo obtener el estado de la tarea '{tarea_id}': {str(e)}")
+                err_msg = str(e)
+                msg_err = f"⚠️ No se pudo obtener el estado de la tarea '{tarea_id}': {err_msg}"
+                partes.append(msg_err)
 
         if dir_a_consultar:
             diff_git = obtener_git_diff(dir_a_consultar)
             if diff_git:
-                partes.append(f"🔍 CAMBIOS DETALLADOS EN DISCO (Git Diff / Status en '{dir_a_consultar}'):\n{diff_git}")
+                msg_diff = f"🔍 CAMBIOS DETALLADOS EN DISCO (Git Diff / Status en '{dir_a_consultar}'):\n{diff_git}"
+                partes.append(msg_diff)
                 
         if not partes:
             await notificar_progreso(ctx, "⚠️ No se encontraron cambios para los parámetros proporcionados.", 100, 100)
@@ -179,6 +188,7 @@ async def delegar_tarea_a_equipo_ia(
     directorio_proyecto: str, 
     approve: bool = False,
     tarea_id: str = "",
+    auto_approve: bool = False,
     ctx: Optional[Context] = None
 ) -> str:
     """
@@ -190,16 +200,24 @@ async def delegar_tarea_a_equipo_ia(
         directorio_proyecto: La ruta absoluta de la carpeta actual.
         approve: Booleano para aprobar y continuar si el proceso está pausado esperando revisión humana.
         tarea_id: OBLIGATORIO SI ESTÁS APROBANDO O RECHAZANDO UNA PAUSA. Déjalo vacío para iniciar una tarea nueva.
+        auto_approve: Si es True (o la variable MCP_AUTO_APPROVE=true), auto-aprueba todas las pausas (Pausa 1 y Pausa 2) sin requerir confirmación manual.
     """
+    env_val_raw = os.environ.get("MCP_AUTO_APPROVE", "")
+    env_val_clean = env_val_raw.strip().lower()
+    env_auto_approve = env_val_clean in ("true", "1", "yes")
+    effective_auto_approve = auto_approve or env_auto_approve
+
     # Si es una tarea nueva, generamos un ID único. Si estamos resumiendo, usamos el que nos pasa el LLM.
     if not tarea_id:
         if approve:
             return "Error: No puedes aprobar una tarea sin proporcionar el 'tarea_id' de la sesión pausada."
-        tarea_id = f"task_{uuid.uuid4().hex[:8]}"
+        uuid_hex = uuid.uuid4().hex[:8]
+        tarea_id = f"task_{uuid_hex}"
         
     config = {"configurable": {"thread_id": tarea_id}, "recursion_limit": 100}
 
-    await notificar_progreso(ctx, f"🚀 Iniciando procesamiento para tarea '{tarea_id}'...", 10, 100)
+    msg_inicio = f"🚀 Iniciando procesamiento para tarea '{tarea_id}'..."
+    await notificar_progreso(ctx, msg_inicio, 10, 100)
 
     timeout_seconds = int(os.environ.get("MCP_TASK_TIMEOUT_SECONDS", "300"))
 
@@ -209,8 +227,9 @@ async def delegar_tarea_a_equipo_ia(
 
         if is_paused:
             siguiente_nodo = estado_actual.next[0]
-            if approve:
-                await notificar_progreso(ctx, f"▶️ Reanudando tarea '{tarea_id}' (Aprobación confirmada para nodo '{siguiente_nodo}')...", 50, 100)
+            if approve or effective_auto_approve:
+                msg_reanudando = f"▶️ Reanudando tarea '{tarea_id}' (Aprobación confirmada para nodo '{siguiente_nodo}')..."
+                await notificar_progreso(ctx, msg_reanudando, 50, 100)
                 # Reanudamos la ejecución
                 resultado = await agentes_app.ainvoke(None, config) # type: ignore
                 estado_post = await agentes_app.aget_state(config) # type: ignore
@@ -218,23 +237,28 @@ async def delegar_tarea_a_equipo_ia(
                 # Bucle para saltar las interrupciones causadas por el retorno de las herramientas
                 tool_loop_count = 0
                 while estado_post.next and estado_post.next[0] in ["agente_codificador", "agente_revisor"] and tool_loop_count < 10:
-                    msgs = estado_post.values.get("messages", [])
-                    if msgs and msgs[-1].type == "tool":
-                        await notificar_progreso(ctx, f"⚙️ Procesando resultado de herramienta ({tool_loop_count + 1})...", 60, 100)
+                    msgs = estado_post.values.get("messages", []) if hasattr(estado_post, "values") else []
+                    if msgs and getattr(msgs[-1], "type", None) == "tool":
+                        tool_step = tool_loop_count + 1
+                        msg_tool = f"⚙️ Procesando resultado de herramienta ({tool_step})..."
+                        await notificar_progreso(ctx, msg_tool, 60, 100)
                         resultado = await agentes_app.ainvoke(None, config) # type: ignore
                         estado_post = await agentes_app.aget_state(config) # type: ignore
                         tool_loop_count += 1
                     else:
                         break
             else:
-                await notificar_progreso(ctx, f"↩️ Procesando rechazo/feedback del usuario para nodo '{siguiente_nodo}'...", 30, 100)
+                msg_feedback = f"↩️ Procesando rechazo/feedback del usuario para nodo '{siguiente_nodo}'..."
+                await notificar_progreso(ctx, msg_feedback, 30, 100)
                 # RECHAZO DEL USUARIO: Regresamos con feedback y REINICIAMOS CONTADORES
                 if siguiente_nodo == "agente_revisor":
+                    msg_rechazo_cod = f"El usuario rechazó el código con este feedback: {instruccion}"
+                    msg_rechazo_human = f"Rechazo de código: {instruccion}"
                     comando = Command(
                         goto="agente_codificador",
                         update={
-                            "errores_terminal": f"El usuario rechazó el código con este feedback: {instruccion}",
-                            "messages": [HumanMessage(content=f"Rechazo de código: {instruccion}")],
+                            "errores_terminal": msg_rechazo_cod,
+                            "messages": [HumanMessage(content=msg_rechazo_human)],
                             "loop_counter": 0,
                             "revision_count": 0
                         }
@@ -242,10 +266,11 @@ async def delegar_tarea_a_equipo_ia(
                     resultado = await agentes_app.ainvoke(comando, config) # type: ignore
                     
                 elif siguiente_nodo == "agente_codificador":
+                    msg_rechazo_plan = f"El usuario rechazó el plan de acción: {instruccion}"
                     comando = Command(
                         goto="agente_planificador",
                         update={
-                            "messages": [HumanMessage(content=f"El usuario rechazó el plan de acción: {instruccion}")],
+                            "messages": [HumanMessage(content=msg_rechazo_plan)],
                             "loop_counter": 0 
                         }
                     )
@@ -253,7 +278,9 @@ async def delegar_tarea_a_equipo_ia(
                 else:
                     resultado = await agentes_app.ainvoke(None, config) # type: ignore
         else:
-            await notificar_progreso(ctx, f"🏗️ Iniciando Agente Planificador (Arquitecto) para '{instruccion[:50]}...'...", 20, 100)
+            instruccion_corta = instruccion[:50]
+            msg_planificador = f"🏗️ Iniciando Agente Planificador (Arquitecto) para '{instruccion_corta}...'..."
+            await notificar_progreso(ctx, msg_planificador, 20, 100)
             estado_inicial = {
                 "instruccion_usuario": instruccion,
                 "directorio_proyecto": directorio_proyecto,
@@ -264,13 +291,44 @@ async def delegar_tarea_a_equipo_ia(
             resultado = await agentes_app.ainvoke(estado_inicial, config) # type: ignore
 
         estado = await agentes_app.aget_state(config) # type: ignore
-        
+
+        # Si auto-aprobación está habilitada, avanzamos automáticamente a través de cualquier pausa adicional
+        if effective_auto_approve:
+            auto_loop_count = 0
+            max_auto_loops = 20
+            while estado.next and auto_loop_count < max_auto_loops:
+                siguiente_nodo = estado.next[0]
+                msg_auto = f"⚡ Auto-aprobación activa: reanudando automáticamente en nodo '{siguiente_nodo}' (tarea '{tarea_id}')..."
+                await notificar_progreso(
+                    ctx,
+                    msg_auto,
+                    50,
+                    100
+                )
+                resultado = await agentes_app.ainvoke(None, config) # type: ignore
+                estado = await agentes_app.aget_state(config) # type: ignore
+
+                tool_loop_count = 0
+                while estado.next and estado.next[0] in ["agente_codificador", "agente_revisor"] and tool_loop_count < 10:
+                    msgs = estado.values.get("messages", []) if hasattr(estado, "values") else []
+                    if msgs and getattr(msgs[-1], "type", None) == "tool":
+                        tool_step = tool_loop_count + 1
+                        msg_tool = f"⚙️ Procesando resultado de herramienta ({tool_step})..."
+                        await notificar_progreso(ctx, msg_tool, 60, 100)
+                        resultado = await agentes_app.ainvoke(None, config) # type: ignore
+                        estado = await agentes_app.aget_state(config) # type: ignore
+                        tool_loop_count += 1
+                    else:
+                        break
+                auto_loop_count += 1
+
         if estado.next:
             siguiente_nodo = estado.next[0]
             
             if siguiente_nodo == "agente_codificador":
                 plan = estado.values.get("plan_de_accion", "Plan generado.")
-                await notificar_progreso(ctx, f"⏸️ PAUSA 1: Plan de acción listo. Esperando revisión del usuario (tarea '{tarea_id}').", 40, 100)
+                msg_pausa1 = f"⏸️ PAUSA 1: Plan de acción listo. Esperando revisión del usuario (tarea '{tarea_id}')."
+                await notificar_progreso(ctx, msg_pausa1, 40, 100)
                 return (
                     f"⏸️ PAUSA 1: El Arquitecto propone este plan:\n{plan}\n\n"
                     f"Por favor, revisa el plan. Si estás de acuerdo, llama a esta herramienta con:\n"
@@ -303,7 +361,8 @@ async def delegar_tarea_a_equipo_ia(
         diff_git = obtener_git_diff(directorio_proyecto)
         msg_fin = f"✅ Tarea '{tarea_id}' completada exitosamente."
         if diff_git:
-            msg_fin += f"\n\n🔍 Cambios en disco finales:\n{diff_git}"
+            diff_msg = f"\n\n🔍 Cambios en disco finales:\n{diff_git}"
+            msg_fin += diff_msg
         await notificar_progreso(ctx, msg_fin, 100, 100)
         reporte_final = (
             f"✅ Tarea completada exitosamente por el equipo LangGraph.\n"
@@ -321,7 +380,8 @@ async def delegar_tarea_a_equipo_ia(
         await notificar_progreso(ctx, msg_timeout, 100, 100)
         return f"{msg_timeout} Por favor, reintenta dividiendo la instrucción en pasos más específicos o verifica el estado de la tarea con tarea_id='{tarea_id}'."
     except BaseException as e:
-        msg_err = f"🚨 El equipo de agentes falló con un error interno en tarea '{tarea_id}': {str(e)}"
+        err_msg = str(e)
+        msg_err = f"🚨 El equipo de agentes falló con un error interno en tarea '{tarea_id}': {err_msg}"
         sys.stderr.write(f"{msg_err}\n")
         await notificar_progreso(ctx, msg_err, 100, 100)
         return msg_err
@@ -333,5 +393,6 @@ if __name__ == "__main__":
     except (KeyboardInterrupt, BrokenPipeError, ConnectionResetError):
         sys.exit(0)
     except Exception as e:
-        sys.stderr.write(f"Error fatal en el servidor MCP: {e}\n")
+        err_fatal = str(e)
+        sys.stderr.write(f"Error fatal en el servidor MCP: {err_fatal}\n")
         sys.exit(1)
