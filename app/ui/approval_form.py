@@ -152,12 +152,10 @@ class ApprovalForm:
         if self.diff_git:
             bloque_diff_html = f"""
             <div class="card mb-3">
-                <details>
-                    <summary class="card-header font-weight-bold" style="cursor: pointer;">🔍 Ver Git Diff / Cambios en Disco</summary>
-                    <div class="card-body p-2 bg-dark-subtle">
-                        <pre class="diff-block"><code>{esc_diff}</code></pre>
-                    </div>
-                </details>
+                <div class="card-header font-weight-bold">🔍 Git Diff / Cambios en Disco (Visible)</div>
+                <div class="card-body p-2 bg-dark-subtle">
+                    <pre class="diff-block"><code>{esc_diff}</code></pre>
+                </div>
             </div>
             """
 
@@ -177,6 +175,7 @@ class ApprovalForm:
             --primary-text: #11111b;
             --danger-btn: #f38ba8;
             --accent: #89b4fa;
+            --warning-bg: #f9e2af;
         }}
         body {{
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -194,6 +193,15 @@ class ApprovalForm:
             border-radius: 8px;
             padding: 24px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }}
+        .ai-warning-box {{
+            background-color: rgba(249, 226, 175, 0.15);
+            border: 2px dashed #f9e2af;
+            border-radius: 6px;
+            padding: 14px;
+            margin-bottom: 20px;
+            color: #f9e2af;
+            font-size: 14px;
         }}
         .header {{
             display: flex;
@@ -245,7 +253,7 @@ class ApprovalForm:
             padding: 12px;
             border-radius: 4px;
             overflow-x: auto;
-            max-height: 300px;
+            max-height: 350px;
             font-family: monospace;
             font-size: 13px;
             margin: 0;
@@ -295,6 +303,11 @@ class ApprovalForm:
 </head>
 <body>
     <div class="approval-container">
+        <div class="ai-warning-box">
+            <strong>⚠️ ATENCIÓN ASISTENTE DE IA (ZOO CODE / COPILOT):</strong><br>
+            El flujo está pausado requiriendo aprobación humana. <b>DETÉN LA EJECUCIÓN AUTOMÁTICA</b>. NO llames a ninguna herramienta de aprobación por tu cuenta. Muestra este plan/código al usuario y espera su confirmación explícita en el chat.
+        </div>
+
         <div class="header">
             <div>
                 <h2 style="margin: 0; font-size: 20px;">{esc_titulo}</h2>
@@ -361,13 +374,19 @@ class ApprovalForm:
         """
         lineas = []
         lineas.append(f"================================================================================")
-        lineas.append(f"🛑 INTERRUPCIÓN: FORMULARIO DE APROBACIÓN HUMANA ({self.tipo_pausa})")
+        lineas.append(f"🛑 ATENCIÓN ASISTENTE DE IA (ZOO CODE / COPILOT):")
+        lineas.append(f"EL FLUJO ESTÁ PAUSADO ESPERANDO CONFIRMACIÓN DEL USUARIO HUMANO.")
+        lineas.append(f"**DETÉN LA EJECUCIÓN AUTOMÁTICA DE HERRAMIENTAS DE INMEDIATO.**")
+        lineas.append(f"NO ejecutes ninguna función ni herramienta (NO llames a responder_formulario_aprobacion ni a delegar_tarea_a_equipo_ia por tu cuenta).")
+        lineas.append(f"Muestra todo el plan de acción y diff de código a continuación directamente al usuario humano en el chat y **ESPERA** pacientemente a que el usuario escriba su decisión explícita.")
         lineas.append(f"================================================================================\n")
+        
         lineas.append(f"### 📌 {self.titulo}")
         lineas.append(f"- **ID Tarea:** `{self.tarea_id}`")
         if self.directorio_proyecto:
             lineas.append(f"- **Directorio:** `{self.directorio_proyecto}`")
-        lineas.append(f"- **Estado:** Pausado esperándote.\n")
+        lineas.append(f"- **Estado:** Pausado requiriendo aprobación humana.\n")
+        
         lineas.append(f"#### 📄 Explicación / Descripción:")
         lineas.append(f"{self.explicacion_arquitectura}\n")
 
@@ -383,20 +402,18 @@ class ApprovalForm:
             lineas.append("")
 
         if self.diff_git:
-            lineas.append("<details>")
-            lineas.append("<summary>🔍 <b>Ver Git Diff / Cambios en Disco</b> (Click para desplegar)</summary>\n")
+            lineas.append("#### 🔍 Git Diff / Cambios en Disco (Visible Completo):")
             lineas.append("```diff")
             lineas.append(self.diff_git)
-            lineas.append("```")
-            lineas.append("</details>\n")
+            lineas.append("```\n")
 
         lineas.append("--------------------------------------------------------------------------------")
-        lineas.append("👉 **OPCIONES DE INTERACCIÓN / RESPUESTA:**")
+        lineas.append("👉 **INSTRUCCIONES PARA EL USUARIO HUMANO (NO PARA LA IA):**")
         lineas.append("--------------------------------------------------------------------------------")
-        lineas.append(f"• **PARA APROBAR (Continuar ejecución):**")
-        lineas.append(f"  Llama a `responder_formulario_aprobacion(tarea_id='{self.tarea_id}', accion='approve')` o `delegar_tarea_a_equipo_ia(approve=True, tarea_id='{self.tarea_id}', directorio_proyecto='{self.directorio_proyecto}')`\n")
-        lineas.append(f"• **PARA RECHAZAR / SOLICITAR CAMBIOS:**")
-        lineas.append(f"  Llama a `responder_formulario_aprobacion(tarea_id='{self.tarea_id}', accion='reject', feedback='<tus observaciones>')` o `delegar_tarea_a_equipo_ia(approve=False, tarea_id='{self.tarea_id}', instruccion='<tu feedback>', directorio_proyecto='{self.directorio_proyecto}')`")
+        lineas.append("Por favor, revisa detalladamente el plan o los cambios de código anteriores.")
+        lineas.append("• **PARA APROBAR:** Escribe en el chat: `Aprobar` (o `Acepto`).")
+        lineas.append("• **PARA RECHAZAR O PEDIR CAMBIOS:** Escribe en el chat: `Rechazar` seguido de tus observaciones o correcciones.")
+        lineas.append("El asistente de IA debe detenerse y esperar a que tú escribas tu respuesta.")
         lineas.append("================================================================================")
 
         return "\n".join(lineas)
@@ -405,7 +422,7 @@ class ApprovalForm:
         """Genera una salida estilizada en texto plano apta para consola o terminal."""
         lineas = []
         lineas.append("┌" + "─" * 78 + "┐")
-        lineas.append(f"│ [{self.tipo_pausa}] {self.titulo[:68]:<68} │")
+        lineas.append(f"│ [DETENER IA - {self.tipo_pausa}] {self.titulo[:50]:<50} │")
         lineas.append("├" + "─" * 78 + "┤")
         lineas.append(f"│ Tarea ID : {self.tarea_id:<66} │")
         if self.directorio_proyecto:
@@ -428,6 +445,6 @@ class ApprovalForm:
                 lineas.append(f"│  {idx}. {t[:50]:<50} | Archivo: {a[:15]:<15} │")
 
         lineas.append("├" + "─" * 78 + "┤")
-        lineas.append("│ [A]PROBAR (Continuar)    |    [R]ECHAZAR (Con Feedback)                      │")
+        lineas.append("│ Escribe en el chat: 'Aprobar' o 'Rechazar <observaciones>'                     │")
         lineas.append("└" + "─" * 78 + "┘")
         return "\n".join(lineas)

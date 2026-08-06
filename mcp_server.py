@@ -196,6 +196,11 @@ async def delegar_tarea_a_equipo_ia(
     ÚSA ESTA HERRAMIENTA PARA DELEGAR TAREAS COMPLEJAS DE PROGRAMACIÓN.
     Esta herramienta invoca a un equipo de 3 agentes autónomos (Arquitecto, Programador y QA).
     
+    IMPORTANTE SOBRE PAUSAS Y REVISIONES (PAUSA 1 Y PAUSA 2):
+    Cuando el grafo se pause en Pausa 1 (Plan del Arquitecto) o Pausa 2 (Revisión de Código), esta herramienta devolverá un formulario de aprobación. 
+    EL ASISTENTE LLM DEL CLIENTE (ZOO CODE / COPILOT) DEBE DETENERSE INMEDIATAMENTE, mostrar el plan o el diff de código completo al usuario humano, y ESPERAR su confirmación explícita (Aprobar/Rechazar) en el chat. 
+    EL ASISTENTE DE IA TIENE PROHIBIDO LLAMAR A ESTA HERRAMIENTA AUTOMÁTICAMENTE PARA APROBAR SIN LA ORDEN EXPRESA DEL USUARIO.
+    
     Args:
         instruccion: Lo que el usuario quiere construir, o el feedback si se está rechazando.
         directorio_proyecto: La ruta absoluta de la carpeta actual.
@@ -401,6 +406,8 @@ async def obtener_formulario_aprobacion(
     """
     Obtiene el formulario de aprobación interactivo para una tarea en pausa (Pausa 1 o Pausa 2).
     
+    IMPORTANTE: Al recibir este formulario, el asistente LLM cliente debe detenerse, mostrar el plan o cambios al usuario y esperar su confirmación explícita.
+    
     Args:
         tarea_id: ID de la tarea pausada.
         formato: Formato de salida deseado ("html", "markdown", "json", "dict", "cli"). Por defecto "html".
@@ -475,7 +482,8 @@ async def responder_formulario_aprobacion(
     ctx: Optional[Context] = None
 ) -> str:
     """
-    Envía la decisión del usuario (Aprobar o Rechazar) directamente a través del formulario interactivo o cliente de IA.
+    Envía la decisión explícita del usuario humano (Aprobar o Rechazar) a la tarea pausada.
+    Solo debe ser invocado cuando el usuario humano haya confirmado explícitamente en el chat.
     
     Args:
         tarea_id: ID de la tarea sobre la cual responder.

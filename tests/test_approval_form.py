@@ -77,6 +77,7 @@ def test_to_html():
     assert "task_html" in html_out
     assert "Crear UI" in html_out
     assert "diff git mock" in html_out
+    assert "ATENCIÓN ASISTENTE DE IA" in html_out
     assert "Aprobar Plan / Código" in html_out
     assert "Rechazar / Solicitar Cambios" in html_out
 
@@ -89,10 +90,11 @@ def test_to_markdown():
         diff_git="+ def test(): pass"
     )
     md_out = form.to_markdown()
-    assert "🛑 INTERRUPCIÓN: FORMULARIO DE APROBACIÓN HUMANA (PAUSA_2)" in md_out
+    assert "ATENCIÓN ASISTENTE DE IA" in md_out
+    assert "DETÉN LA EJECUCIÓN AUTOMÁTICA" in md_out
     assert "`task_md`" in md_out
     assert "+ def test(): pass" in md_out
-    assert "responder_formulario_aprobacion" in md_out
+    assert "INSTRUCCIONES PARA EL USUARIO HUMANO" in md_out
 
 def test_to_cli():
     form = ApprovalForm(
@@ -106,4 +108,4 @@ def test_to_cli():
     assert "PAUSA_1" in cli_out
     assert "CLI Approval" in cli_out
     assert "task_cli" in cli_out
-    assert "[A]PROBAR" in cli_out
+    assert "Escribe en el chat" in cli_out

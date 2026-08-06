@@ -50,10 +50,10 @@ def test_delegar_tarea_pausa_2_muestra_cambios(mock_ainvoke, mock_aget_state):
         tarea_id="task_test"
     ))
 
-    assert "🛑 INTERRUPCIÓN: FORMULARIO DE APROBACIÓN HUMANA (PAUSA_2)" in resultado
+    assert "ATENCIÓN ASISTENTE DE IA" in resultado
     assert "Revisión de Código Desarrollado (Pausa 2)" in resultado
     assert "Creado archivo app/utils/helpers.py con funciones aux." in resultado
-    assert "OPCIONES DE INTERACCIÓN / RESPUESTA" in resultado
+    assert "INSTRUCCIONES PARA EL USUARIO HUMANO" in resultado
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
 @patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
@@ -77,10 +77,10 @@ def test_delegar_tarea_con_contexto_notificaciones(mock_ainvoke, mock_aget_state
         ctx=mock_ctx
     ))
 
-    assert "🛑 INTERRUPCIÓN: FORMULARIO DE APROBACIÓN HUMANA (PAUSA_1)" in resultado
+    assert "ATENCIÓN ASISTENTE DE IA" in resultado
     assert "Formulario de Aprobación de Plan de Acción" in resultado
     assert "Plan de prueba" in resultado
-    assert "OPCIONES DE INTERACCIÓN / RESPUESTA" in resultado
+    assert "INSTRUCCIONES PARA EL USUARIO HUMANO" in resultado
     assert mock_ctx.info.called
     assert mock_ctx.report_progress.called
 
@@ -208,7 +208,7 @@ def test_delegar_tarea_sin_auto_approve_mantiene_pausa(mock_ainvoke, mock_aget_s
             auto_approve=False
         ))
 
-    assert "🛑 INTERRUPCIÓN: FORMULARIO DE APROBACIÓN HUMANA (PAUSA_1)" in resultado
+    assert "ATENCIÓN ASISTENTE DE IA" in resultado
     assert "Plan manual" in resultado
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
@@ -286,7 +286,7 @@ def test_obtener_formulario_aprobacion_pausa_1(mock_aget_state):
 
     # Prueba formato markdown
     res_md = asyncio.run(obtener_formulario_aprobacion(tarea_id="t_form1", formato="markdown"))
-    assert "🛑 INTERRUPCIÓN: FORMULARIO DE APROBACIÓN HUMANA (PAUSA_1)" in res_md
+    assert "ATENCIÓN ASISTENTE DE IA" in res_md
 
     # Prueba formato json
     res_json = asyncio.run(obtener_formulario_aprobacion(tarea_id="t_form1", formato="json"))
@@ -294,7 +294,7 @@ def test_obtener_formulario_aprobacion_pausa_1(mock_aget_state):
 
     # Prueba formato cli
     res_cli = asyncio.run(obtener_formulario_aprobacion(tarea_id="t_form1", formato="cli"))
-    assert "[PAUSA_1]" in res_cli
+    assert "[DETENER IA - PAUSA_1]" in res_cli
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
 def test_obtener_formulario_aprobacion_sin_pausa(mock_aget_state):
