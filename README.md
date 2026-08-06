@@ -88,18 +88,6 @@ El módulo `app/models/llm_factory.py` proporciona inicialización centralizada 
 
 ---
 
-## 🖥️ Formato y Renderizado de Aprobación (`app/ui/approval_form.py`)
-
-La clase `ApprovalForm` centraliza la representación de los formularios interactivos y agnósticos para los puntos de pausa del usuario (**Pausa 1** para el plan de acción y **Pausa 2** para la revisión de código).
-
-- **Multi-Formato**:
-  - `to_html()`: Genera un formulario HTML interactivo standalone estilizado, apto para Webviews de IDEs (VS Code, Zoo Code) o navegadores, incluyendo paneles de diff de Git, listas de pasos, botones de aprobación/rechazo y cuadro de observaciones.
-  - `to_markdown()`: Genera una vista enriquecida en Markdown con badges, tablas, bloques de código y comandos de reanudación.
-  - `to_cli()`: Genera una salida ASCII en texto plano optimizada para consolas y terminales.
-  - `to_json()` / `to_dict()`: Serialización estructurada para clientes API y sistemas MCP.
-
----
-
 ## 🔌 Servidor MCP (`mcp_server.py`)
 
 Implementado utilizando **FastMCP**, el servidor expone capacidades avanzadas para la integración de agentes de IA con entornos de desarrollo y asistentes externos.
@@ -122,7 +110,6 @@ El proyecto incluye una suite completa de pruebas unitarias, de integración y E
 
 ### Módulos de Prueba
 - `tests/test_agents.py`: Valida el comportamiento individual de los agentes (planificador, codificador y revisor).
-- `tests/test_approval_form.py`: Comprueba el correcto renderizado y conversión de `ApprovalForm` en sus distintos formatos (HTML, Markdown, JSON, CLI).
 - `tests/test_e2e.py`: Pruebas End-to-End del ciclo completo del grafo bajo escenarios simulados.
 - `tests/test_files.py`: Verifica la utilidad de lectura y manipulación de archivos y system prompts.
 - `tests/test_integration.py`: Comprueba la correcta interacción entre nodos, aristas y herramientas de LangGraph.
@@ -172,16 +159,12 @@ El script `./run_tests.sh` automatiza la ejecución de toda la suite de pruebas 
 │   ├── settings/           # Configuración dinámica con pydantic-settings
 │   │   ├── settings.py
 │   │   └── __init__.py
-│   ├── ui/                 # Componente de interfaz de aprobación agnóstica
-│   │   ├── approval_form.py
-│   │   └── __init__.py
 │   ├── utils/              # Utilidades auxiliares
 │   │   └── files.py
 │   └── main.py             # Orquestador principal del Grafo (StateGraph)
 └── tests/                  # Suite de pruebas automatizadas
     ├── conftest.py         # Configuración y fixtures compartidas de pytest
     ├── test_agents.py      # Pruebas de agentes
-    ├── test_approval_form.py # Pruebas del formulario de aprobación
     ├── test_e2e.py         # Pruebas End-to-End
     ├── test_files.py       # Pruebas de utilidades de archivos
     ├── test_integration.py # Pruebas de integración LangGraph
