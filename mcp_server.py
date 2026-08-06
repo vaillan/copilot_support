@@ -18,6 +18,7 @@ from fastmcp import FastMCP, Context
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from app.main import crear_grafo
+from app.ui.approval_form import ApprovalForm
 
 
 mcp = FastMCP("AIDevTeam")
@@ -326,62 +327,35 @@ async def delegar_tarea_a_equipo_ia(
             siguiente_nodo = estado.next[0]
             
             if siguiente_nodo == "agente_codificador":
-                plan = estado.values.get("plan_de_accion", "Plan generado.")
+                plan = estado.values.get("plan_de_accion", {})
+                if isinstance(plan, dict):
+                    form = ApprovalForm.from_plan_dict(tarea_id, plan, directorio_proyecto)
+                else:
+                    form = ApprovalForm(
+                        tarea_id=tarea_id,
+                        tipo_pausa="PAUSA_1",
+                        titulo="Formulario de Aprobación de Plan de Acción",
+                        explicacion_arquitectura=str(plan),
+                        directorio_proyecto=directorio_proyecto
+                    )
                 msg_pausa1 = f"⏸️ PAUSA 1: Plan de acción listo. Esperando revisión del usuario (tarea '{tarea_id}')."
                 await notificar_progreso(ctx, msg_pausa1, 40, 100)
-                return (
-                    f"================================================================================\n"
-                    f"🛑 INTERRUPCIÓN: PAUSA DE APROBACIÓN HUMANA REQUERIDA (PAUSA 1)\n"
-                    f"================================================================================\n\n"
-                    f"⏸️ PAUSA 1: El Arquitecto propone este plan:\n\n"
-                    f"--------------------------------------------------------------------------------\n"
-                    f"📋 PLAN DE ACCIÓN PROPUESTO:\n"
-                    f"--------------------------------------------------------------------------------\n"
-                    f"{plan}\n"
-                    f"--------------------------------------------------------------------------------\n\n"
-                    f"🆔 ID de Tarea: `{tarea_id}`\n\n"
-                    f"⚠️ INSTRUCCIONES CRÍTICAS PARA EL CLIENTE MCP (ZOO CODE / ASISTENTE):\n"
-                    f"1. DETÉN la ejecución inmediatamente. NO llames a herramientas automáticamente.\n"
-                    f"2. Presenta el plan de acción anterior al usuario y solicita su aprobación explícita.\n"
-                    f"3. Espera a que el usuario confirme antes de realizar cualquier otra acción.\n\n"
-                    f"👉 GUÍA DE REANUDACIÓN O FEEDBACK PARA EL USUARIO:\n"
-                    f"• SI APRUEBAS EL PLAN:\n"
-                    f"  Llama a la herramienta con: approve=True, tarea_id='{tarea_id}', directorio_proyecto='{directorio_proyecto}'\n\n"
-                    f"• SI RECHAZAS O SOLICITAS CAMBIOS EN EL PLAN:\n"
-                    f"  Llama a la herramienta con: approve=False, tarea_id='{tarea_id}', instruccion='<tu feedback>', directorio_proyecto='{directorio_proyecto}'\n"
-                    f"================================================================================"
-                )
+                return form.to_markdown()
                 
             elif siguiente_nodo == "agente_revisor":
                 codigo_escrito = estado.values.get("codigo_escrito", "No se registró un resumen de cambios.")
                 diff_git = obtener_git_diff(directorio_proyecto)
+                form = ApprovalForm.from_review_data(
+                    tarea_id=tarea_id,
+                    codigo_escrito=codigo_escrito,
+                    diff_git=diff_git,
+                    directorio_proyecto=directorio_proyecto
+                )
                 msg_cambios = f"⏸️ PAUSA 2: Código escrito. Esperando aprobación antes de pruebas QA (tarea '{tarea_id}')."
                 if diff_git:
                     msg_cambios += f"\n\n🔍 Cambios detectados en disco:\n{diff_git}"
                 await notificar_progreso(ctx, msg_cambios, 70, 100)
-                bloque_git = f"\n\n🔍 CAMBIOS EN DISCO (Git Diff / Status):\n{diff_git}" if diff_git else ""
-                return (
-                    f"================================================================================\n"
-                    f"🛑 INTERRUPCIÓN: PAUSA DE APROBACIÓN HUMANA REQUERIDA (PAUSA 2)\n"
-                    f"================================================================================\n\n"
-                    f"⏸️ PAUSA 2 (REVISIÓN DE CÓDIGO): El Programador ha terminado de escribir los archivos.\n\n"
-                    f"--------------------------------------------------------------------------------\n"
-                    f"📝 CAMBIOS REALIZADOS:\n"
-                    f"--------------------------------------------------------------------------------\n"
-                    f"{codigo_escrito}{bloque_git}\n"
-                    f"--------------------------------------------------------------------------------\n\n"
-                    f"🆔 ID de Tarea: `{tarea_id}`\n\n"
-                    f"⚠️ INSTRUCCIONES CRÍTICAS PARA EL CLIENTE MCP (ZOO CODE / ASISTENTE):\n"
-                    f"1. DETÉN la ejecución inmediatamente. NO llames a herramientas automáticamente.\n"
-                    f"2. Muestra los cambios realizados al usuario y solicita su revisión y aprobación explícita.\n"
-                    f"3. Espera la confirmación del usuario antes de proceder a la fase de pruebas QA.\n\n"
-                    f"👉 GUÍA DE REANUDACIÓN O FEEDBACK PARA EL USUARIO:\n"
-                    f"• SI APRUEBAS LOS CAMBIOS:\n"
-                    f"  Llama a la herramienta con: approve=True, tarea_id='{tarea_id}', directorio_proyecto='{directorio_proyecto}'\n\n"
-                    f"• SI SOLICITAS CORRECCIONES EN EL CÓDIGO:\n"
-                    f"  Llama a la herramienta con: approve=False, tarea_id='{tarea_id}', instruccion='<tu feedback>', directorio_proyecto='{directorio_proyecto}'\n"
-                    f"================================================================================"
-                )
+                return form.to_markdown()
 
         # Si no hay 'next', el grafo llegó a END
         values = estado.values if hasattr(estado, "values") else {}
@@ -415,6 +389,118 @@ async def delegar_tarea_a_equipo_ia(
         sys.stderr.write(f"{msg_err}\n")
         await notificar_progreso(ctx, msg_err, 100, 100)
         return msg_err
+
+
+@mcp.tool()
+async def obtener_formulario_aprobacion(
+    tarea_id: str,
+    formato: str = "html",
+    directorio_proyecto: str = "",
+    ctx: Optional[Context] = None
+) -> str:
+    """
+    Obtiene el formulario de aprobación interactivo para una tarea en pausa (Pausa 1 o Pausa 2).
+    
+    Args:
+        tarea_id: ID de la tarea pausada.
+        formato: Formato de salida deseado ("html", "markdown", "json", "dict", "cli"). Por defecto "html".
+        directorio_proyecto: Ruta del proyecto si se requiere para inspección de git diff.
+    """
+    config = {"configurable": {"thread_id": tarea_id}}
+    try:
+        estado = await agentes_app.aget_state(config)
+        values = estado.values if hasattr(estado, "values") else {}
+        dir_proj = directorio_proyecto or values.get("directorio_proyecto", "")
+        
+        if not estado.next:
+            form = ApprovalForm(
+                tarea_id=tarea_id,
+                tipo_pausa="FINALIZADO",
+                titulo="Estado de la Tarea: Completada / No Pausada",
+                explicacion_arquitectura="La tarea no requiere aprobación en este momento ya que no se encuentra en estado pausado.",
+                directorio_proyecto=dir_proj
+            )
+        else:
+            siguiente_nodo = estado.next[0]
+            if siguiente_nodo == "agente_codificador":
+                plan = values.get("plan_de_accion", {})
+                if isinstance(plan, dict):
+                    form = ApprovalForm.from_plan_dict(tarea_id, plan, dir_proj)
+                else:
+                    form = ApprovalForm(
+                        tarea_id=tarea_id,
+                        tipo_pausa="PAUSA_1",
+                        titulo="Formulario de Aprobación del Plan de Acción",
+                        explicacion_arquitectura=str(plan),
+                        directorio_proyecto=dir_proj
+                    )
+            elif siguiente_nodo == "agente_revisor":
+                codigo_escrito = values.get("codigo_escrito", "")
+                diff_git = obtener_git_diff(dir_proj)
+                form = ApprovalForm.from_review_data(tarea_id, codigo_escrito, diff_git, dir_proj)
+            else:
+                form = ApprovalForm(
+                    tarea_id=tarea_id,
+                    tipo_pausa=siguiente_nodo,
+                    titulo=f"Aprobación Requerida para {siguiente_nodo}",
+                    explicacion_arquitectura="Acción requerida antes de proseguir el flujo.",
+                    directorio_proyecto=dir_proj
+                )
+    except Exception as e:
+        form = ApprovalForm(
+            tarea_id=tarea_id,
+            tipo_pausa="ERROR",
+            titulo="Formulario de Aprobación - Tarea No Encontrada",
+            explicacion_arquitectura=f"No se pudo cargar la tarea '{tarea_id}': {str(e)}",
+            directorio_proyecto=directorio_proyecto
+        )
+
+    formato_lower = formato.lower().strip()
+    if formato_lower == "html":
+        return form.to_html()
+    elif formato_lower in ["json", "dict"]:
+        return form.to_json()
+    elif formato_lower == "cli":
+        return form.to_cli()
+    else:
+        return form.to_markdown()
+
+
+@mcp.tool()
+async def responder_formulario_aprobacion(
+    tarea_id: str,
+    accion: str,
+    feedback: str = "",
+    directorio_proyecto: str = "",
+    ctx: Optional[Context] = None
+) -> str:
+    """
+    Envía la decisión del usuario (Aprobar o Rechazar) directamente a través del formulario interactivo o cliente de IA.
+    
+    Args:
+        tarea_id: ID de la tarea sobre la cual responder.
+        accion: 'approve' (o 'aprobar') para confirmar, o 'reject' (o 'rechazar') para solicitar cambios.
+        feedback: Comentarios u observaciones adicionales (especialmente en rechazos).
+        directorio_proyecto: Ruta del proyecto.
+    """
+    accion_clean = accion.lower().strip()
+    es_aprobado = accion_clean in ["approve", "aprobar", "yes", "accept", "ok"]
+    
+    return await delegar_tarea_a_equipo_ia(
+        instruccion=feedback,
+        directorio_proyecto=directorio_proyecto,
+        approve=es_aprobado,
+        tarea_id=tarea_id,
+        ctx=ctx
+    )
+
+
+@mcp.resource("approval://form/{tarea_id}")
+async def obtener_recurso_formulario(tarea_id: str) -> str:
+    """
+    Recurso MCP que expone el formulario de aprobación dinámico en formato HTML para una tarea dada.
+    """
+    return await obtener_formulario_aprobacion(tarea_id=tarea_id, formato="html")
 
 
 if __name__ == "__main__":

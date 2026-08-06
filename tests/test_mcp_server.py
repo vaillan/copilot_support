@@ -50,13 +50,10 @@ def test_delegar_tarea_pausa_2_muestra_cambios(mock_ainvoke, mock_aget_state):
         tarea_id="task_test"
     ))
 
-    assert "🛑 INTERRUPCIÓN: PAUSA DE APROBACIÓN HUMANA REQUERIDA (PAUSA 2)" in resultado
-    assert "PAUSA 2 (REVISIÓN DE CÓDIGO)" in resultado
-    assert "📝 CAMBIOS REALIZADOS:" in resultado
+    assert "🛑 INTERRUPCIÓN: FORMULARIO DE APROBACIÓN HUMANA (PAUSA_2)" in resultado
+    assert "Revisión de Código Desarrollado (Pausa 2)" in resultado
     assert "Creado archivo app/utils/helpers.py con funciones aux." in resultado
-    assert "⚠️ INSTRUCCIONES CRÍTICAS PARA EL CLIENTE MCP (ZOO CODE / ASISTENTE):" in resultado
-    assert "DETÉN la ejecución inmediatamente." in resultado
-    assert "👉 GUÍA DE REANUDACIÓN O FEEDBACK PARA EL USUARIO:" in resultado
+    assert "OPCIONES DE INTERACCIÓN / RESPUESTA" in resultado
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
 @patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
@@ -80,13 +77,10 @@ def test_delegar_tarea_con_contexto_notificaciones(mock_ainvoke, mock_aget_state
         ctx=mock_ctx
     ))
 
-    assert "🛑 INTERRUPCIÓN: PAUSA DE APROBACIÓN HUMANA REQUERIDA (PAUSA 1)" in resultado
-    assert "PAUSA 1: El Arquitecto propone este plan" in resultado
-    assert "📋 PLAN DE ACCIÓN PROPUESTO:" in resultado
+    assert "🛑 INTERRUPCIÓN: FORMULARIO DE APROBACIÓN HUMANA (PAUSA_1)" in resultado
+    assert "Formulario de Aprobación de Plan de Acción" in resultado
     assert "Plan de prueba" in resultado
-    assert "⚠️ INSTRUCCIONES CRÍTICAS PARA EL CLIENTE MCP (ZOO CODE / ASISTENTE):" in resultado
-    assert "DETÉN la ejecución inmediatamente." in resultado
-    assert "👉 GUÍA DE REANUDACIÓN O FEEDBACK PARA EL USUARIO:" in resultado
+    assert "OPCIONES DE INTERACCIÓN / RESPUESTA" in resultado
     assert mock_ctx.info.called
     assert mock_ctx.report_progress.called
 
@@ -214,8 +208,7 @@ def test_delegar_tarea_sin_auto_approve_mantiene_pausa(mock_ainvoke, mock_aget_s
             auto_approve=False
         ))
 
-    assert "🛑 INTERRUPCIÓN: PAUSA DE APROBACIÓN HUMANA REQUERIDA (PAUSA 1)" in resultado
-    assert "PAUSA 1: El Arquitecto propone este plan" in resultado
+    assert "🛑 INTERRUPCIÓN: FORMULARIO DE APROBACIÓN HUMANA (PAUSA_1)" in resultado
     assert "Plan manual" in resultado
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
@@ -269,3 +262,84 @@ def test_notificar_progreso_fallback_sin_request_context():
     asyncio.run(notificar_progreso(mock_ctx, "Mensaje directo", progreso=50, total=100))
     
     mock_ctx.info.assert_called_once_with("[50%] Mensaje directo")
+
+
+from mcp_server import obtener_formulario_aprobacion, responder_formulario_aprobacion
+
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+def test_obtener_formulario_aprobacion_pausa_1(mock_aget_state):
+    mock_state = MagicMock()
+    mock_state.next = ["agente_codificador"]
+    mock_state.values = {
+        "plan_de_accion": {
+            "explicacion_arquitectura": "Arquitectura modular",
+            "pasos": [{"tarea": "Crear modulo", "archivo": "app/m.py", "requiere_test": True}]
+        },
+        "directorio_proyecto": "/tmp/test"
+    }
+    mock_aget_state.return_value = mock_state
+
+    # Prueba formato html
+    res_html = asyncio.run(obtener_formulario_aprobacion(tarea_id="t_form1", formato="html"))
+    assert "<!DOCTYPE html>" in res_html
+    assert "Arquitectura modular" in res_html
+
+    # Prueba formato markdown
+    res_md = asyncio.run(obtener_formulario_aprobacion(tarea_id="t_form1", formato="markdown"))
+    assert "🛑 INTERRUPCIÓN: FORMULARIO DE APROBACIÓN HUMANA (PAUSA_1)" in res_md
+
+    # Prueba formato json
+    res_json = asyncio.run(obtener_formulario_aprobacion(tarea_id="t_form1", formato="json"))
+    assert '"tarea_id": "t_form1"' in res_json
+
+    # Prueba formato cli
+    res_cli = asyncio.run(obtener_formulario_aprobacion(tarea_id="t_form1", formato="cli"))
+    assert "[PAUSA_1]" in res_cli
+
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+def test_obtener_formulario_aprobacion_sin_pausa(mock_aget_state):
+    mock_state = MagicMock()
+    mock_state.next = []
+    mock_aget_state.return_value = mock_state
+
+    res = asyncio.run(obtener_formulario_aprobacion(tarea_id="t_no_pause"))
+    assert "no se encuentra en estado pausado" in res
+
+@patch("mcp_server.delegar_tarea_a_equipo_ia", new_callable=AsyncMock)
+def test_responder_formulario_aprobacion_aprobar(mock_delegar):
+    mock_delegar.return_value = "✅ Tarea completada exitosamente"
+    
+    res = asyncio.run(responder_formulario_aprobacion(
+        tarea_id="t_resp1",
+        accion="approve",
+        directorio_proyecto="/app"
+    ))
+
+    assert "✅ Tarea completada exitosamente" in res
+    mock_delegar.assert_called_once_with(
+        instruccion="",
+        directorio_proyecto="/app",
+        approve=True,
+        tarea_id="t_resp1",
+        ctx=None
+    )
+
+@patch("mcp_server.delegar_tarea_a_equipo_ia", new_callable=AsyncMock)
+def test_responder_formulario_aprobacion_rechazar(mock_delegar):
+    mock_delegar.return_value = "🛑 Re-evaluando plan..."
+
+    res = asyncio.run(responder_formulario_aprobacion(
+        tarea_id="t_resp2",
+        accion="reject",
+        feedback="Cambiar el patrón por singleton",
+        directorio_proyecto="/app"
+    ))
+
+    assert "🛑 Re-evaluando plan..." in res
+    mock_delegar.assert_called_once_with(
+        instruccion="Cambiar el patrón por singleton",
+        directorio_proyecto="/app",
+        approve=False,
+        tarea_id="t_resp2",
+        ctx=None
+    )
