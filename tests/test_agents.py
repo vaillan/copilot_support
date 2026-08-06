@@ -69,6 +69,11 @@ def test_agente_codificador_completion(mock_get_file, mock_get_llm, mock_state):
     mock_get_llm.return_value = mock_llm
     mock_get_file.return_value = "system prompt"
     
+    mock_state["messages"] = [
+        HumanMessage(content="haz algo"),
+        AIMessage(content="", tool_calls=[{"name": "write_file", "args": {"file_path": "a.py", "text": "code"}, "id": "w1"}])
+    ]
+
     tool_call = {
         "name": "CodigoCompletado",
         "args": {"resumen_cambios": "cambios hechos"},
@@ -192,7 +197,11 @@ def test_agente_codificador_con_errores(mock_get_file, mock_get_llm, mock_state)
     mock_get_file.return_value = "system prompt"
     
     mock_state["errores_terminal"] = "Error de sintaxis en linea 10"
-    
+    mock_state["messages"] = [
+        HumanMessage(content="haz algo"),
+        AIMessage(content="", tool_calls=[{"name": "write_file", "args": {"file_path": "a.py", "text": "code"}, "id": "w1"}])
+    ]
+
     tool_call = {
         "name": "CodigoCompletado",
         "args": {"resumen_cambios": "corregido"},

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from langchain_core.messages import ToolMessage, HumanMessage
+from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 from langgraph.types import Command
 from langgraph.graph import END
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -75,8 +75,33 @@ def agente_codificador(state: ProjectState) -> Command:
     respuesta = llm_con_herramientas.invoke(prompt)
     
     if respuesta.tool_calls:
+        # Verificar si se ha llamado a write_file en el historial o en los tool_calls actuales
+        has_written_files = False
+        for m in msgs:
+            if isinstance(m, AIMessage) and m.tool_calls:
+                for tc in m.tool_calls:
+                    if tc.get("name") == "write_file":
+                        has_written_files = True
+                        break
+            if has_written_files:
+                break
+        for tc in respuesta.tool_calls:
+            if tc.get("name") == "write_file":
+                has_written_files = True
+                break
+
         for tool_call in respuesta.tool_calls:
             if tool_call["name"] == "CodigoCompletado":
+                if not has_written_files:
+                    msg_error = "Error: No has modificado ni creado ningún archivo usando la herramienta 'write_file'. Debes escribir el código correspondiente antes de llamar a 'CodigoCompletado'."
+                    return Command(
+                        update={
+                            "messages": [respuesta, HumanMessage(content=msg_error)],
+                            "loop_counter": loop_counter
+                        },
+                        goto="agente_codificador"
+                    )
+
                 resumen = tool_call["args"].get("resumen_cambios", "Código completado.")
                 
                 tool_messages = []

@@ -372,6 +372,8 @@ async def delegar_tarea_a_equipo_ia(
         if diff_git:
             diff_msg = f"\n\n🔍 Cambios en disco finales:\n{diff_git}"
             msg_fin += diff_msg
+        else:
+            msg_fin += "\n\n⚠️ ADVERTENCIA: No se detectaron cambios ni modificaciones en los archivos del disco (git diff / status está vacío)."
         await notificar_progreso(ctx, msg_fin, 100, 100)
         reporte_final = (
             f"✅ Tarea completada exitosamente por el equipo LangGraph.\n"
@@ -379,6 +381,8 @@ async def delegar_tarea_a_equipo_ia(
             f"Resumen de cambios: {codigo_escrito}\n"
             f"Estado final de los tests (QA): {errores_qa}"
         )
+        if not diff_git:
+            reporte_final += f"\n\n⚠️ ADVERTENCIA: La tarea finalizó pero git diff no muestra modificaciones en '{directorio_proyecto}'. Comprueba si el Agente Codificador omitió la escritura de archivos."
         return reporte_final
 
     try:

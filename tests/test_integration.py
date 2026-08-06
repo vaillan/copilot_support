@@ -29,10 +29,10 @@ def test_flujo_completo_exito(mock_llm, mock_file_system):
     
     mock_llm_cod = MagicMock()
     mock_cod.return_value = mock_llm_cod
-    mock_llm_cod.bind_tools.return_value.invoke.return_value = AIMessage(
-        content="", 
-        tool_calls=[{"name": "CodigoCompletado", "args": {"resumen_cambios": "test"}, "id": "2"}]
-    )
+    mock_llm_cod.bind_tools.return_value.invoke.side_effect = [
+        AIMessage(content="", tool_calls=[{"name": "write_file", "args": {"file_path": "test.py", "text": "print(1)"}, "id": "w1"}]),
+        AIMessage(content="", tool_calls=[{"name": "CodigoCompletado", "args": {"resumen_cambios": "test"}, "id": "2"}])
+    ]
     
     mock_llm_rev = MagicMock()
     mock_rev.return_value = mock_llm_rev
@@ -57,7 +57,8 @@ def test_flujo_completo_exito(mock_llm, mock_file_system):
     current_state = graph.get_state(config)
     assert current_state.next == ('agente_codificador',)
     
-    graph.invoke(None, config)
+    graph.invoke(None, config) # write_file
+    graph.invoke(None, config) # CodigoCompletado
     current_state = graph.get_state(config)
     assert current_state.next == ('agente_revisor',)
     
@@ -77,10 +78,12 @@ def test_flujo_con_errores_y_correccion(mock_llm, mock_file_system):
     
     mock_llm_cod = MagicMock()
     mock_cod.return_value = mock_llm_cod
-    mock_llm_cod.bind_tools.return_value.invoke.return_value = AIMessage(
-        content="", 
-        tool_calls=[{"name": "CodigoCompletado", "args": {"resumen_cambios": "test"}, "id": "2"}]
-    )
+    mock_llm_cod.bind_tools.return_value.invoke.side_effect = [
+        AIMessage(content="", tool_calls=[{"name": "write_file", "args": {"file_path": "test.py", "text": "print(1)"}, "id": "w1"}]),
+        AIMessage(content="", tool_calls=[{"name": "CodigoCompletado", "args": {"resumen_cambios": "test"}, "id": "2"}]),
+        AIMessage(content="", tool_calls=[{"name": "write_file", "args": {"file_path": "test.py", "text": "print(2)"}, "id": "w2"}]),
+        AIMessage(content="", tool_calls=[{"name": "CodigoCompletado", "args": {"resumen_cambios": "corregido"}, "id": "4"}])
+    ]
     
     mock_llm_rev = MagicMock()
     mock_rev.return_value = mock_llm_rev
@@ -110,7 +113,8 @@ def test_flujo_con_errores_y_correccion(mock_llm, mock_file_system):
     graph.invoke(state, config)
     assert graph.get_state(config).next == ('agente_codificador',)
     
-    graph.invoke(None, config)
+    graph.invoke(None, config) # write_file
+    graph.invoke(None, config) # CodigoCompletado
     assert graph.get_state(config).next == ('agente_revisor',)
     
     graph.invoke(None, config)
@@ -118,7 +122,8 @@ def test_flujo_con_errores_y_correccion(mock_llm, mock_file_system):
     
     assert graph.get_state(config).values["errores_terminal"] == "Falla test"
     
-    graph.invoke(None, config)
+    graph.invoke(None, config) # write_file correction
+    graph.invoke(None, config) # CodigoCompletado correction
     assert graph.get_state(config).next == ('agente_revisor',)
     
     graph.invoke(None, config)
