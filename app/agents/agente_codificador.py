@@ -8,7 +8,7 @@ from langgraph.prebuilt import ToolNode
 from langchain_core.runnables import RunnableConfig
 from app.utils.files import File
 from app.models.models import ProjectState
-from app.models.llm_factory import get_llm
+from app.models.llm_factory import get_coder_llm
 from functools import lru_cache
 
 fileSystem = File(directory="prompts")
@@ -43,7 +43,7 @@ def agente_codificador(state: ProjectState) -> Command:
     directorio = state.get("directorio_proyecto", "./")
     herramientas_codigo = _get_tools(directorio)
     
-    llm = get_llm(temperature=0.0)
+    llm = get_coder_llm(temperature=0.0)
     llm_con_herramientas = llm.bind_tools(herramientas_codigo + [CodigoCompletado])
     
     errores = state.get("errores_terminal", "")

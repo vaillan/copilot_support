@@ -5,39 +5,31 @@ from langchain_ollama import ChatOllama
 
 settings = Settings()
 
-@lru_cache(maxsize=2)
-def get_llm(temperature: float = 0.0):
-    """
-    Retorna una instancia del LLM configurado en los ajustes de forma agnóstica al proveedor.
-    Utiliza init_chat_model, la mejor práctica en LangChain v1.0 para inicialización dinámica.
-    Documentación oficial de LangChain: https://docs.langchain.com/oss/python/langchain/models#azure 
-    """
-    provider = settings.LLM_PROVIDER.lower() if settings.LLM_PROVIDER else "google_genai"
-    model_name = settings.LLM_MODEL if settings.LLM_MODEL else "gemini-1.5-pro"
-    api_key = settings.LLM_API_KEY
-    
-    provider_map = {
-        "google": "google_genai",
-        "openai": "openai",
-        "anthropic": "anthropic",
-        "open-router": "openrouter",
-        "local": "ollama",
-        "azure":"azure_openai",
-        "aws-bedrock":"bedrock_converse",
-        "huggingface":"huggingface",
-    }
-    
-    mapped_provider = provider_map.get(provider, provider)
+provider_map = {
+    "google": "google_genai",
+    "openai": "openai",
+    "anthropic": "anthropic",
+    "open-router": "openrouter",
+    "local": "ollama",
+    "azure":"azure_openai",
+    "aws-bedrock":"bedrock_converse",
+    "huggingface":"huggingface",
+}
+
+def _create_llm(provider: str, model_name: str, api_key: str, temperature: float = 0.0):
+    prov = provider.lower() if provider else "google_genai"
+    mod = model_name if model_name else "gemini-1.5-pro"
+    mapped_provider = provider_map.get(prov, prov)
     
     if mapped_provider == "ollama":
         return ChatOllama(
-            model=model_name,
+            model=mod,
             temperature=temperature,
         )
     else:
         try:
             return init_chat_model(
-                model=model_name, 
+                model=mod, 
                 model_provider=mapped_provider, 
                 temperature=temperature, 
                 api_key=api_key,
@@ -45,4 +37,42 @@ def get_llm(temperature: float = 0.0):
                 timeout=10000
             )
         except (ImportError, Exception) as e:
-            raise ValueError(f"Error al inicializar el modelo {model_name} con proveedor {mapped_provider}: {e}")
+            raise ValueError(f"Error al inicializar el modelo {mod} con proveedor {mapped_provider}: {e}")
+
+@lru_cache(maxsize=4)
+def get_llm(temperature: float = 0.0):
+    """
+    Retorna una instancia del LLM configurado en los ajustes generales de forma agnóstica al proveedor.
+    """
+    return _create_llm(settings.LLM_PROVIDER, settings.LLM_MODEL, settings.LLM_API_KEY, temperature)
+
+@lru_cache(maxsize=2)
+def get_planner_llm(temperature: float = 0.0):
+    """
+    Retorna una instancia del LLM configurado específicamente para el Planificador.
+    """
+    provider = settings.PLANNER_PROVIDER or settings.LLM_PROVIDER
+    model = settings.PLANNER_MODEL or settings.LLM_MODEL
+    api_key = settings.PLANNER_API_KEY or settings.LLM_API_KEY
+    return _create_llm(provider, model, api_key, temperature)
+
+@lru_cache(maxsize=2)
+def get_coder_llm(temperature: float = 0.0):
+    """
+    Retorna una instancia del LLM configurado específicamente para el Codificador.
+    """
+    provider = settings.CODER_PROVIDER or settings.LLM_PROVIDER
+    model = settings.CODER_MODEL or settings.LLM_MODEL
+    api_key = settings.CODER_API_KEY or settings.LLM_API_KEY
+    return _create_llm(provider, model, api_key, temperature)
+
+@lru_cache(maxsize=2)
+def get_reviewer_llm(temperature: float = 0.0):
+    """
+    Retorna una instancia del LLM configurado específicamente para el Revisor.
+    """
+    provider = settings.REVIEWER_PROVIDER or settings.LLM_PROVIDER
+    model = settings.REVIEWER_MODEL or settings.LLM_MODEL
+    api_key = settings.REVIEWER_API_KEY or settings.LLM_API_KEY
+    return _create_llm(provider, model, api_key, temperature)
+

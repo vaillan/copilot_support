@@ -5,7 +5,7 @@ from langgraph.graph import END
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 from langgraph.types import Command
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from app.models.llm_factory import get_llm
+from app.models.llm_factory import get_reviewer_llm
 from langchain_community.agent_toolkits import FileManagementToolkit
 from langchain_core.tools import tool
 from langgraph.prebuilt import ToolNode
@@ -149,7 +149,7 @@ def agente_revisor(state: ProjectState) -> Command:
     directorio = state.get("directorio_proyecto", "./")
     herramientas_qa = _get_tools(directorio)
     
-    llm = get_llm(temperature=0.0)
+    llm = get_reviewer_llm(temperature=0.0)
     llm_con_herramientas = llm.bind_tools(herramientas_qa)
     
     prompt_sistema = fileSystem.get_file_content(file_name="revisor_prompt.md")

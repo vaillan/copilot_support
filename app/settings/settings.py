@@ -18,3 +18,15 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = os.getenv("LLM_API_KEY", "")
     LLM_MODEL: str = os.getenv("LLM_MODEL", "")
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "")
+
+    PLANNER_API_KEY: str = os.getenv("PLANNER_API_KEY", "")
+    PLANNER_MODEL: str = os.getenv("PLANNER_MODEL", "")
+    PLANNER_PROVIDER: str = os.getenv("PLANNER_PROVIDER", "")
+
+    CODER_API_KEY: str = os.getenv("CODER_API_KEY", "")
+    CODER_MODEL: str = os.getenv("CODER_MODEL", "")
+    CODER_PROVIDER: str = os.getenv("CODER_PROVIDER", "")
+
+    REVIEWER_API_KEY: str = os.getenv("REVIEWER_API_KEY", "")
+    REVIEWER_MODEL: str = os.getenv("REVIEWER_MODEL", "")
+    REVIEWER_PROVIDER: str = os.getenv("REVIEWER_PROVIDER", "")

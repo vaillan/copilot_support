@@ -8,7 +8,7 @@ from langgraph.types import Command
 from langgraph.graph import END
 from langchain_core.tools import Tool, tool
 from langgraph.prebuilt import ToolNode
-from app.models.llm_factory import get_llm
+from app.models.llm_factory import get_planner_llm
 from app.models.models import ProjectState
 from langchain_core.runnables import RunnableConfig
 from app.utils.files import File
@@ -65,7 +65,7 @@ def agente_planificador(state: ProjectState) -> Command:
     directorio = state.get("directorio_proyecto", "./")
     herramientas_investigacion = _get_tools(directorio)
     
-    llm = get_llm(temperature=0.0)
+    llm = get_planner_llm(temperature=0.0)
     llm_con_herramientas = llm.bind_tools(herramientas_investigacion + [entregar_plan_de_accion])
     
     prompt_sistema = fileSystem.get_file_content(file_name="planificador_prompt.md")
