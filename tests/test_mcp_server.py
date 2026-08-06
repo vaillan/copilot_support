@@ -2,7 +2,7 @@ import pytest
 import asyncio
 import anyio
 from unittest.mock import patch, MagicMock, AsyncMock
-from mcp_server import visualizar_cambios, delegar_tarea_a_equipo_ia, obtener_git_diff, notificar_progreso
+from mcp_server import visualizar_cambios, delegar_tarea_a_equipo_ia, obtener_git_diff, notificar_progreso, generar_markdown_pausa
 
 def test_visualizar_cambios_sin_parametros():
     resultado = asyncio.run(visualizar_cambios())
@@ -262,3 +262,66 @@ def test_notificar_progreso_fallback_sin_request_context():
     asyncio.run(notificar_progreso(mock_ctx, "Mensaje directo", progreso=50, total=100))
     
     mock_ctx.info.assert_called_once_with("[50%] Mensaje directo")
+
+def test_generar_markdown_pausa_orden_prominente():
+    pasos_ejemplo = [
+        {"tarea": "Crear archivo de configuración", "archivo": "config.py", "requiere_test": False},
+        {"tarea": "Implementar lógica principal", "archivo": "main.py", "requiere_test": True}
+    ]
+    reporte = generar_markdown_pausa(
+        tarea_id="task_xyz123",
+        tipo_pausa="PAUSA_1",
+        titulo="Plan de Arquitectura Propuesto",
+        explicacion="Esta es la explicación detallada de la arquitectura modular.",
+        pasos=pasos_ejemplo,
+        directorio_proyecto="/ruta/proyecto"
+    )
+
+    # Verificar que el título y metadatos están presentes
+    assert "### 📌 Plan de Arquitectura Propuesto" in reporte
+    assert "- **ID Tarea:** `task_xyz123`" in reporte
+    assert "- **Directorio:** `/ruta/proyecto`" in reporte
+    assert "- **Estado:** Pausado (PAUSA_1) - Requiere aprobación humana." in reporte
+
+    # Verificar que la explicación y la tabla de pasos aparecen en el reporte
+    assert "#### 📄 Explicación / Resumen:" in reporte
+    assert "Esta es la explicación detallada de la arquitectura modular." in reporte
+    assert "#### 📋 Plan de Pasos Propuestos:" in reporte
+    assert "| 1 | Crear archivo de configuración | `config.py` | No |" in reporte
+    assert "| 2 | Implementar lógica principal | `main.py` | Si |" in reporte
+
+    # Verificar orden estricto: El plan de acción (título, explicación, tabla) debe aparecer ANTES
+    # de los avisos para la IA ("🛑 ATENCIÓN ASISTENTE DE IA") y de las instrucciones del usuario ("👉 INSTRUCCIONES PARA EL USUARIO HUMANO").
+    pos_titulo = reporte.find("### 📌 Plan de Arquitectura Propuesto")
+    pos_explicacion = reporte.find("Esta es la explicación detallada de la arquitectura modular.")
+    pos_tabla = reporte.find("Plan de Pasos Propuestos")
+    pos_ia = reporte.find("🛑 ATENCIÓN ASISTENTE DE IA")
+    pos_humano = reporte.find("👉 **INSTRUCCIONES PARA EL USUARIO HUMANO:**")
+
+    assert pos_titulo < pos_ia
+    assert pos_explicacion < pos_ia
+    assert pos_tabla < pos_ia
+    assert pos_ia < pos_humano
+
+def test_generar_markdown_pausa_con_diff():
+    diff_ejemplo = "diff --git a/app.py b/app.py\n+print('hello')"
+    reporte = generar_markdown_pausa(
+        tarea_id="task_diff789",
+        tipo_pausa="PAUSA_2",
+        titulo="Revisión de Código Desarrollado",
+        explicacion="Se creó el archivo app.py.",
+        diff_git=diff_ejemplo,
+        directorio_proyecto="./"
+    )
+
+    assert "### 📌 Revisión de Código Desarrollado" in reporte
+    assert "Se creó el archivo app.py." in reporte
+    assert "#### 🔍 Git Diff / Cambios en Disco:" in reporte
+    assert "+print('hello')" in reporte
+
+    pos_explicacion = reporte.find("Se creó el archivo app.py.")
+    pos_diff = reporte.find("Git Diff / Cambios en Disco")
+    pos_ia = reporte.find("🛑 ATENCIÓN ASISTENTE DE IA")
+
+    assert pos_explicacion < pos_diff
+    assert pos_diff < pos_ia

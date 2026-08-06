@@ -135,25 +135,24 @@ def generar_markdown_pausa(
 ) -> str:
     """
     Genera un reporte estructurado en Markdown optimizado para Zoo Code, CLI y Cursor.
+    Coloca en la parte superior prominente el título, metadatos, explicación y la tabla
+    de pasos propuestos (y git diff si aplica), garantizando que el usuario visualice
+    claramente el plan de acción antes de los avisos y las instrucciones de aprobación.
     """
     lineas = []
-    lineas.append("================================================================================")
-    lineas.append("🛑 ATENCIÓN ASISTENTE DE IA (ZOO CODE / COPILOT / CURSOR):")
-    lineas.append("EL FLUJO ESTÁ PAUSADO ESPERANDO CONFIRMACIÓN DEL USUARIO HUMANO.")
-    lineas.append("**DETÉN LA EJECUCIÓN AUTOMÁTICA DE HERRAMIENTAS DE INMEDIATO.**")
-    lineas.append("NO ejecutes ninguna función ni herramienta por tu cuenta.")
-    lineas.append("Muestra todo el plan de acción y/o los cambios de código a continuación directamente al usuario humano en el chat y **ESPERA** pacientemente a que el usuario escriba su decisión explícita.")
-    lineas.append("================================================================================\n")
     
+    # 1. Título principal y Metadatos de la Tarea en la parte superior prominente
     lineas.append(f"### 📌 {titulo}")
     lineas.append(f"- **ID Tarea:** `{tarea_id}`")
     if directorio_proyecto:
         lineas.append(f"- **Directorio:** `{directorio_proyecto}`")
     lineas.append(f"- **Estado:** Pausado ({tipo_pausa}) - Requiere aprobación humana.\n")
     
+    # 2. Explicación / Resumen
     lineas.append("#### 📄 Explicación / Resumen:")
     lineas.append(f"{explicacion}\n")
 
+    # 3. Plan de Pasos Propuestos (Tabla Markdown)
     if pasos:
         lineas.append("#### 📋 Plan de Pasos Propuestos:")
         lineas.append("| # | Tarea | Archivo | Requiere Test |")
@@ -165,12 +164,23 @@ def generar_markdown_pausa(
             lineas.append(f"| {idx} | {t} | `{a}` | {rt} |")
         lineas.append("")
 
+    # 4. Git Diff / Cambios en Disco (si existen)
     if diff_git:
         lineas.append("#### 🔍 Git Diff / Cambios en Disco:")
         lineas.append("```diff")
         lineas.append(diff_git)
         lineas.append("```\n")
 
+    # 5. Bloque de advertencia para el asistente de IA (desplazado hacia la parte inferior)
+    lineas.append("================================================================================")
+    lineas.append("🛑 ATENCIÓN ASISTENTE DE IA (ZOO CODE / COPILOT / CURSOR):")
+    lineas.append("EL FLUJO ESTÁ PAUSADO ESPERANDO CONFIRMACIÓN DEL USUARIO HUMANO.")
+    lineas.append("**DETÉN LA EJECUCIÓN AUTOMÁTICA DE HERRAMIENTAS DE INMEDIATO.**")
+    lineas.append("NO ejecutes ninguna función ni herramienta por tu cuenta.")
+    lineas.append("Muestra todo el plan de acción y/o los cambios de código anteriores directamente al usuario humano en el chat y **ESPERA** pacientemente a que el usuario escriba su decisión explícita.")
+    lineas.append("================================================================================\n")
+
+    # 6. Instrucciones para el usuario humano (en la parte inferior)
     lineas.append("--------------------------------------------------------------------------------")
     lineas.append("👉 **INSTRUCCIONES PARA EL USUARIO HUMANO:**")
     lineas.append("--------------------------------------------------------------------------------")
