@@ -5,9 +5,9 @@ from app.main import crear_grafo
 
 @pytest.fixture
 def mock_llm():
-    with patch('app.agents.agente_planificador.get_llm') as mock_plan, \
-         patch('app.agents.agente_codificador.get_llm') as mock_cod, \
-         patch('app.agents.agente_revisor.get_llm') as mock_rev:
+    with patch('app.agents.agente_planificador.get_planner_llm') as mock_plan, \
+         patch('app.agents.agente_codificador.get_coder_llm') as mock_cod, \
+         patch('app.agents.agente_revisor.get_reviewer_llm') as mock_rev:
         yield mock_plan, mock_cod, mock_rev
 
 @pytest.fixture

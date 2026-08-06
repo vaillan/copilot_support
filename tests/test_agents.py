@@ -19,7 +19,7 @@ def mock_state():
         "revision_count": 0
     }
 
-@patch('app.agents.agente_planificador.get_llm')
+@patch('app.agents.agente_planificador.get_planner_llm')
 @patch('app.agents.agente_planificador.fileSystem.get_file_content')
 def test_agente_planificador_tool_call(mock_get_file, mock_get_llm, mock_state):
     mock_llm = MagicMock()
@@ -44,7 +44,7 @@ def test_agente_planificador_tool_call(mock_get_file, mock_get_llm, mock_state):
     assert isinstance(messages[1], ToolMessage)
     assert messages[1].tool_call_id == "call_1"
 
-@patch('app.agents.agente_planificador.get_llm')
+@patch('app.agents.agente_planificador.get_planner_llm')
 @patch('app.agents.agente_planificador.fileSystem.get_file_content')
 def test_agente_planificador_no_tool_call(mock_get_file, mock_get_llm, mock_state):
     mock_llm = MagicMock()
@@ -62,7 +62,7 @@ def test_agente_planificador_no_tool_call(mock_get_file, mock_get_llm, mock_stat
     assert isinstance(messages[1], HumanMessage)
     assert "Debes llamar a una herramienta" in messages[1].content
 
-@patch('app.agents.agente_codificador.get_llm')
+@patch('app.agents.agente_codificador.get_coder_llm')
 @patch('app.agents.agente_codificador.fileSystem.get_file_content')
 def test_agente_codificador_completion(mock_get_file, mock_get_llm, mock_state):
     mock_llm = MagicMock()
@@ -84,7 +84,7 @@ def test_agente_codificador_completion(mock_get_file, mock_get_llm, mock_state):
     assert len(messages) == 2
     assert isinstance(messages[1], ToolMessage)
 
-@patch('app.agents.agente_revisor.get_llm')
+@patch('app.agents.agente_revisor.get_reviewer_llm')
 @patch('app.agents.agente_revisor.fileSystem.get_file_content')
 def test_agente_revisor_approval(mock_get_file, mock_get_llm, mock_state):
     mock_llm = MagicMock()
@@ -124,7 +124,7 @@ def test_agente_revisor_max_loop_limit(mock_state):
     update = result.update or {}
     assert "Verificación completada" in update.get("errores_terminal", "")
 
-@patch('app.agents.agente_revisor.get_llm')
+@patch('app.agents.agente_revisor.get_reviewer_llm')
 @patch('app.agents.agente_revisor.fileSystem.get_file_content')
 def test_agente_revisor_texto_aprobado(mock_get_file, mock_get_llm, mock_state):
     mock_llm = MagicMock()
@@ -138,7 +138,7 @@ def test_agente_revisor_texto_aprobado(mock_get_file, mock_get_llm, mock_state):
     update = result.update or {}
     assert "Código aprobado" in update.get("errores_terminal", "")
 
-@patch('app.agents.agente_planificador.get_llm')
+@patch('app.agents.agente_planificador.get_planner_llm')
 @patch('app.agents.agente_planificador.fileSystem.get_file_content')
 def test_agente_planificador_investigacion(mock_get_file, mock_get_llm, mock_state):
     mock_llm = MagicMock()
@@ -161,7 +161,7 @@ def test_agente_planificador_investigacion(mock_get_file, mock_get_llm, mock_sta
     assert len(messages) == 1
     assert isinstance(messages[0], AIMessage)
 
-@patch('app.agents.agente_codificador.get_llm')
+@patch('app.agents.agente_codificador.get_coder_llm')
 @patch('app.agents.agente_codificador.fileSystem.get_file_content')
 def test_agente_codificador_herramienta_archivo(mock_get_file, mock_get_llm, mock_state):
     mock_llm = MagicMock()
@@ -184,7 +184,7 @@ def test_agente_codificador_herramienta_archivo(mock_get_file, mock_get_llm, moc
     assert len(messages) == 1
     assert isinstance(messages[0], AIMessage)
 
-@patch('app.agents.agente_codificador.get_llm')
+@patch('app.agents.agente_codificador.get_coder_llm')
 @patch('app.agents.agente_codificador.fileSystem.get_file_content')
 def test_agente_codificador_con_errores(mock_get_file, mock_get_llm, mock_state):
     mock_llm = MagicMock()
@@ -207,7 +207,7 @@ def test_agente_codificador_con_errores(mock_get_file, mock_get_llm, mock_state)
     assert "Error de sintaxis en linea 10" in system_message
     assert result.goto == "agente_revisor"
 
-@patch('app.agents.agente_revisor.get_llm')
+@patch('app.agents.agente_revisor.get_reviewer_llm')
 @patch('app.agents.agente_revisor.fileSystem.get_file_content')
 def test_agente_revisor_rechazo(mock_get_file, mock_get_llm, mock_state):
     mock_llm = MagicMock()
@@ -231,7 +231,7 @@ def test_agente_revisor_rechazo(mock_get_file, mock_get_llm, mock_state):
     assert len(messages) == 2
     assert isinstance(messages[1], ToolMessage)
 
-@patch('app.agents.agente_revisor.get_llm')
+@patch('app.agents.agente_revisor.get_reviewer_llm')
 @patch('app.agents.agente_revisor.fileSystem.get_file_content')
 def test_agente_revisor_herramienta_terminal(mock_get_file, mock_get_llm, mock_state):
     mock_llm = MagicMock()
@@ -254,7 +254,7 @@ def test_agente_revisor_herramienta_terminal(mock_get_file, mock_get_llm, mock_s
     assert len(messages) == 1
     assert isinstance(messages[0], AIMessage)
 
-@patch('app.agents.agente_revisor.get_llm')
+@patch('app.agents.agente_revisor.get_reviewer_llm')
 @patch('app.agents.agente_revisor.fileSystem.get_file_content')
 def test_agente_revisor_comando_duplicado_evita_bucle(mock_get_file, mock_get_llm, mock_state):
     mock_llm = MagicMock()
