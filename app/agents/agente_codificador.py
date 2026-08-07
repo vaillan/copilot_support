@@ -9,6 +9,7 @@ from langchain_core.runnables import RunnableConfig
 from app.utils.files import File, get_custom_file_tools
 from app.models.models import ProjectState
 from app.models.llm_factory import get_coder_llm
+from app.utils.summarization import aplicar_resumen_middleware
 from functools import lru_cache
 
 fileSystem = File(directory="prompts")
@@ -58,9 +59,9 @@ def agente_codificador(state: ProjectState) -> Command:
     
     plan = state.get("plan_de_accion", "Sin plan.")
     
-    # Optimización de contexto: enviar mensaje inicial y los últimos 8 mensajes
+    # Optimización de contexto con SummarizationMiddleware
     msgs = state.get("messages", [])
-    mensajes_contexto = [msgs[0]] + msgs[-8:] if len(msgs) > 9 else msgs
+    mensajes_contexto = aplicar_resumen_middleware(msgs, llm)
 
     prompt = prompt_template.invoke({
         "messages": mensajes_contexto, 

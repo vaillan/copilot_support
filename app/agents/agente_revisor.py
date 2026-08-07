@@ -6,6 +6,7 @@ from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 from langgraph.types import Command
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from app.models.llm_factory import get_reviewer_llm
+from app.utils.summarization import aplicar_resumen_middleware
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import ToolNode
@@ -159,9 +160,9 @@ def agente_revisor(state: ProjectState) -> Command:
         MessagesPlaceholder(variable_name="messages")
     ])
     
-    # Optimización de contexto: enviar mensaje inicial y los últimos 8 mensajes
+    # Optimización de contexto con SummarizationMiddleware
     msgs = state.get("messages", [])
-    mensajes_contexto = [msgs[0]] + msgs[-8:] if len(msgs) > 9 else msgs
+    mensajes_contexto = aplicar_resumen_middleware(msgs, llm)
 
     # Pasamos el plan de acción para que el QA sepa si el planificador exigió pruebas
     prompt = prompt_template.invoke({

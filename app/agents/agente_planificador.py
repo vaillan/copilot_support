@@ -11,6 +11,7 @@ from app.models.llm_factory import get_planner_llm
 from app.models.models import ProjectState
 from langchain_core.runnables import RunnableConfig
 from app.utils.files import File, get_custom_file_tools
+from app.utils.summarization import aplicar_resumen_middleware
 from functools import lru_cache
 
 fileSystem = File(directory="prompts")
@@ -74,9 +75,9 @@ def agente_planificador(state: ProjectState) -> Command:
         MessagesPlaceholder(variable_name="messages")
     ])
     
-    # Optimización de contexto: enviar mensaje inicial y los últimos 8 mensajes
+    # Optimización de contexto con SummarizationMiddleware
     msgs = state.get("messages", [])
-    mensajes_contexto = [msgs[0]] + msgs[-8:] if len(msgs) > 9 else msgs
+    mensajes_contexto = aplicar_resumen_middleware(msgs, llm)
 
     prompt = prompt_template.invoke({"messages": mensajes_contexto, "directorio": directorio})
     respuesta = llm_con_herramientas.invoke(prompt)
