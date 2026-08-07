@@ -3,10 +3,10 @@ from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 from langgraph.types import Command
 from langgraph.graph import END
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_community.agent_toolkits import FileManagementToolkit
+
 from langgraph.prebuilt import ToolNode
 from langchain_core.runnables import RunnableConfig
-from app.utils.files import File
+from app.utils.files import File, get_custom_file_tools
 from app.models.models import ProjectState
 from app.models.llm_factory import get_coder_llm
 from functools import lru_cache
@@ -19,8 +19,7 @@ class CodigoCompletado(BaseModel):
 
 @lru_cache(maxsize=10)
 def _get_tools(directorio: str):
-    toolkit_archivos = FileManagementToolkit(root_dir=directorio)
-    return toolkit_archivos.get_tools()
+    return get_custom_file_tools(directorio)
 
 def agente_codificador(state: ProjectState) -> Command:
     """

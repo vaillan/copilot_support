@@ -1,5 +1,4 @@
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
-from langchain_community.agent_toolkits import FileManagementToolkit
 from typing import List
 from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -11,7 +10,7 @@ from langgraph.prebuilt import ToolNode
 from app.models.llm_factory import get_planner_llm
 from app.models.models import ProjectState
 from langchain_core.runnables import RunnableConfig
-from app.utils.files import File
+from app.utils.files import File, get_custom_file_tools
 from functools import lru_cache
 
 fileSystem = File(directory="prompts")
@@ -34,9 +33,9 @@ def entregar_plan_de_accion(explicacion_arquitectura: str, pasos: List[Paso]) ->
 
 @lru_cache(maxsize=10)
 def _get_tools(directorio: str):
-    toolkit_archivos = FileManagementToolkit(root_dir=directorio)
+    todas = get_custom_file_tools(directorio)
     herramientas_lectura = [
-        t for t in toolkit_archivos.get_tools() 
+        t for t in todas 
         if t.name in ["read_file", "list_directory"]
     ]
     
