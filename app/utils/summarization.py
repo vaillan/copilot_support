@@ -20,7 +20,7 @@ def aplicar_resumen_middleware(messages: List[AnyMessage], model=None, trigger_c
             trigger=("messages", trigger_count),
             keep=("messages", keep_count)
         )
-        result = mw.before_model({"messages": messages}, None)
+        result = mw.before_model({"messages": messages}, None) # pyright: ignore[reportArgumentType]
         if result and "messages" in result:
             new_msgs = []
             for m in result["messages"]:
