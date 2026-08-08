@@ -1,6 +1,6 @@
 # AIDevTeam - Ecosistema de Agentes de Desarrollo IA
 
-**AIDevTeam** es una plataforma avanzada de agentes autónomos diseñada para automatizar el ciclo de vida del desarrollo de software (SDLC). Utilizando **LangGraph** para la orquestación y el **Model Context Protocol (MCP)** para la interoperabilidad, AIDevTeam permite delegar tareas complejas de programación a un equipo virtual de expertos en IA.
+**AIDevTeam** is una plataforma avanzada de agentes autónomos diseñada para automatizar el ciclo de vida del desarrollo de software (SDLC). Utilizando **LangGraph** para la orquestación y el **Model Context Protocol (MCP)** para la interoperabilidad, AIDevTeam permite delegar tareas complejas de programación a un equipo virtual de expertos en IA.
 
 ---
 
@@ -27,7 +27,7 @@ graph TD
         Planificador -->|"Plan completado"| Pausa1{⏸️ Pausa 1 <br/> HITL: Aprobar Plan}:::hitl
     end
 
-    Pausa1 -->|"Aprobar (approve=True) <br/> o Auto-aprobación"| Codificador
+    Pausa1 -->|"Aprobar (approve=True) <br/> o Auto-apropiación"| Codificador
     Pausa1 -->|"Rechazar (approve=False)"| Planificador
 
     subgraph Desarrollo
@@ -36,7 +36,7 @@ graph TD
         Codificador -->|"Código generado"| Pausa2{⏸️ Pausa 2 <br/> HITL: Aprobar Código}:::hitl
     end
 
-    Pausa2 -->|"Aprobar (approve=True) <br/> o Auto-aprobación"| Revisor
+    Pausa2 -->|"Aprobar (approve=True) <br/> o Auto-apropiación"| Revisor
     Pausa2 -->|"Rechazar (approve=False)"| Codificador
 
     subgraph Validación y Pruebas
@@ -47,10 +47,11 @@ graph TD
     end
 ```
 
-### Gestión de Estado y Enrutamiento Dinámico
+### Gestión de Estado, Enrutamiento Dinámico y Optimización de Contexto
 - **Estado del Proyecto (`ProjectState`)**: Hereda de `MessagesState` de LangGraph, lo que permite la gestión automática del historial de mensajes (`messages`) entre los agentes y el usuario, además de mantener variables de estado globales como el plan de acción, los errores de terminal, y contadores de control (`loop_counter`, `revision_count`).
 - **Control de Flujo (`Command`)**: Se utiliza el objeto `Command` de LangGraph para el enrutamiento dinámico. Esto permite a cada agente decidir de manera autónoma cuál es el siguiente nodo a ejecutar (por ejemplo, ir a su nodo de herramientas, avanzar al siguiente agente o terminar el proceso) y actualizar el estado global de forma explícita.
 - **Aristas Explícitas**: El grafo utiliza aristas explícitas para conectar los nodos de herramientas de vuelta a sus agentes correspondientes, asegurando un flujo de ejecución predecible y robusto.
+- **Resumen Automático de Contexto (`app/utils/summarization.py`)**: Para prevenir el desbordamiento de la ventana de contexto de los modelos LLM en conversaciones largas o iterativas, se implementa la función `aplicar_resumen_middleware` utilizando `SummarizationMiddleware` de LangChain. Este componente evalúa el historial de mensajes antes de cada invocación al LLM y, al superar un umbral configurable (`trigger_count=15`), resume automáticamente los mensajes más antiguos conservando los últimos mensajes recientes (`keep_count=8`), asegurando una alta eficiencia de tokens en los agentes `agente_planificador`, `agente_codificador` y `agente_revisor`.
 
 ---
 
@@ -116,6 +117,7 @@ El proyecto incluye una suite completa de pruebas unitarias, de integración y E
 - `tests/test_llm_factory.py`: Valida la inicialización correcta de la factoría de LLMs para múltiples proveedores.
 - `tests/test_mcp_server.py`: Prueba los endpoints y herramientas expuestas por el servidor FastMCP.
 - `tests/test_tool_nodes.py`: Verifica la correcta ejecución de los nodos de herramientas.
+- `tests/test_summarization.py`: Valida el comportamiento del middleware de resumen automático de contexto (`aplicar_resumen_middleware`), comprobando la preservación del historial por debajo del umbral (`trigger_count`) y el resumen correcto al superarlo.
 
 ### Ejecución de Pruebas y Linter
 El script `./run_tests.sh` automatiza la ejecución de toda la suite de pruebas junto con el análisis estático de código utilizando `flake8`:
@@ -160,7 +162,8 @@ El script `./run_tests.sh` automatiza la ejecución de toda la suite de pruebas 
 │   │   ├── settings.py
 │   │   └── __init__.py
 │   ├── utils/              # Utilidades auxiliares
-│   │   └── files.py
+│   │   ├── files.py
+│   │   └── summarization.py # Utilidad de resumen automático de contexto
 │   └── main.py             # Orquestador principal del Grafo (StateGraph)
 └── tests/                  # Suite de pruebas automatizadas
     ├── conftest.py         # Configuración y fixtures compartidas de pytest
@@ -170,6 +173,7 @@ El script `./run_tests.sh` automatiza la ejecución de toda la suite de pruebas 
     ├── test_integration.py # Pruebas de integración LangGraph
     ├── test_llm_factory.py # Pruebas de la factoría de LLMs
     ├── test_mcp_server.py  # Pruebas del servidor MCP
+    ├── test_summarization.py # Pruebas unitarias de resumen de contexto
     └── test_tool_nodes.py  # Pruebas de nodos de herramientas
 ```
 
