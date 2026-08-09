@@ -85,7 +85,10 @@ El módulo `app/models/llm_factory.py` proporciona inicialización centralizada 
   - **Anthropic**: Soporta modelos Claude 3.5 Sonnet, etc.
   - **OpenRouter**: Permite acceder a una amplia gama de modelos de código abierto y cerrados (ej. `nvidia/nemotron-3-super-120b-a12b:free`, `step-3.5-flash`).
   - **Ollama / Local**: Permite la ejecución de modelos locales (ej. `gemma4:e2b`) sin depender de APIs en la nube.
-- **Configuración Dinámica**: Valida y extrae credenciales, proveedores y parámetros mediante `pydantic-settings` (`app/settings/settings.py`), permitiendo alternar entre proveedores de manera transparente.
+- **Configuración Dinámica y Sistema Multi-Modelo**: 
+  - Valida y extrae credenciales, proveedores y parámetros mediante `pydantic-settings` (`app/settings/settings.py`), permitiendo alternar entre proveedores de manera transparente.
+  - **Soporte Multi-Modelo Granular por Agente**: AIDevTeam permite configurar de forma independiente el proveedor, el modelo y la clave de API para cada uno de los agentes especializados del ecosistema (`agente_planificador`, `agente_codificador`, `agente_revisor`). 
+  - Si no se definen variables específicas para un agente, el sistema utiliza automáticamente las variables globales predeterminadas (`LLM_PROVIDER`, `LLM_MODEL`, `LLM_API_KEY`) como mecanismo de *fallback*.
 
 ---
 
@@ -161,9 +164,9 @@ El script `./run_tests.sh` automatiza la ejecución de toda la suite de pruebas 
 │   ├── settings/           # Configuración dinámica con pydantic-settings
 │   │   ├── settings.py
 │   │   └── __init__.py
-│   ├── utils/              # Utilidades auxiliares
-│   │   ├── files.py
-│   │   └── summarization.py # Utilidad de resumen automático de contexto
+│   └── utils/              # Utilidades auxiliares
+│       ├── files.py
+│       └── summarization.py # Utilidad de resumen automático de contexto
 │   └── main.py             # Orquestador principal del Grafo (StateGraph)
 └── tests/                  # Suite de pruebas automatizadas
     ├── conftest.py         # Configuración y fixtures compartidas de pytest
@@ -194,12 +197,39 @@ pip install -r requirements.txt
 ```
 
 ### 3. Variables de Entorno (.env)
-Crea un archivo `.env` en la raíz. Ejemplo para Google Gemini:
+Crea un archivo `.env` en la raíz. Puedes configurar un modelo global por defecto o utilizar el sistema **multi-modelo granular** para asignar proveedores y modelos específicos a cada agente:
+
 ```env
-LLM_API_KEY="tu_gemini_api_key"
+# ==========================================
+# Configuración Global por Defecto (Fallback)
+# ==========================================
+LLM_API_KEY="tu_llm_api_key"
 LLM_PROVIDER="google"
 LLM_MODEL="gemini-2.5-flash-lite"
+
+# ==========================================
+# Configuración Multi-Modelo por Agente (Opcional)
+# ==========================================
+# 1. Agente Planificador (Arquitecto de Software)
+PLANNER_PROVIDER="anthropic"
+PLANNER_MODEL="claude-3-5-sonnet"
+PLANNER_API_KEY="tu_anthropic_api_key"
+
+# 2. Agente Codificador (Programador Senior)
+CODER_PROVIDER="openai"
+CODER_MODEL="gpt-4o"
+CODER_API_KEY="tu_openai_api_key"
+
+# 3. Agente Revisor (QA & DevOps)
+REVIEWER_PROVIDER="openrouter"
+REVIEWER_MODEL="nvidia/nemotron-3-super-120b-a12b:free"
+REVIEWER_API_KEY="tu_openrouter_api_key"
+
+# ==========================================
+# Configuración del Servidor MCP y Control
+# ==========================================
 MCP_AUTO_APPROVE="true"
+MCP_TASK_TIMEOUT_SECONDS="300"
 ```
 
 ---
@@ -219,6 +249,15 @@ MCP_AUTO_APPROVE="true"
         "LLM_API_KEY": "tu_api_key",
         "LLM_MODEL": "gemini-2.5-flash-lite",
         "LLM_PROVIDER": "google",
+        "PLANNER_PROVIDER": "anthropic",
+        "PLANNER_MODEL": "claude-3-5-sonnet",
+        "PLANNER_API_KEY": "tu_anthropic_api_key",
+        "CODER_PROVIDER": "openai",
+        "CODER_MODEL": "gpt-4o",
+        "CODER_API_KEY": "tu_openai_api_key",
+        "REVIEWER_PROVIDER": "openrouter",
+        "REVIEWER_MODEL": "nvidia/nemotron-3-super-120b-a12b:free",
+        "REVIEWER_API_KEY": "tu_openrouter_api_key",
         "FASTMCP_LOG_LEVEL": "CRITICAL",
         "MCP_AUTO_APPROVE": "true",
         "MCP_TASK_TIMEOUT_SECONDS": "300"
