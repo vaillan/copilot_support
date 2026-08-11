@@ -147,7 +147,7 @@ El script `./run_tests.sh` automatiza la ejecución de toda la suite de pruebas 
 ├── README.md               # Documentación completa del proyecto
 ├── requirements.txt        # Dependencias de Python
 ├── run_tests.sh            # Script automatizado de pruebas y linter
-├── tech-lead-export.yaml   # Perfil personalizado "Tech Lead" para Cline
+├── tech-lead-export.yaml   # Perfil personalizado "Tech Lead" para Zoo Code
 ├── app/                    # Código fuente principal
 │   ├── agents/             # Lógica de agentes especializados
 │   │   ├── agente_codificador.py
@@ -234,7 +234,7 @@ MCP_TASK_TIMEOUT_SECONDS="300"
 
 ---
 
-## 🔌 Integración con MCP y Cline
+## 🔌 Integración con MCP y Zoo Code
 
 ### Configuración del Servidor MCP (`mcpServers`)
 ```json
@@ -271,8 +271,8 @@ MCP_TASK_TIMEOUT_SECONDS="300"
 }
 ```
 
-### Integración con Cline
-El archivo `tech-lead-export.yaml` define un "Custom Mode" (Tech Lead) para Cline, permitiendo que el asistente actúe como gestor de proyectos y delegue el trabajo pesado de codificación al equipo de IA a través del servidor MCP.
+### Integración con Zoo Code
+El archivo `tech-lead-export.yaml` define un "Custom Mode" (Tech Lead) para Zoo Code (y extensiones compatibles), permitiendo que el asistente actúe como gestor de proyectos y delegue el trabajo pesado de codificación al equipo de IA a través del servidor MCP.
 
 ---
 
