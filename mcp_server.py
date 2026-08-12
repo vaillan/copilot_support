@@ -24,67 +24,88 @@ mcp = FastMCP("AIDevTeam")
 
 agentes_app = crear_grafo()
 
+
+def _log_stderr(msg: str):
+    """Escribe mensaje a stderr de forma segura (fire-and-forget)."""
+    try:
+        sys.stderr.write(f"{msg}\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
 async def notificar_progreso(ctx: Optional[Context], mensaje: str, progreso: Optional[int] = None, total: int = 100):
     """
-    Envía mensajes de log y progreso en tiempo real a la interfaz de Zoo Code si hay Context.
-    Pasa el parámetro 'message=mensaje' a 'report_progress' e incluye un mecanismo de respaldo
-    por si el progressToken es None o no es provisto por la sesión, garantizando que Zoo Code
-    muestre las notificaciones de progreso con texto descriptivo.
+    Envía mensajes de log y progreso en tiempo real de forma NO BLOQUEANTE (fire-and-forget).
+    Nunca hace await en el flujo principal. Usa asyncio.create_task para desacoplar.
     """
     if ctx is None:
         return
-    try:
-        # Detectar si existe un progressToken válido en el contexto de la petición
-        has_progress_token = False
+
+    # Crear task desacoplada para no bloquear el flujo principal
+    async def _enviar_notificacion():
         try:
-            if (
-                hasattr(ctx, "request_context")
-                and ctx.request_context is not None
-                and hasattr(ctx.request_context, "meta")
-                and ctx.request_context.meta is not None
-                and getattr(ctx.request_context.meta, "progressToken", None) is not None
-            ):
-                has_progress_token = True
-        except Exception:
+            # Extraer un resumen conciso del mensaje (primera línea o máximo 200 caracteres)
+            mensaje_resumido = mensaje.splitlines()[0][:200] if mensaje else ""
+
+            # Detectar si existe un progressToken válido en el contexto de la petición
             has_progress_token = False
-
-        progreso_val = progreso if progreso is not None else 0
-
-        # Intentar reportar progreso estructurado pasando 'message=mensaje'
-        if progreso is not None and hasattr(ctx, "report_progress"):
             try:
-                res = ctx.report_progress(progreso_val, total=total, message=mensaje)
-                if asyncio.iscoroutine(res):
-                    await res
-            except TypeError:
+                if (
+                    hasattr(ctx, "request_context")
+                    and ctx.request_context is not None
+                    and hasattr(ctx.request_context, "meta")
+                    and ctx.request_context.meta is not None
+                    and getattr(ctx.request_context.meta, "progressToken", None) is not None
+                ):
+                    has_progress_token = True
+            except Exception:
+                has_progress_token = False
+
+            progreso_val = progreso if progreso is not None else 0
+
+            # Intentar reportar progreso estructurado (fire-and-forget, sin await)
+            if progreso is not None and hasattr(ctx, "report_progress"):
                 try:
-                    res = ctx.report_progress(progreso_val, total, mensaje)
+                    res = ctx.report_progress(progreso_val, total=total, message=mensaje_resumido)
                     if asyncio.iscoroutine(res):
-                        await res
-                except TypeError:
-                    res = ctx.report_progress(progreso_val, total)
+                        # No awaitamos - fire and forget
+                        asyncio.create_task(_safe_await(res, timeout=1.0))
+                except Exception:
+                    pass
+
+            # Mecanismo de respaldo (Fallback)
+            if progreso is not None and not has_progress_token:
+                pct = int((progreso_val / total) * 100) if total > 0 else progreso_val
+                mensaje_formateado = f"[{pct}%] {mensaje_resumido}"
+            else:
+                mensaje_formateado = mensaje_resumido
+
+            # Enviar info (fire-and-forget)
+            if hasattr(ctx, "info"):
+                try:
+                    res = ctx.info(mensaje_formateado)
                     if asyncio.iscoroutine(res):
-                        await res
+                        asyncio.create_task(_safe_await(res, timeout=1.0))
+                except Exception:
+                    pass
 
-        # Mecanismo de respaldo (Fallback)
-        # Si progressToken es None o la sesión no lo provee, formateamos el mensaje
-        # con el avance porcentual [XX%] para asegurar que Zoo Code reciba el texto.
-        if progreso is not None and not has_progress_token:
-            pct = int((progreso_val / total) * 100) if total > 0 else progreso_val
-            mensaje_formateado = f"[{pct}%] {mensaje}"
-        else:
-            mensaje_formateado = mensaje
+            # Siempre loguear a stderr para debugging/visibilidad en logs del servidor
+            _log_stderr(f"[PROGRESO] {mensaje_formateado}")
 
-        if hasattr(ctx, "info"):
-            res = ctx.info(mensaje_formateado)
-            if asyncio.iscoroutine(res):
-                await res
+        except Exception:
+            # Nunca propagar excepciones desde notificaciones
+            pass
 
-        if not has_progress_token:
-            sys.stderr.write(f"[PROGRESO] {mensaje_formateado}\n")
-            sys.stderr.flush()
+    # Lanzar task desacoplada y NO awaitarla
+    asyncio.create_task(_enviar_notificacion())
 
-    except BaseException:
+
+async def _safe_await(coro, timeout: float = 1.0):
+    """Await seguro con timeout que nunca propaga excepciones."""
+    try:
+        await asyncio.wait_for(coro, timeout=timeout)
+    except Exception:
         pass
 
 
@@ -202,53 +223,53 @@ async def visualizar_cambios(
     Función auxiliar interna para consultar el estado actual de una tarea o los cambios en disco.
     Nota: Ya no está expuesta como herramienta MCP para los agentes LLM.
     """
-    with redirect_stdout(sys.stderr):
-        msg_consultando = f"🔍 Consultando cambios para tarea '{tarea_id}' en '{directorio_proyecto}'..."
-        await notificar_progreso(ctx, msg_consultando, 10, 100)
-        partes = []
-        
-        dir_a_consultar = directorio_proyecto
-        
-        if tarea_id:
-            config = {"configurable": {"thread_id": tarea_id}}
-            try:
-                estado = await agentes_app.aget_state(config) # type: ignore
-                values = estado.values if hasattr(estado, "values") else {}
-                
-                if not dir_a_consultar:
-                    dir_a_consultar = values.get("directorio_proyecto", "")
-                    
-                codigo_escrito = values.get("codigo_escrito")
-                if codigo_escrito:
-                    msg_resumen = f"📋 RESUMEN DE CAMBIOS (Tarea '{tarea_id}'):\n{codigo_escrito}"
-                    partes.append(msg_resumen)
-                else:
-                    msg_sin_resumen = f"ℹ️ La tarea '{tarea_id}' aún no ha registrado un resumen de cambios."
-                    partes.append(msg_sin_resumen)
-                    
-                if estado.next:
-                    siguiente_nodo = estado.next[0]
-                    msg_estado = f"📌 Estado actual del flujo: Pausado antes de '{siguiente_nodo}'"
-                    partes.append(msg_estado)
-                else:
-                    partes.append("📌 Estado actual del flujo: Finalizado")
-            except Exception as e:
-                err_msg = str(e)
-                msg_err = f"⚠️ No se pudo obtener el estado de la tarea '{tarea_id}': {err_msg}"
-                partes.append(msg_err)
-
-        if dir_a_consultar:
-            diff_git = obtener_git_diff(dir_a_consultar)
-            if diff_git:
-                msg_diff = f"🔍 CAMBIOS DETALLADOS EN DISCO (Git Diff / Status en '{dir_a_consultar}'):\n{diff_git}"
-                partes.append(msg_diff)
-                
-        if not partes:
-            await notificar_progreso(ctx, "⚠️ No se encontraron cambios para los parámetros proporcionados.", 100, 100)
-            return "No se proporcionó un 'tarea_id' válido ni un 'directorio_proyecto' con cambios detectables."
+    # Notificación fire-and-forget
+    asyncio.create_task(notificar_progreso(ctx, f"🔍 Consultando cambios para tarea '{tarea_id}' en '{directorio_proyecto}'...", 10, 100))
+    
+    partes = []
+    
+    dir_a_consultar = directorio_proyecto
+    
+    if tarea_id:
+        config = {"configurable": {"thread_id": tarea_id}}
+        try:
+            estado = await agentes_app.aget_state(config) # type: ignore
+            values = estado.values if hasattr(estado, "values") else {}
             
-        await notificar_progreso(ctx, "✅ Visualización de cambios completada.", 100, 100)
-        return "\n\n".join(partes)
+            if not dir_a_consultar:
+                dir_a_consultar = values.get("directorio_proyecto", "")
+                
+            codigo_escrito = values.get("codigo_escrito")
+            if codigo_escrito:
+                msg_resumen = f"📋 RESUMEN DE CAMBIOS (Tarea '{tarea_id}'):\n{codigo_escrito}"
+                partes.append(msg_resumen)
+            else:
+                msg_sin_resumen = f"ℹ️ La tarea '{tarea_id}' aún no ha registrado un resumen de cambios."
+                partes.append(msg_sin_resumen)
+                
+            if estado.next:
+                siguiente_nodo = estado.next[0]
+                msg_estado = f"📌 Estado actual del flujo: Pausado antes de '{siguiente_nodo}'"
+                partes.append(msg_estado)
+            else:
+                partes.append("📌 Estado actual del flujo: Finalizado")
+        except Exception as e:
+            err_msg = str(e)
+            msg_err = f"⚠️ No se pudo obtener el estado de la tarea '{tarea_id}': {err_msg}"
+            partes.append(msg_err)
+
+    if dir_a_consultar:
+        diff_git = obtener_git_diff(dir_a_consultar)
+        if diff_git:
+            msg_diff = f"🔍 CAMBIOS DETALLADOS EN DISCO (Git Diff / Status en '{dir_a_consultar}'):\n{diff_git}"
+            partes.append(msg_diff)
+            
+    if not partes:
+        asyncio.create_task(notificar_progreso(ctx, "⚠️ No se encontraron cambios para los parámetros proporcionados.", 100, 100))
+        return "No se proporcionó un 'tarea_id' válido ni un 'directorio_proyecto' con cambios detectables."
+        
+    asyncio.create_task(notificar_progreso(ctx, "✅ Visualización de cambios completada.", 100, 100))
+    return "\n\n".join(partes)
 
 
 @mcp.tool()
@@ -290,8 +311,9 @@ async def delegar_tarea_a_equipo_ia(
         
     config = {"configurable": {"thread_id": tarea_id}, "recursion_limit": 100}
 
-    msg_inicio = f"🚀 Iniciando procesamiento para tarea '{tarea_id}'..."
-    await notificar_progreso(ctx, msg_inicio, 10, 100)
+    # Notificación inicial fire-and-forget
+    asyncio.create_task(notificar_progreso(ctx, f"🚀 Iniciando procesamiento para tarea '{tarea_id}'...", 10, 100))
+    _log_stderr(f"[MCP] Iniciando tarea '{tarea_id}' con auto_approve={effective_auto_approve}")
 
     timeout_seconds = int(os.environ.get("MCP_TASK_TIMEOUT_SECONDS", "300"))
 
@@ -303,7 +325,8 @@ async def delegar_tarea_a_equipo_ia(
             siguiente_nodo = estado_actual.next[0]
             if approve or effective_auto_approve:
                 msg_reanudando = f"▶️ Reanudando tarea '{tarea_id}' (Aprobación confirmada para nodo '{siguiente_nodo}')..."
-                await notificar_progreso(ctx, msg_reanudando, 50, 100)
+                asyncio.create_task(notificar_progreso(ctx, msg_reanudando, 50, 100))
+                _log_stderr(f"[MCP] Reanudando tarea '{tarea_id}' en nodo '{siguiente_nodo}'")
                 # Reanudamos la ejecución
                 resultado = await agentes_app.ainvoke(None, config) # type: ignore
                 estado_post = await agentes_app.aget_state(config) # type: ignore
@@ -314,8 +337,8 @@ async def delegar_tarea_a_equipo_ia(
                     msgs = estado_post.values.get("messages", []) if hasattr(estado_post, "values") else []
                     if msgs and getattr(msgs[-1], "type", None) == "tool":
                         tool_step = tool_loop_count + 1
-                        msg_tool = f"⚙️ Procesando resultado de herramienta ({tool_step})..."
-                        await notificar_progreso(ctx, msg_tool, 60, 100)
+                        msg_tool = f"⚙️ Procesando resultado de herramienta ({tool_step})...."
+                        asyncio.create_task(notificar_progreso(ctx, msg_tool, 60, 100))
                         resultado = await agentes_app.ainvoke(None, config) # type: ignore
                         estado_post = await agentes_app.aget_state(config) # type: ignore
                         tool_loop_count += 1
@@ -323,7 +346,7 @@ async def delegar_tarea_a_equipo_ia(
                         break
             else:
                 msg_feedback = f"↩️ Procesando rechazo/feedback del usuario para nodo '{siguiente_nodo}'..."
-                await notificar_progreso(ctx, msg_feedback, 30, 100)
+                asyncio.create_task(notificar_progreso(ctx, msg_feedback, 30, 100))
                 # RECHAZO DEL USUARIO: Regresamos con feedback y REINICIAMOS CONTADORES
                 if siguiente_nodo == "agente_revisor":
                     msg_rechazo_cod = f"El usuario rechazó el código con este feedback: {instruccion}"
@@ -354,7 +377,8 @@ async def delegar_tarea_a_equipo_ia(
         else:
             instruccion_corta = instruccion[:50]
             msg_planificador = f"🏗️ Iniciando Agente Planificador (Arquitecto) para '{instruccion_corta}...'..."
-            await notificar_progreso(ctx, msg_planificador, 20, 100)
+            asyncio.create_task(notificar_progreso(ctx, msg_planificador, 20, 100))
+            _log_stderr(f"[MCP] Nueva tarea '{tarea_id}': iniciando Planificador")
             estado_inicial = {
                 "instruccion_usuario": instruccion,
                 "directorio_proyecto": directorio_proyecto,
@@ -373,12 +397,8 @@ async def delegar_tarea_a_equipo_ia(
             while estado.next and auto_loop_count < max_auto_loops:
                 siguiente_nodo = estado.next[0]
                 msg_auto = f"⚡ Auto-aprobación activa: reanudando automáticamente en nodo '{siguiente_nodo}' (tarea '{tarea_id}')..."
-                await notificar_progreso(
-                    ctx,
-                    msg_auto,
-                    50,
-                    100
-                )
+                asyncio.create_task(notificar_progreso(ctx, msg_auto, 50, 100))
+                _log_stderr(f"[MCP] Auto-aprobación: avanzando a '{siguiente_nodo}' (loop {auto_loop_count})")
                 resultado = await agentes_app.ainvoke(None, config) # type: ignore
                 estado = await agentes_app.aget_state(config) # type: ignore
 
@@ -387,8 +407,8 @@ async def delegar_tarea_a_equipo_ia(
                     msgs = estado.values.get("messages", []) if hasattr(estado, "values") else []
                     if msgs and getattr(msgs[-1], "type", None) == "tool":
                         tool_step = tool_loop_count + 1
-                        msg_tool = f"⚙️ Procesando resultado de herramienta ({tool_step})..."
-                        await notificar_progreso(ctx, msg_tool, 60, 100)
+                        msg_tool = f"⚙️ Procesando resultado de herramienta ({tool_step})...."
+                        asyncio.create_task(notificar_progreso(ctx, msg_tool, 60, 100))
                         resultado = await agentes_app.ainvoke(None, config) # type: ignore
                         estado = await agentes_app.aget_state(config) # type: ignore
                         tool_loop_count += 1
@@ -417,7 +437,8 @@ async def delegar_tarea_a_equipo_ia(
                     directorio_proyecto=directorio_proyecto
                 )
                 msg_pausa1 = f"⏸️ PAUSA 1: Plan de acción listo. Esperando revisión del usuario (tarea '{tarea_id}').\n\n{markdown_pausa}"
-                await notificar_progreso(ctx, msg_pausa1, 40, 100)
+                asyncio.create_task(notificar_progreso(ctx, msg_pausa1, 40, 100))
+                _log_stderr(f"[MCP] PAUSA 1 - tarea '{tarea_id}' esperando aprobación de plan")
                 return markdown_pausa
                 
             elif siguiente_nodo == "agente_revisor":
@@ -432,7 +453,8 @@ async def delegar_tarea_a_equipo_ia(
                     directorio_proyecto=directorio_proyecto
                 )
                 msg_cambios = f"⏸️ PAUSA 2: Código escrito. Esperando aprobación antes de pruebas QA (tarea '{tarea_id}').\n\n{markdown_pausa}"
-                await notificar_progreso(ctx, msg_cambios, 70, 100)
+                asyncio.create_task(notificar_progreso(ctx, msg_cambios, 70, 100))
+                _log_stderr(f"[MCP] PAUSA 2 - tarea '{tarea_id}' esperando aprobación de código")
                 return markdown_pausa
 
         # Si no hay 'next', el grafo llegó a END
@@ -447,7 +469,8 @@ async def delegar_tarea_a_equipo_ia(
             msg_fin += diff_msg
         else:
             msg_fin += "\n\n⚠️ ADVERTENCIA: No se detectaron cambios ni modificaciones en los archivos del disco (git diff / status está vacío)."
-        await notificar_progreso(ctx, msg_fin, 100, 100)
+        asyncio.create_task(notificar_progreso(ctx, msg_fin, 100, 100))
+        _log_stderr(f"[MCP] Tarea '{tarea_id}' COMPLETADA")
         reporte_final = (
             f"✅ Tarea completada exitosamente por el equipo LangGraph.\n"
             f"ID de Tarea: {tarea_id}\n"
@@ -459,17 +482,18 @@ async def delegar_tarea_a_equipo_ia(
         return reporte_final
 
     try:
-        with redirect_stdout(sys.stderr):
-            return await asyncio.wait_for(_ejecutar_logica(), timeout=timeout_seconds)
+        # Ejecutar lógica principal SIN redirect_stdout para preservar canal JSON-RPC
+        return await asyncio.wait_for(_ejecutar_logica(), timeout=timeout_seconds)
     except asyncio.TimeoutError:
         msg_timeout = f"🚨 Timeout: La tarea '{tarea_id}' excedió el límite máximo de ejecución ({timeout_seconds}s)."
-        await notificar_progreso(ctx, msg_timeout, 100, 100)
+        asyncio.create_task(notificar_progreso(ctx, msg_timeout, 100, 100))
+        _log_stderr(f"[MCP] TIMEOUT tarea '{tarea_id}'")
         return f"{msg_timeout} Por favor, reintenta dividiendo la instrucción en pasos más específicos o verifica el estado de la tarea con tarea_id='{tarea_id}'."
     except BaseException as e:
         err_msg = str(e)
         msg_err = f"🚨 El equipo de agentes falló con un error interno en tarea '{tarea_id}': {err_msg}"
-        sys.stderr.write(f"{msg_err}\n")
-        await notificar_progreso(ctx, msg_err, 100, 100)
+        _log_stderr(f"[MCP] ERROR tarea '{tarea_id}': {err_msg}")
+        asyncio.create_task(notificar_progreso(ctx, msg_err, 100, 100))
         return msg_err
 
 

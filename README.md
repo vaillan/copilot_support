@@ -96,15 +96,81 @@ El módulo `app/models/llm_factory.py` proporciona inicialización centralizada 
 
 Implementado utilizando **FastMCP**, el servidor expone capacidades avanzadas para la integración de agentes de IA con entornos de desarrollo y asistentes externos.
 
-- **Herramienta Principal (`delegar_tarea_a_equipo_ia`)**:
-  - Recibe la instrucción, el directorio del proyecto y parámetros de control para ejecutar o reanudar el ciclo de desarrollo autónomo.
-- **Modo de Auto-Aprobación (`MCP_AUTO_APPROVE`)**:
-  - Permite automatizar completamente el flujo sin pausas interactivas. Se activa globalmente mediante la variable de entorno `MCP_AUTO_APPROVE="true"` o por tarea con el parámetro `auto_approve=True`.
-- **Notificaciones de Progreso y Timeouts**:
-  - Informa el avance en tiempo real mediante notificaciones estructuradas con formato porcentual `[XX%]`.
-  - Protege la ejecución frente a bloqueos mediante un timeout configurable (`MCP_TASK_TIMEOUT_SECONDS`, por defecto 300 segundos).
-- **Inspección de Cambios (`visualizar_cambios`)**:
-  - Captura y analiza el estado actual del repositorio y los diffs de código (`git diff` / `git status`) para enriquecer los informes entregados al usuario o cliente MCP.
+### Herramientas Disponibles
+
+#### 1. `delegar_tarea_a_equipo_ia` (Herramienta Principal)
+
+Única herramienta expuesta públicamente para clientes MCP. Delega tareas a 3 agentes autónomos (Arquitecto, Programador, QA) vía grafo LangGraph.
+
+**Parámetros:**
+
+| Parámetro | Tipo | Requerido | Descripción |
+|-----------|------|-----------|-------------|
+| `instruccion` | `string` | **Sí** | Qué construir, o feedback si se rechaza plan/código. |
+| `directorio_proyecto` | `string` | **Sí** | Ruta absoluta del proyecto. |
+| `approve` | `boolean` | No (default: `false`) | Aprobar y continuar si pausado (Pausa 1 o 2). |
+| `tarea_id` | `string` | No* | **Obligatorio** si `approve=true` o reanudando. ID sesión (ej. `task_a1b2c3d4`). Vacío para tarea nueva. |
+| `auto_approve` | `boolean` | No (default: `false`) | Auto-aprueba pausas sin confirmación manual. También vía `MCP_AUTO_APPROVE="true"`. |
+
+**Flujo:**
+1. **Nueva tarea** (`tarea_id` vacío, `approve=false`): Genera ID, invoca Planificador → **Pausa 1 (HITL)**.
+2. **Pausa 1 - Plan** (`siguiente_nodo == "agente_codificador"`): Retorna Markdown con plan, tabla pasos, instrucciones. **IA DEBE DETENERSE y mostrar al usuario.**
+3. **Aprobar Plan** (`approve=true`, `tarea_id`): Reanuda → Codificador escribe código → **Pausa 2 (HITL)**.
+4. **Pausa 2 - Código** (`siguiente_nodo == "agente_revisor"`): Retorna Markdown con resumen, `git diff`, instrucciones. **IA DEBE DETENERSE y mostrar al usuario.**
+5. **Aprobar Código** (`approve=true`, `tarea_id`): Reanuda → Revisor (QA) ejecuta tests. Errores → Codificador (máx 3 rev). Éxito → **Completado**.
+6. **Rechazo** (`approve=false` + feedback en `instruccion`): Pausa 1 → Planificador; Pausa 2 → Codificador (reinicia contadores).
+7. **Auto-aprobación** (`auto_approve=true` o `MCP_AUTO_APPROVE=true`): Flujo automático sin pausas.
+
+**Respuesta:** En pausas: Markdown completo. Al completar: resumen final con `tarea_id`, cambios, tests, `git diff`. Error: mensaje descriptivo.
+
+---
+
+#### 2. `visualizar_cambios` (Función Interna - **NO EXPUESTA COMO HERRAMIENTA MCP**)
+
+> ⚠️ **Nota**: Ya no está expuesta como herramienta MCP. Función auxiliar interna para consultar estado de tarea o cambios en disco.
+
+**Uso interno:** Consultar estado tarea pausada (`tarea_id`), obtener `git diff`/`git status`, recuperar `codigo_escrito`.
+
+**Parámetros internos:** `tarea_id`, `directorio_proyecto` (opcional), `ctx`.
+
+---
+
+### Características Transversales
+
+- **Auto-Aprobación**: Global (`MCP_AUTO_APPROVE="true"`) o por tarea (`auto_approve=True`).
+- **Notificaciones Progreso**: Tiempo real con formato `[XX%]`, compatible `progressToken`, fallback `[XX%]` si no hay token. Timeout configurable (`MCP_TASK_TIMEOUT_SECONDS`, default 300s).
+- **Inspección Cambios**: `git diff`/`git status` automático en pausas y fin. Detecta si Codificador omitió escritura.
+
+---
+
+### Ejemplo Uso (Cliente MCP)
+
+```json
+{
+  "tool": "delegar_tarea_a_equipo_ia",
+  "arguments": {
+    "instruccion": "Crea API REST FastAPI CRUD usuarios, SQLite, SQLAlchemy, tests pytest.",
+    "directorio_proyecto": "/home/usuario/mi_proyecto",
+    "approve": false,
+    "auto_approve": false
+  }
+}
+```
+
+**Respuesta Pausa 1:** Markdown con plan, tabla pasos, instrucciones "Aprobar"/"Rechazar".
+
+**Para aprobar:**
+```json
+{
+  "tool": "delegar_tarea_a_equipo_ia",
+  "arguments": {
+    "instruccion": "Aprobar",
+    "directorio_proyecto": "/home/usuario/mi_proyecto",
+    "approve": true,
+    "tarea_id": "task_a1b2c3d4"
+  }
+}
+```
 
 ---
 

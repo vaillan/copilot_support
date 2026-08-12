@@ -57,10 +57,10 @@ def test_delegar_tarea_pausa_2_muestra_cambios(mock_ainvoke, mock_aget_state):
     assert "Creado archivo app/utils/helpers.py con funciones aux." in resultado
     assert "INSTRUCCIONES PARA EL USUARIO HUMANO" in resultado
     
-    # Verificar que mock_ctx.info recibió la notificación que incluye el markdown completo de pausa 2
+    # Verificar que mock_ctx.info recibió la notificación resumida de pausa 2
     info_calls = [call.args[0] for call in mock_ctx.info.call_args_list]
-    markdown_notificado = any("Revisión de Código Desarrollado (Pausa 2)" in call and "Creado archivo app/utils/helpers.py" in call for call in info_calls)
-    assert markdown_notificado, "El mensaje enviado a notificar_progreso (ctx.info) en PAUSA 2 debe incluir el Markdown completo."
+    notificacion_resumida = any("PAUSA 2" in call for call in info_calls)
+    assert notificacion_resumida, "El mensaje enviado a notificar_progreso (ctx.info) en PAUSA 2 debe incluir el resumen conciso."
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
 @patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
@@ -91,10 +91,10 @@ def test_delegar_tarea_con_contexto_notificaciones(mock_ainvoke, mock_aget_state
     assert mock_ctx.info.called
     assert mock_ctx.report_progress.called
 
-    # Verificar que mock_ctx.info recibió la notificación que incluye el markdown completo de pausa 1
+    # Verificar que mock_ctx.info recibió la notificación resumida de pausa 1
     info_calls = [call.args[0] for call in mock_ctx.info.call_args_list]
-    markdown_notificado = any("Formulario de Aprobación de Plan de Acción" in call and "Plan de prueba" in call for call in info_calls)
-    assert markdown_notificado, "El mensaje enviado a notificar_progreso (ctx.info) en PAUSA 1 debe incluir el Markdown completo."
+    notificacion_resumida = any("PAUSA 1" in call for call in info_calls)
+    assert notificacion_resumida, "El mensaje enviado a notificar_progreso (ctx.info) en PAUSA 1 debe incluir el resumen conciso."
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
 @patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
@@ -252,7 +252,7 @@ def test_notificar_progreso_con_progress_token():
     mock_meta.progressToken = "token_123"
     mock_ctx.request_context.meta = mock_meta
     
-    asyncio.run(notificar_progreso(mock_ctx, "Ejecutando paso 1", progreso=30, total=100))
+    asyncio.run(notificar_progreso(mock_ctx, "Ejecutando paso 1\nSegunda línea", progreso=30, total=100))
     
     mock_ctx.report_progress.assert_called_once_with(30, total=100, message="Ejecutando paso 1")
     mock_ctx.info.assert_called_once_with("Ejecutando paso 1")
@@ -263,7 +263,7 @@ def test_notificar_progreso_fallback_sin_progress_token():
     mock_meta.progressToken = None
     mock_ctx.request_context.meta = mock_meta
     
-    asyncio.run(notificar_progreso(mock_ctx, "Ejecutando paso sin token", progreso=25, total=100))
+    asyncio.run(notificar_progreso(mock_ctx, "Ejecutando paso sin token\nLínea 2", progreso=25, total=100))
     
     assert mock_ctx.report_progress.called
     mock_ctx.info.assert_called_once_with("[25%] Ejecutando paso sin token")
@@ -271,7 +271,7 @@ def test_notificar_progreso_fallback_sin_progress_token():
 def test_notificar_progreso_fallback_sin_request_context():
     mock_ctx = AsyncMock(spec=["info", "report_progress"])
     
-    asyncio.run(notificar_progreso(mock_ctx, "Mensaje directo", progreso=50, total=100))
+    asyncio.run(notificar_progreso(mock_ctx, "Mensaje directo\nExtra", progreso=50, total=100))
     
     mock_ctx.info.assert_called_once_with("[50%] Mensaje directo")
 
