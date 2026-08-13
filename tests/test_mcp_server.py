@@ -1,3 +1,4 @@
+import sys
 import pytest
 import asyncio
 import anyio
@@ -123,6 +124,30 @@ def test_delegar_tarea_aprobacion_y_completado(mock_ainvoke, mock_aget_state):
 
     assert "✅ Tarea completada exitosamente" in resultado
     assert "Se implementaron las funciones requeridas." in resultado
+
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
+def test_delegar_tarea_preserva_stdout(mock_ainvoke, mock_aget_state):
+    """Verifica que sys.stdout no es redirigido a sys.stderr durante la ejecución de delegar_tarea_a_equipo_ia."""
+    original_stdout = sys.stdout
+
+    async def _chequear_stdout(*args, **kwargs):
+        assert sys.stdout is original_stdout
+        mock_state = MagicMock()
+        mock_state.next = []
+        mock_state.values = {"codigo_escrito": "ok", "errores_terminal": "0 errores"}
+        return mock_state
+
+    mock_aget_state.side_effect = _chequear_stdout
+
+    resultado = asyncio.run(delegar_tarea_a_equipo_ia(
+        instruccion="Verificar preservacion de stdout",
+        directorio_proyecto="./",
+        tarea_id="task_stdout_check"
+    ))
+
+    assert sys.stdout is original_stdout
+    assert "✅ Tarea completada exitosamente" in resultado
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
 @patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)

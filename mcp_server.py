@@ -5,7 +5,6 @@ import asyncio
 import uuid
 import hashlib
 from typing import Optional, Dict, Any, List
-from contextlib import redirect_stdout
 
 class MuteStderr:
     def write(self, x): pass
@@ -36,69 +35,56 @@ def _log_stderr(msg: str):
 
 async def notificar_progreso(ctx: Optional[Context], mensaje: str, progreso: Optional[int] = None, total: int = 100):
     """
-    Envía mensajes de log y progreso en tiempo real de forma NO BLOQUEANTE (fire-and-forget).
-    Nunca hace await en el flujo principal. Usa asyncio.create_task para desacoplar.
+    Envía mensajes de log y progreso en tiempo real de forma segura y directa.
+    Captura y maneja cualquier excepción para nunca bloquear la ejecución principal.
     """
     if ctx is None:
         return
 
-    # Crear task desacoplada para no bloquear el flujo principal
-    async def _enviar_notificacion():
+    try:
+        mensaje_resumido = mensaje.splitlines()[0][:200] if mensaje else ""
+
+        has_progress_token = False
         try:
-            # Extraer un resumen conciso del mensaje (primera línea o máximo 200 caracteres)
-            mensaje_resumido = mensaje.splitlines()[0][:200] if mensaje else ""
-
-            # Detectar si existe un progressToken válido en el contexto de la petición
-            has_progress_token = False
-            try:
-                if (
-                    hasattr(ctx, "request_context")
-                    and ctx.request_context is not None
-                    and hasattr(ctx.request_context, "meta")
-                    and ctx.request_context.meta is not None
-                    and getattr(ctx.request_context.meta, "progressToken", None) is not None
-                ):
-                    has_progress_token = True
-            except Exception:
-                has_progress_token = False
-
-            progreso_val = progreso if progreso is not None else 0
-
-            # Intentar reportar progreso estructurado (fire-and-forget, sin await)
-            if progreso is not None and hasattr(ctx, "report_progress"):
-                try:
-                    res = ctx.report_progress(progreso_val, total=total, message=mensaje_resumido)
-                    if asyncio.iscoroutine(res):
-                        # No awaitamos - fire and forget
-                        asyncio.create_task(_safe_await(res, timeout=1.0))
-                except Exception:
-                    pass
-
-            # Mecanismo de respaldo (Fallback)
-            if progreso is not None and not has_progress_token:
-                pct = int((progreso_val / total) * 100) if total > 0 else progreso_val
-                mensaje_formateado = f"[{pct}%] {mensaje_resumido}"
-            else:
-                mensaje_formateado = mensaje_resumido
-
-            # Enviar info (fire-and-forget)
-            if hasattr(ctx, "info"):
-                try:
-                    res = ctx.info(mensaje_formateado)
-                    if asyncio.iscoroutine(res):
-                        asyncio.create_task(_safe_await(res, timeout=1.0))
-                except Exception:
-                    pass
-
-            # Siempre loguear a stderr para debugging/visibilidad en logs del servidor
-            _log_stderr(f"[PROGRESO] {mensaje_formateado}")
-
+            if (
+                hasattr(ctx, "request_context")
+                and ctx.request_context is not None
+                and hasattr(ctx.request_context, "meta")
+                and ctx.request_context.meta is not None
+                and getattr(ctx.request_context.meta, "progressToken", None) is not None
+            ):
+                has_progress_token = True
         except Exception:
-            # Nunca propagar excepciones desde notificaciones
-            pass
+            has_progress_token = False
 
-    # Lanzar task desacoplada y NO awaitarla
-    asyncio.create_task(_enviar_notificacion())
+        progreso_val = progreso if progreso is not None else 0
+
+        if progreso is not None and hasattr(ctx, "report_progress"):
+            try:
+                res = ctx.report_progress(progreso_val, total=total, message=mensaje_resumido)
+                if asyncio.iscoroutine(res):
+                    await _safe_await(res, timeout=1.0)
+            except Exception:
+                pass
+
+        if progreso is not None and not has_progress_token:
+            pct = int((progreso_val / total) * 100) if total > 0 else progreso_val
+            mensaje_formateado = f"[{pct}%] {mensaje_resumido}"
+        else:
+            mensaje_formateado = mensaje_resumido
+
+        if hasattr(ctx, "info"):
+            try:
+                res = ctx.info(mensaje_formateado)
+                if asyncio.iscoroutine(res):
+                    await _safe_await(res, timeout=1.0)
+            except Exception:
+                pass
+
+        _log_stderr(f"[PROGRESO] {mensaje_formateado}")
+
+    except Exception:
+        pass
 
 
 async def _safe_await(coro, timeout: float = 1.0):
@@ -311,8 +297,8 @@ async def delegar_tarea_a_equipo_ia(
         
     config = {"configurable": {"thread_id": tarea_id}, "recursion_limit": 100}
 
-    # Notificación inicial fire-and-forget
-    asyncio.create_task(notificar_progreso(ctx, f"🚀 Iniciando procesamiento para tarea '{tarea_id}'...", 10, 100))
+    # Notificación inicial
+    await notificar_progreso(ctx, f"🚀 Iniciando procesamiento para tarea '{tarea_id}'...", 10, 100)
     _log_stderr(f"[MCP] Iniciando tarea '{tarea_id}' con auto_approve={effective_auto_approve}")
 
     timeout_seconds = int(os.environ.get("MCP_TASK_TIMEOUT_SECONDS", "300"))
@@ -325,28 +311,24 @@ async def delegar_tarea_a_equipo_ia(
             siguiente_nodo = estado_actual.next[0]
             if approve or effective_auto_approve:
                 msg_reanudando = f"▶️ Reanudando tarea '{tarea_id}' (Aprobación confirmada para nodo '{siguiente_nodo}')..."
-                asyncio.create_task(notificar_progreso(ctx, msg_reanudando, 50, 100))
+                await notificar_progreso(ctx, msg_reanudando, 50, 100)
                 _log_stderr(f"[MCP] Reanudando tarea '{tarea_id}' en nodo '{siguiente_nodo}'")
                 # Reanudamos la ejecución
                 resultado = await agentes_app.ainvoke(None, config) # type: ignore
                 estado_post = await agentes_app.aget_state(config) # type: ignore
                 
-                # Bucle para saltar las interrupciones causadas por el retorno de las herramientas
+                # Bucle para procesar herramientas del nodo actual sin saltar a la siguiente pausa humana
                 tool_loop_count = 0
-                while estado_post.next and estado_post.next[0] in ["agente_codificador", "agente_revisor"] and tool_loop_count < 10:
-                    msgs = estado_post.values.get("messages", []) if hasattr(estado_post, "values") else []
-                    if msgs and getattr(msgs[-1], "type", None) == "tool":
-                        tool_step = tool_loop_count + 1
-                        msg_tool = f"⚙️ Procesando resultado de herramienta ({tool_step})...."
-                        asyncio.create_task(notificar_progreso(ctx, msg_tool, 60, 100))
-                        resultado = await agentes_app.ainvoke(None, config) # type: ignore
-                        estado_post = await agentes_app.aget_state(config) # type: ignore
-                        tool_loop_count += 1
-                    else:
-                        break
+                while estado_post.next and estado_post.next[0] == siguiente_nodo and tool_loop_count < 20:
+                    tool_step = tool_loop_count + 1
+                    msg_tool = f"⚙️ Procesando herramientas en nodo '{siguiente_nodo}' ({tool_step})...."
+                    await notificar_progreso(ctx, msg_tool, 60, 100)
+                    resultado = await agentes_app.ainvoke(None, config) # type: ignore
+                    estado_post = await agentes_app.aget_state(config) # type: ignore
+                    tool_loop_count += 1
             else:
                 msg_feedback = f"↩️ Procesando rechazo/feedback del usuario para nodo '{siguiente_nodo}'..."
-                asyncio.create_task(notificar_progreso(ctx, msg_feedback, 30, 100))
+                await notificar_progreso(ctx, msg_feedback, 30, 100)
                 # RECHAZO DEL USUARIO: Regresamos con feedback y REINICIAMOS CONTADORES
                 if siguiente_nodo == "agente_revisor":
                     msg_rechazo_cod = f"El usuario rechazó el código con este feedback: {instruccion}"
@@ -377,7 +359,7 @@ async def delegar_tarea_a_equipo_ia(
         else:
             instruccion_corta = instruccion[:50]
             msg_planificador = f"🏗️ Iniciando Agente Planificador (Arquitecto) para '{instruccion_corta}...'..."
-            asyncio.create_task(notificar_progreso(ctx, msg_planificador, 20, 100))
+            await notificar_progreso(ctx, msg_planificador, 20, 100)
             _log_stderr(f"[MCP] Nueva tarea '{tarea_id}': iniciando Planificador")
             estado_inicial = {
                 "instruccion_usuario": instruccion,
@@ -391,30 +373,16 @@ async def delegar_tarea_a_equipo_ia(
         estado = await agentes_app.aget_state(config) # type: ignore
 
         # Si auto-aprobación está habilitada, avanzamos automáticamente a través de cualquier pausa adicional
-        if effective_auto_approve:
-            auto_loop_count = 0
-            max_auto_loops = 20
-            while estado.next and auto_loop_count < max_auto_loops:
-                siguiente_nodo = estado.next[0]
-                msg_auto = f"⚡ Auto-aprobación activa: reanudando automáticamente en nodo '{siguiente_nodo}' (tarea '{tarea_id}')..."
-                asyncio.create_task(notificar_progreso(ctx, msg_auto, 50, 100))
-                _log_stderr(f"[MCP] Auto-aprobación: avanzando a '{siguiente_nodo}' (loop {auto_loop_count})")
-                resultado = await agentes_app.ainvoke(None, config) # type: ignore
-                estado = await agentes_app.aget_state(config) # type: ignore
-
-                tool_loop_count = 0
-                while estado.next and estado.next[0] in ["agente_codificador", "agente_revisor"] and tool_loop_count < 10:
-                    msgs = estado.values.get("messages", []) if hasattr(estado, "values") else []
-                    if msgs and getattr(msgs[-1], "type", None) == "tool":
-                        tool_step = tool_loop_count + 1
-                        msg_tool = f"⚙️ Procesando resultado de herramienta ({tool_step})...."
-                        asyncio.create_task(notificar_progreso(ctx, msg_tool, 60, 100))
-                        resultado = await agentes_app.ainvoke(None, config) # type: ignore
-                        estado = await agentes_app.aget_state(config) # type: ignore
-                        tool_loop_count += 1
-                    else:
-                        break
-                auto_loop_count += 1
+        auto_loop_count = 0
+        max_auto_loops = 50
+        while estado.next and effective_auto_approve and auto_loop_count < max_auto_loops:
+            siguiente_nodo = estado.next[0]
+            msg_auto = f"⚡ Auto-aprobación activa: reanudando automáticamente en nodo '{siguiente_nodo}' (tarea '{tarea_id}')..."
+            await notificar_progreso(ctx, msg_auto, 50, 100)
+            _log_stderr(f"[MCP] Auto-aprobación: avanzando a '{siguiente_nodo}' (loop {auto_loop_count})")
+            resultado = await agentes_app.ainvoke(None, config) # type: ignore
+            estado = await agentes_app.aget_state(config) # type: ignore
+            auto_loop_count += 1
 
         if estado.next:
             siguiente_nodo = estado.next[0]
@@ -437,7 +405,7 @@ async def delegar_tarea_a_equipo_ia(
                     directorio_proyecto=directorio_proyecto
                 )
                 msg_pausa1 = f"⏸️ PAUSA 1: Plan de acción listo. Esperando revisión del usuario (tarea '{tarea_id}').\n\n{markdown_pausa}"
-                asyncio.create_task(notificar_progreso(ctx, msg_pausa1, 40, 100))
+                await notificar_progreso(ctx, msg_pausa1, 40, 100)
                 _log_stderr(f"[MCP] PAUSA 1 - tarea '{tarea_id}' esperando aprobación de plan")
                 return markdown_pausa
                 
@@ -453,7 +421,7 @@ async def delegar_tarea_a_equipo_ia(
                     directorio_proyecto=directorio_proyecto
                 )
                 msg_cambios = f"⏸️ PAUSA 2: Código escrito. Esperando aprobación antes de pruebas QA (tarea '{tarea_id}').\n\n{markdown_pausa}"
-                asyncio.create_task(notificar_progreso(ctx, msg_cambios, 70, 100))
+                await notificar_progreso(ctx, msg_cambios, 70, 100)
                 _log_stderr(f"[MCP] PAUSA 2 - tarea '{tarea_id}' esperando aprobación de código")
                 return markdown_pausa
 
@@ -469,7 +437,7 @@ async def delegar_tarea_a_equipo_ia(
             msg_fin += diff_msg
         else:
             msg_fin += "\n\n⚠️ ADVERTENCIA: No se detectaron cambios ni modificaciones en los archivos del disco (git diff / status está vacío)."
-        asyncio.create_task(notificar_progreso(ctx, msg_fin, 100, 100))
+        await notificar_progreso(ctx, msg_fin, 100, 100)
         _log_stderr(f"[MCP] Tarea '{tarea_id}' COMPLETADA")
         reporte_final = (
             f"✅ Tarea completada exitosamente por el equipo LangGraph.\n"
@@ -482,18 +450,17 @@ async def delegar_tarea_a_equipo_ia(
         return reporte_final
 
     try:
-        # Ejecutar lógica principal SIN redirect_stdout para preservar canal JSON-RPC
         return await asyncio.wait_for(_ejecutar_logica(), timeout=timeout_seconds)
     except asyncio.TimeoutError:
         msg_timeout = f"🚨 Timeout: La tarea '{tarea_id}' excedió el límite máximo de ejecución ({timeout_seconds}s)."
-        asyncio.create_task(notificar_progreso(ctx, msg_timeout, 100, 100))
+        await notificar_progreso(ctx, msg_timeout, 100, 100)
         _log_stderr(f"[MCP] TIMEOUT tarea '{tarea_id}'")
         return f"{msg_timeout} Por favor, reintenta dividiendo la instrucción en pasos más específicos o verifica el estado de la tarea con tarea_id='{tarea_id}'."
     except BaseException as e:
         err_msg = str(e)
         msg_err = f"🚨 El equipo de agentes falló con un error interno en tarea '{tarea_id}': {err_msg}"
         _log_stderr(f"[MCP] ERROR tarea '{tarea_id}': {err_msg}")
-        asyncio.create_task(notificar_progreso(ctx, msg_err, 100, 100))
+        await notificar_progreso(ctx, msg_err, 100, 100)
         return msg_err
 
 
