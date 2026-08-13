@@ -62,6 +62,8 @@ def agente_codificador(state: ProjectState) -> Command:
     # Optimización de contexto con SummarizationMiddleware
     msgs = state.get("messages", [])
     mensajes_contexto = aplicar_resumen_middleware(msgs, llm)
+    if mensajes_contexto and isinstance(mensajes_contexto[-1], AIMessage):
+        mensajes_contexto = list(mensajes_contexto) + [HumanMessage(content="Continúa programando según el plan.")]
 
     prompt = prompt_template.invoke({
         "messages": mensajes_contexto, 

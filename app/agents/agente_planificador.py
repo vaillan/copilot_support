@@ -2,7 +2,7 @@ from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 from typing import List
 from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.messages import ToolMessage, HumanMessage
+from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 from langgraph.types import Command
 from langgraph.graph import END
 from langchain_core.tools import Tool, tool
@@ -78,6 +78,8 @@ def agente_planificador(state: ProjectState) -> Command:
     # Optimización de contexto con SummarizationMiddleware
     msgs = state.get("messages", [])
     mensajes_contexto = aplicar_resumen_middleware(msgs, llm)
+    if mensajes_contexto and isinstance(mensajes_contexto[-1], AIMessage):
+        mensajes_contexto = list(mensajes_contexto) + [HumanMessage(content="Continúa con la planificación.")]
 
     prompt = prompt_template.invoke({"messages": mensajes_contexto, "directorio": directorio})
     respuesta = llm_con_herramientas.invoke(prompt)
