@@ -14,5 +14,5 @@ state = ProjectState(
     loop_counter=0
 )
 config = {"configurable": {"thread_id": "1"}}
-for event in graph.stream(state, config, stream_mode="values"):
+for event in graph.stream(state, config, stream_mode="values"): # type: ignore
     print(event)
