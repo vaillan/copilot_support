@@ -2,16 +2,18 @@
 Módulo para el conteo de tokens y cálculo de costos agnóstico a proveedores en LangChain y LangGraph.
 
 Permite monitorear el uso de tokens (prompt, completion y total) y calcular el costo
-monetario estimado para modelos de OpenAI, Anthropic, Google Gemini, Ollama y otros proveedores.
+monetario estimado para modelos de OpenAI, Anthropic, Google Gemini, Ollama y otros proveedores,
+así como detectar umbrales de advertencia y límites de ventana de contexto.
 """
 
 from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Dict, Generator, Optional
+from typing import Any, Dict, Generator, List, Optional, Union
 import copy
 
 from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.messages import AnyMessage, BaseMessage
 from langchain_core.outputs import LLMResult
 
 
@@ -33,7 +35,6 @@ class ModelPricing:
 
 
 # Tarifas de precios estándar de referencia (USD por 1M tokens)
-# Actualizado con modelos comunes de OpenAI, Anthropic y Google
 DEFAULT_MODEL_PRICING: Dict[str, ModelPricing] = {
     # OpenAI
     "gpt-4o": ModelPricing(input_cost_per_1m=2.50, output_cost_per_1m=10.00),
@@ -71,7 +72,7 @@ DEFAULT_MODEL_PRICING: Dict[str, ModelPricing] = {
     "gemini-2.0-flash": ModelPricing(input_cost_per_1m=0.10, output_cost_per_1m=0.40),
     "gemini-2.0-flash-exp": ModelPricing(input_cost_per_1m=0.00, output_cost_per_1m=0.00),
 
-    # Modelos locales / Ollama (costo cero por defecto)
+    # Modelos locales / Ollama
     "ollama": ModelPricing(input_cost_per_1m=0.00, output_cost_per_1m=0.00),
     "llama3": ModelPricing(input_cost_per_1m=0.00, output_cost_per_1m=0.00),
     "llama3.1": ModelPricing(input_cost_per_1m=0.00, output_cost_per_1m=0.00),
@@ -82,8 +83,42 @@ DEFAULT_MODEL_PRICING: Dict[str, ModelPricing] = {
     "deepseek-r1": ModelPricing(input_cost_per_1m=0.00, output_cost_per_1m=0.00),
 }
 
-# Diccionario dinámico de precios registrado en tiempo de ejecución
+# Límites de ventana de contexto estándar (número máximo de tokens)
+DEFAULT_CONTEXT_WINDOWS: Dict[str, int] = {
+    # OpenAI
+    "gpt-4o": 128_000,
+    "gpt-4o-mini": 128_000,
+    "gpt-4-turbo": 128_000,
+    "gpt-4": 8_192,
+    "gpt-3.5-turbo": 16_385,
+    "o1": 200_000,
+    "o1-mini": 128_000,
+    "o3-mini": 200_000,
+
+    # Anthropic
+    "claude-3-5-sonnet": 200_000,
+    "claude-3-5-haiku": 200_000,
+    "claude-3-opus": 200_000,
+    "claude-3-sonnet": 200_000,
+    "claude-3-haiku": 200_000,
+
+    # Google Gemini
+    "gemini-1.5-pro": 2_000_000,
+    "gemini-1.5-flash": 1_000_000,
+    "gemini-2.0-flash": 1_000_000,
+
+    # Ollama / Modelos abiertos
+    "llama3": 8_192,
+    "llama3.1": 128_000,
+    "llama3.2": 128_000,
+    "llama3.3": 128_000,
+    "mistral": 32_768,
+    "qwen": 32_768,
+    "deepseek-r1": 64_000,
+}
+
 _CUSTOM_MODEL_PRICING: Dict[str, ModelPricing] = {}
+_CUSTOM_CONTEXT_WINDOWS: Dict[str, int] = {}
 
 
 def register_model_pricing(model_name: str, input_cost_per_1m: float, output_cost_per_1m: float) -> None:
@@ -97,6 +132,14 @@ def register_model_pricing(model_name: str, input_cost_per_1m: float, output_cos
     )
 
 
+def register_context_window(model_name: str, max_tokens: int) -> None:
+    """
+    Registra o sobreescribe el límite de ventana de contexto para un modelo.
+    """
+    key = model_name.strip().lower()
+    _CUSTOM_CONTEXT_WINDOWS[key] = int(max_tokens)
+
+
 def get_model_pricing(model_name: str) -> Optional[ModelPricing]:
     """
     Obtiene la tarifa de precios asociada a un modelo dado, buscando coincidencias
@@ -107,25 +150,47 @@ def get_model_pricing(model_name: str) -> Optional[ModelPricing]:
 
     clean_name = model_name.strip().lower()
 
-    # 1. Búsqueda exacta en custom pricing
     if clean_name in _CUSTOM_MODEL_PRICING:
         return _CUSTOM_MODEL_PRICING[clean_name]
 
-    # 2. Búsqueda exacta en default pricing
     if clean_name in DEFAULT_MODEL_PRICING:
         return DEFAULT_MODEL_PRICING[clean_name]
 
-    # 3. Búsqueda por subcadena / prefijo en custom pricing
     for key, pricing in _CUSTOM_MODEL_PRICING.items():
         if key in clean_name or clean_name in key:
             return pricing
 
-    # 4. Búsqueda por subcadena / prefijo en default pricing (ordenando por longitud descendente)
     for key in sorted(DEFAULT_MODEL_PRICING.keys(), key=len, reverse=True):
         if key in clean_name:
             return DEFAULT_MODEL_PRICING[key]
 
     return None
+
+
+def get_context_window_limit(model_name: str, default_limit: int = 128_000) -> int:
+    """
+    Obtiene el límite máximo de tokens para la ventana de contexto del modelo.
+    """
+    if not model_name:
+        return default_limit
+
+    clean_name = model_name.strip().lower()
+
+    if clean_name in _CUSTOM_CONTEXT_WINDOWS:
+        return _CUSTOM_CONTEXT_WINDOWS[clean_name]
+
+    if clean_name in DEFAULT_CONTEXT_WINDOWS:
+        return DEFAULT_CONTEXT_WINDOWS[clean_name]
+
+    for key, window in _CUSTOM_CONTEXT_WINDOWS.items():
+        if key in clean_name or clean_name in key:
+            return window
+
+    for key in sorted(DEFAULT_CONTEXT_WINDOWS.keys(), key=len, reverse=True):
+        if key in clean_name:
+            return DEFAULT_CONTEXT_WINDOWS[key]
+
+    return default_limit
 
 
 def calculate_cost(model_name: str, prompt_tokens: int, completion_tokens: int) -> float:
@@ -140,6 +205,118 @@ def calculate_cost(model_name: str, prompt_tokens: int, completion_tokens: int) 
     prompt_cost = prompt_tokens * pricing.input_cost_per_token
     completion_cost = completion_tokens * pricing.output_cost_per_token
     return prompt_cost + completion_cost
+
+
+def estimate_tokens_from_text(text: str) -> int:
+    """
+    Estima de forma heurística y robusta el conteo de tokens a partir de una cadena de texto.
+    Aproximación estándar en la industria (~4 caracteres por token + tokens de margen).
+    """
+    if not text:
+        return 0
+    # Heurística: 1 token ~ 3.8 caracteres en promedio para texto multilingüe / código
+    return max(1, int(len(text) / 3.8) + 1)
+
+
+def count_tokens_in_messages(
+    messages: List[Union[BaseMessage, Dict[str, Any], str]],
+    model_name: str = "gpt-4o"
+) -> int:
+    """
+    Calcula o estima el número total de tokens contenidos en una lista de mensajes.
+    Incluye overhead de formateo por mensaje (role, delimiters).
+    """
+    if not messages:
+        return 0
+
+    total_tokens = 0
+    # Overhead por mensaje (role, start/end tokens ~ 4 tokens por mensaje)
+    message_overhead = 4
+
+    for msg in messages:
+        total_tokens += message_overhead
+        content = ""
+        if isinstance(msg, str):
+            content = msg
+        elif isinstance(msg, dict):
+            content = str(msg.get("content", ""))
+        elif hasattr(msg, "content"):
+            c = msg.content
+            if isinstance(c, str):
+                content = c
+            elif isinstance(c, list):
+                # Mensajes multi-modales o con bloques de contenido
+                parts = []
+                for item in c:
+                    if isinstance(item, str):
+                        parts.append(item)
+                    elif isinstance(item, dict) and "text" in item:
+                        parts.append(str(item["text"]))
+                    else:
+                        parts.append(str(item))
+                content = " ".join(parts)
+            else:
+                content = str(c)
+
+        total_tokens += estimate_tokens_from_text(content)
+
+    # Overhead base del prompt
+    total_tokens += 3
+    return total_tokens
+
+
+@dataclass
+class ContextWindowStatus:
+    """
+    Estado de la ventana de contexto y umbrales de uso.
+    """
+    total_tokens: int
+    max_tokens: int
+    usage_ratio: float
+    is_warning: bool
+    is_overflow: bool
+    remaining_tokens: int
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "total_tokens": self.total_tokens,
+            "max_tokens": self.max_tokens,
+            "usage_ratio": round(self.usage_ratio, 4),
+            "is_warning": self.is_warning,
+            "is_overflow": self.is_overflow,
+            "remaining_tokens": self.remaining_tokens,
+        }
+
+
+def check_context_window_threshold(
+    messages: List[Union[BaseMessage, Dict[str, Any], str]],
+    model_name: str = "gpt-4o",
+    warning_threshold_ratio: float = 0.8,
+    max_tokens_override: Optional[int] = None
+) -> ContextWindowStatus:
+    """
+    Evalúa si el historial de mensajes actual supera los umbrales de advertencia
+    o desbordamiento de la ventana de contexto del modelo seleccionado.
+    """
+    total_tokens = count_tokens_in_messages(messages, model_name=model_name)
+    max_tokens = max_tokens_override if max_tokens_override is not None else get_context_window_limit(model_name)
+    
+    if max_tokens <= 0:
+        max_tokens = 128_000
+
+    usage_ratio = total_tokens / max_tokens
+    is_warning = usage_ratio >= warning_threshold_ratio
+    is_overflow = total_tokens >= max_tokens
+    remaining = max(0, max_tokens - total_tokens)
+
+    return ContextWindowStatus(
+        total_tokens=total_tokens,
+        max_tokens=max_tokens,
+        usage_ratio=usage_ratio,
+        is_warning=is_warning,
+        is_overflow=is_overflow,
+        remaining_tokens=remaining
+    )
 
 
 @dataclass
@@ -289,7 +466,7 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
             or ""
         )
 
-        # 2. Intentar extraer tokens de llm_output (estándar OpenAI / proveedores clásicos)
+        # 2. Intentar extraer tokens de llm_output
         prompt_tokens = 0
         completion_tokens = 0
         extracted_from_output = False
@@ -300,14 +477,13 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
             completion_tokens = token_usage_dict.get("completion_tokens") or token_usage_dict.get("output_tokens") or 0
             extracted_from_output = True
 
-        # 3. Extraer de las generaciones individuales (estándar moderno LangChain AIMessage / usage_metadata)
+        # 3. Extraer de las generaciones individuales
         gen_prompt_tokens = 0
         gen_completion_tokens = 0
         found_in_generations = False
 
         for gen_list in response.generations:
             for gen in gen_list:
-                # Obtener modelo de generation_info o message si aún no se tiene
                 gen_info = getattr(gen, "generation_info", None) or {}
                 msg = getattr(gen, "message", None)
 
@@ -325,7 +501,6 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
                         gen_completion_tokens += u_meta.get("output_tokens", 0)
                         found_in_generations = True
 
-                # Extraer de response_metadata de AIMessage
                 elif msg and hasattr(msg, "response_metadata") and isinstance(msg.response_metadata, dict):
                     resp_meta = msg.response_metadata
                     usage_sub = resp_meta.get("usage") or resp_meta.get("token_usage") or resp_meta.get("usage_metadata")
@@ -338,7 +513,6 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
                         gen_completion_tokens += (resp_meta.get("completion_tokens") or resp_meta.get("output_tokens") or 0)
                         found_in_generations = True
 
-                # Extraer de generation_info
                 elif isinstance(gen_info, dict):
                     usage_sub = gen_info.get("usage") or gen_info.get("token_usage")
                     if isinstance(usage_sub, dict):
@@ -346,7 +520,6 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
                         gen_completion_tokens += (usage_sub.get("completion_tokens") or usage_sub.get("output_tokens") or 0)
                         found_in_generations = True
 
-        # Priorizar la fuente encontrada
         if found_in_generations and not extracted_from_output:
             prompt_tokens = gen_prompt_tokens
             completion_tokens = gen_completion_tokens
@@ -354,7 +527,6 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
             prompt_tokens = gen_prompt_tokens
             completion_tokens = gen_completion_tokens
 
-        # Registrar el uso
         self.usage.add_usage(
             model_name=model_name or "unknown",
             prompt_tokens=prompt_tokens,

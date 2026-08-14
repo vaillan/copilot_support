@@ -12,10 +12,11 @@ provider_map = {
     "anthropic": "anthropic",
     "open-router": "openrouter",
     "local": "ollama",
-    "azure":"azure_openai",
-    "aws-bedrock":"bedrock_converse",
-    "huggingface":"huggingface",
+    "azure": "azure_openai",
+    "aws-bedrock": "bedrock_converse",
+    "huggingface": "huggingface",
 }
+
 
 def _create_llm(provider: str, model_name: str, api_key: str, temperature: float = 0.0):
     prov = provider.lower() if provider else "google_genai"
@@ -56,12 +57,14 @@ def _create_llm(provider: str, model_name: str, api_key: str, temperature: float
         except (ImportError, Exception) as e:
             raise ValueError(f"Error al inicializar el modelo {mod} con proveedor {mapped_provider}: {e}")
 
+
 @lru_cache(maxsize=4)
 def get_llm(temperature: float = 0.0):
     """
     Retorna una instancia del LLM configurado en los ajustes generales de forma agnóstica al proveedor.
     """
     return _create_llm(settings.LLM_PROVIDER, settings.LLM_MODEL, settings.LLM_API_KEY, temperature)
+
 
 @lru_cache(maxsize=2)
 def get_planner_llm(temperature: float = 0.0):
@@ -73,6 +76,7 @@ def get_planner_llm(temperature: float = 0.0):
     api_key = settings.PLANNER_API_KEY or settings.LLM_API_KEY
     return _create_llm(provider, model, api_key, temperature)
 
+
 @lru_cache(maxsize=2)
 def get_coder_llm(temperature: float = 0.0):
     """
@@ -82,6 +86,7 @@ def get_coder_llm(temperature: float = 0.0):
     model = settings.CODER_MODEL or settings.LLM_MODEL
     api_key = settings.CODER_API_KEY or settings.LLM_API_KEY
     return _create_llm(provider, model, api_key, temperature)
+
 
 @lru_cache(maxsize=2)
 def get_reviewer_llm(temperature: float = 0.0):

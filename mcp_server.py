@@ -3,7 +3,6 @@ import sys
 import subprocess
 import asyncio
 import uuid
-import hashlib
 from typing import Optional, Dict, Any, List
 
 class MuteStderr:
@@ -207,13 +206,10 @@ async def visualizar_cambios(
 ) -> str:
     """
     Función auxiliar interna para consultar el estado actual de una tarea o los cambios en disco.
-    Nota: Ya no está expuesta como herramienta MCP para los agentes LLM.
     """
-    # Notificación fire-and-forget
     asyncio.create_task(notificar_progreso(ctx, f"🔍 Consultando cambios para tarea '{tarea_id}' en '{directorio_proyecto}'...", 10, 100))
     
     partes = []
-    
     dir_a_consultar = directorio_proyecto
     
     if tarea_id:
