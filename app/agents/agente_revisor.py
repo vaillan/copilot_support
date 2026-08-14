@@ -1,23 +1,24 @@
 import sys
 import subprocess
 from contextlib import redirect_stdout
-from langgraph.graph import END
-from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
-from langgraph.types import Command
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from app.models.llm_factory import get_reviewer_llm
-from app.utils.summarization import aplicar_resumen_middleware
-
-from langchain_core.tools import tool
-from langgraph.prebuilt import ToolNode
-from app.models.models import ProjectState
-from langchain_core.runnables import RunnableConfig
-from app.utils.files import File, get_custom_file_tools
-from app.settings.settings import Settings
 from functools import lru_cache
+from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.tools import tool
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph import END
+from langgraph.types import Command
+from langgraph.prebuilt import ToolNode
+
+from app.models.llm_factory import get_reviewer_llm
+from app.models.models import ProjectState
+from app.utils.files import File, get_custom_file_tools
+from app.utils.summarization import aplicar_resumen_middleware
+from app.settings.settings import Settings
 
 settings = Settings()
 fileSystem = File(directory="prompts")
+
 
 @tool
 def terminal(commands: list[str] | str) -> str:
@@ -64,6 +65,7 @@ def terminal(commands: list[str] | str) -> str:
 
     return "\n\n---\n\n".join(resultados) if resultados else "No se ejecutaron comandos válidos."
 
+
 @tool
 def finalizar_revision(aprobado: bool, requiere_pruebas: bool = True, reporte_errores: str = "") -> str:
     """
@@ -74,6 +76,7 @@ def finalizar_revision(aprobado: bool, requiere_pruebas: bool = True, reporte_er
     """
     return "Revisión procesada."
 
+
 @lru_cache(maxsize=10)
 def _get_tools(directorio: str):
     todas = get_custom_file_tools(directorio)
@@ -83,6 +86,7 @@ def _get_tools(directorio: str):
     ]
     herramientas = [terminal, finalizar_revision] + herramientas_lectura
     return herramientas
+
 
 def agente_revisor(state: ProjectState) -> Command:
     """
@@ -300,6 +304,7 @@ def agente_revisor(state: ProjectState) -> Command:
             },
             goto="agente_revisor"
         )
+
 
 def nodo_herramientas_revisor(state: ProjectState, config: RunnableConfig):
     """

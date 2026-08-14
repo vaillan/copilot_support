@@ -98,7 +98,7 @@ def test_agente_codificador_codigo_completado_sin_escritura_falla(mock_aplicar_m
 
     # Debe rebotar hacia el agente_codificador advirtiendo que no escribió archivos
     assert result.goto == "agente_codificador"
-    assert any("No hast modificado ni creado ningún archivo" in m.content for m in result.update["messages"] if isinstance(m, HumanMessage))
+    assert any("No has modificado ni creado ningún archivo" in m.content for m in result.update["messages"] if isinstance(m, HumanMessage))
 
 @patch('app.agents.agente_codificador.get_coder_llm')
 @patch('app.agents.agente_codificador.fileSystem.get_file_content')

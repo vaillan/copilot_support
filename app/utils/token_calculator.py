@@ -10,10 +10,9 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Dict, Generator, List, Optional, Union
-import copy
 
 from langchain_core.callbacks import BaseCallbackHandler
-from langchain_core.messages import AnyMessage, BaseMessage
+from langchain_core.messages import BaseMessage
 from langchain_core.outputs import LLMResult
 
 
@@ -210,11 +209,10 @@ def calculate_cost(model_name: str, prompt_tokens: int, completion_tokens: int) 
 def estimate_tokens_from_text(text: str) -> int:
     """
     Estima de forma heurística y robusta el conteo de tokens a partir de una cadena de texto.
-    Aproximación estándar en la industria (~4 caracteres por token + tokens de margen).
+    Aproximación estándar en la industria (~3.8 caracteres por token + tokens de margen).
     """
     if not text:
         return 0
-    # Heurística: 1 token ~ 3.8 caracteres en promedio para texto multilingüe / código
     return max(1, int(len(text) / 3.8) + 1)
 
 
@@ -230,7 +228,6 @@ def count_tokens_in_messages(
         return 0
 
     total_tokens = 0
-    # Overhead por mensaje (role, start/end tokens ~ 4 tokens por mensaje)
     message_overhead = 4
 
     for msg in messages:
@@ -245,7 +242,6 @@ def count_tokens_in_messages(
             if isinstance(c, str):
                 content = c
             elif isinstance(c, list):
-                # Mensajes multi-modales o con bloques de contenido
                 parts = []
                 for item in c:
                     if isinstance(item, str):
@@ -260,7 +256,6 @@ def count_tokens_in_messages(
 
         total_tokens += estimate_tokens_from_text(content)
 
-    # Overhead base del prompt
     total_tokens += 3
     return total_tokens
 
@@ -541,11 +536,6 @@ class TokenUsageCallbackHandler(BaseCallbackHandler):
 def track_token_usage(handler: Optional[TokenUsageCallbackHandler] = None) -> Generator[TokenUsageCallbackHandler, None, None]:
     """
     Context manager para registrar y monitorear el uso de tokens y costos en llamadas a LLMs y LangGraph.
-
-    Uso:
-        with track_token_usage() as cb:
-            llm.invoke("Hola", config={"callbacks": [cb]})
-            print(cb.total_tokens, cb.total_cost)
     """
     cb_handler = handler if handler is not None else TokenUsageCallbackHandler()
     try:
