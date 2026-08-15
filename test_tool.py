@@ -11,7 +11,7 @@ def main():
         plan_de_accion={},
         codigo_escrito="",
         errores_terminal=""
-    ) # type: ignore
+    )
     res = nodo_herramientas_codificador(state, config={"configurable": {"thread_id": "test_thread"}})
     print(res)
 

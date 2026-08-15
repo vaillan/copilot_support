@@ -1,6 +1,6 @@
 # AIDevTeam - Ecosistema de Agentes de Desarrollo IA
 
-**AIDevTeam** es una plataforma avanzada de agentes autónomos diseñada para automatizar el ciclo de vida del desarrollo de software (SDLC). Utilizando **LangGraph** para la orquestación y el **Model Context Protocol (MCP)** para la interoperabilidad, AIDevTeam permite delegar tareas complejas de programación a un equipo virtual de expertos en IA.
+**AIDevTeam** is una plataforma avanzada de agentes autónomos diseñada para automatizar el ciclo de vida del desarrollo de software (SDLC). Utilizando **LangGraph** para la orquestación y el **Model Context Protocol (MCP)** para la interoperabilidad, AIDevTeam permite delegar tareas complejas de programación a un equipo virtual de expertos en IA.
 
 ---
 
@@ -52,52 +52,6 @@ graph TD
 - **Control de Flujo (`Command`)**: Se utiliza el objeto `Command` de LangGraph para el enrutamiento dinámico. Esto permite a cada agente decidir de manera autónoma cuál es el siguiente nodo a ejecutar (por ejemplo, ir a su nodo de herramientas, avanzar al siguiente agente o terminar el proceso) y actualizar el estado global de forma explícita.
 - **Aristas Explícitas**: El grafo utiliza aristas explícitas para conectar los nodos de herramientas de vuelta a sus agentes correspondientes, asegurando un flujo de ejecución predecible y robusto.
 - **Resumen Automático de Contexto (`app/utils/summarization.py`)**: Para prevenir el desbordamiento de la ventana de contexto de los modelos LLM en conversaciones largas o iterativas, se implementa la función `aplicar_resumen_middleware` utilizando `SummarizationMiddleware` de LangChain. Este componente evalúa el historial de mensajes antes de cada invocación al LLM y, al superar un umbral configurable (`trigger_count=15`), resume automáticamente los mensajes más antiguos conservando los últimos mensajes recientes (`keep_count=8`), asegurando una alta eficiencia de tokens en los agentes `agente_planificador`, `agente_codificador` y `agente_revisor`.
-- **Monitoreo de Tokens y Cálculo de Costos (`app/utils/token_calculator.py`)**: Monitoreo agnóstico y multi-proveedor del consumo de tokens y estimación de costos en USD para ejecuciones de LLMs y grafos en LangChain y LangGraph.
-
----
-
-## 📊 Monitoreo de Tokens y Cálculo de Costos (`app/utils/token_calculator.py`)
-
-El módulo `app/utils/token_calculator.py` proporciona una solución agnóstica para auditar el uso de tokens y calcular el costo económico acumulado durante la ejecución de cadenas y grafos de agentes.
-
-### Características Principales
-
-1. **Callback Handler Agnóstico (`TokenUsageCallbackHandler`)**:
-   - Intercepta el evento `on_llm_end` de LangChain.
-   - Compatible tanto con el estándar moderno de LangChain (`AIMessage.usage_metadata` / `response_metadata`) como con el estándar clásico (`LLMResult.llm_output['token_usage']`).
-   - Extrae de forma transparente tokens de entrada (`prompt_tokens`), salida (`completion_tokens`) y totales.
-
-2. **Cálculo y Tarifas Multi-Proveedor (`ModelPricing` y `DEFAULT_MODEL_PRICING`)**:
-   - Incluye catálogo preconfigurado de precios de referencia (USD por 1M tokens) para:
-     - **OpenAI**: `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `gpt-4`, `gpt-3.5-turbo`, `o1`, `o1-mini`, `o3-mini`, etc.
-     - **Anthropic**: `claude-3-5-sonnet`, `claude-3-5-haiku`, `claude-3-opus`, `claude-3-sonnet`, `claude-3-haiku`, etc.
-     - **Google Gemini**: `gemini-1.5-pro`, `gemini-1.5-flash`, `gemini-1.5-flash-8b`, `gemini-2.0-flash`, etc.
-     - **Modelos Locales / Ollama**: `llama3`, `llama3.1`, `llama3.2`, `mistral`, `qwen`, `deepseek-r1` (costo $0.00).
-   - Coincidencia flexible de modelos (búsqueda exacta, *case-insensitive* y por subcadena/prefijo).
-
-3. **Registro de Tarifas Personalizadas (`register_model_pricing`)**:
-   - Permite registrar o sobrescribir dinámicamente precios para modelos propietarios, endpoints de OpenRouter o despliegues privados:
-     ```python
-     from app.utils.token_calculator import register_model_pricing
-
-     register_model_pricing("mi-modelo-custom", input_cost_per_1m=1.50, output_cost_per_1m=4.50)
-     ```
-
-4. **Agregación y Desglose por Modelo (`TokenUsage` y `ModelUsageBreakdown`)**:
-   - Rastrea métricas globales y desglose granular por cada modelo invocado en flujos multi-modelo (`by_model`).
-   - Serialización directa a diccionario mediante `.to_dict()`.
-
-5. **Context Manager (`track_token_usage`)**:
-   - Permite rastrear y calcular costos fácilmente dentro de bloques de ejecución:
-     ```python
-     from app.utils.token_calculator import track_token_usage
-
-     with track_token_usage() as cb:
-         respuesta = llm.invoke("Diseña un plan de base de datos", config={"callbacks": [cb]})
-         print(f"Tokens usados: {cb.total_tokens}")
-         print(f"Costo estimado: ${cb.total_cost:.6f}")
-         print(f"Desglose: {cb.to_dict()}")
-     ```
 
 ---
 
@@ -231,9 +185,8 @@ El proyecto incluye una suite completa de pruebas unitarias, de integración y E
 - `tests/test_integration.py`: Comprueba la correcta interacción entre nodos, aristas y herramientas de LangGraph.
 - `tests/test_llm_factory.py`: Valida la inicialización correcta de la factoría de LLMs para múltiples proveedores.
 - `tests/test_mcp_server.py`: Prueba los endpoints y herramientas expuestas por el servidor FastMCP.
-- `tests/test_summarization.py`: Valida el comportamiento del middleware de resumen automático de contexto (`aplicar_resumen_middleware`), comprobando la preservación del historial por debajo del umbral (`trigger_count`) y el resumen correcto al superarlo.
-- `tests/test_token_calculator.py`: Valida el cálculo de costos y conteo de tokens (`app/utils/token_calculator.py`), verificando tarifas estándar y personalizadas, matching exacto y difuso, estructuras de desglose (`TokenUsage`, `ModelUsageBreakdown`), callback handler (`TokenUsageCallbackHandler`) con soporte para respuestas OpenAI, `usage_metadata` de LangChain y el context manager `track_token_usage`.
 - `tests/test_tool_nodes.py`: Verifica la correcta ejecución de los nodos de herramientas.
+- `tests/test_summarization.py`: Valida el comportamiento del middleware de resumen automático de contexto (`aplicar_resumen_middleware`), comprobando la preservación del historial por debajo del umbral (`trigger_count`) y el resumen correcto al superarlo.
 
 ### Ejecución de Pruebas y Linter
 El script `./run_tests.sh` automatiza la ejecución de toda la suite de pruebas junto con el análisis estático de código utilizando `flake8`:
@@ -279,20 +232,18 @@ El script `./run_tests.sh` automatiza la ejecución de toda la suite de pruebas 
 │   │   └── __init__.py
 │   └── utils/              # Utilidades auxiliares
 │       ├── files.py
-│       ├── summarization.py    # Utilidad de resumen automático de contexto
-│       └── token_calculator.py # Conteo de tokens y cálculo de costos agnóstico a proveedores
+│       └── summarization.py # Utilidad de resumen automático de contexto
 │   └── main.py             # Orquestador principal del Grafo (StateGraph)
 └── tests/                  # Suite de pruebas automatizadas
-    ├── conftest.py             # Configuración y fixtures compartidas de pytest
-    ├── test_agents.py          # Pruebas de agentes
-    ├── test_e2e.py             # Pruebas End-to-End
-    ├── test_files.py           # Pruebas de utilidades de archivos
-    ├── test_integration.py     # Pruebas de integración LangGraph
-    ├── test_llm_factory.py     # Pruebas de la factoría de LLMs
-    ├── test_mcp_server.py      # Pruebas del servidor MCP
-    ├── test_summarization.py   # Pruebas unitarias de resumen de contexto
-    ├── test_token_calculator.py# Pruebas unitarias de conteo de tokens y cálculo de costos
-    └── test_tool_nodes.py      # Pruebas de nodos de herramientas
+    ├── conftest.py         # Configuración y fixtures compartidas de pytest
+    ├── test_agents.py      # Pruebas de agentes
+    ├── test_e2e.py         # Pruebas End-to-End
+    ├── test_files.py       # Pruebas de utilidades de archivos
+    ├── test_integration.py # Pruebas de integración LangGraph
+    ├── test_llm_factory.py # Pruebas de la factoría de LLMs
+    ├── test_mcp_server.py  # Pruebas del servidor MCP
+    ├── test_summarization.py # Pruebas unitarias de resumen de contexto
+    └── test_tool_nodes.py  # Pruebas de nodos de herramientas
 ```
 
 ---

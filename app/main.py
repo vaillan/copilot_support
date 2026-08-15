@@ -6,7 +6,6 @@ Este módulo define y compila el grafo de LangGraph conectando los agentes
 
 from typing import Optional
 from langgraph.graph import StateGraph, START
-from langgraph.graph.state import CompiledStateGraph
 from langgraph.checkpoint.memory import MemorySaver
 
 from app.models.models import ProjectState
@@ -24,7 +23,7 @@ def crear_grafo(
     interrumpir_en_codificador: bool = True,
     interrumpir_en_revisor: bool = True,
     checkpointer: Optional[MemorySaver] = None,
-) -> CompiledStateGraph:
+):
     """
     Construye y compila el flujo de trabajo multi-agente en LangGraph.
 

@@ -1,33 +1,29 @@
-from typing import List
-from functools import lru_cache
-from pydantic import BaseModel, Field
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
+from typing import List
+from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
-from langchain_core.tools import Tool, tool
-from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 from langgraph.graph import END
+from langchain_core.tools import Tool, tool
 from langgraph.prebuilt import ToolNode
-
 from app.models.llm_factory import get_planner_llm
 from app.models.models import ProjectState
+from langchain_core.runnables import RunnableConfig
 from app.utils.files import File, get_custom_file_tools
 from app.utils.summarization import aplicar_resumen_middleware
+from functools import lru_cache
 
 fileSystem = File(directory="prompts")
-
 
 class Paso(BaseModel):
     archivo: str = Field(description="Ruta relativa del archivo a modificar o crear")
     tarea: str = Field(description="Descripción técnica de lo que el codificador debe programar")
     requiere_test: bool = Field(description="True si este paso necesita una prueba unitaria")
 
-
 class PlanDeAccionInput(BaseModel):
     explicacion_arquitectura: str = Field(description="Breve explicación del enfoque técnico")
     pasos: List[Paso]
-
 
 @tool(args_schema=PlanDeAccionInput)
 def entregar_plan_de_accion(explicacion_arquitectura: str, pasos: List[Paso]) -> str:
@@ -35,7 +31,6 @@ def entregar_plan_de_accion(explicacion_arquitectura: str, pasos: List[Paso]) ->
     Llama a esta herramienta EXCLUSIVAMENTE cuando hayas terminado de investigar y estés listo para entregar el plan.
     """
     return "Plan de acción aceptado e iniciando fase de codificación."
-
 
 @lru_cache(maxsize=10)
 def _get_tools(directorio: str):
@@ -54,10 +49,9 @@ def _get_tools(directorio: str):
     herramientas = herramientas_lectura + [tool_busqueda]
     return herramientas
 
-
 def agente_planificador(state: ProjectState) -> Command:
     """
-    Analiza el requerimiento, investiga el proyecto/internet y genera un plan estructurado.
+    Analiza el requerimiento, investiga el proyecto/internet y genera un plan.
     """
     loop_counter = state.get("loop_counter", 0) + 1
     if loop_counter > 15:
@@ -151,7 +145,6 @@ def agente_planificador(state: ProjectState) -> Command:
             },
             goto="agente_planificador"
         )
-
 
 def nodo_herramientas_planificador(state: ProjectState, config: RunnableConfig):
     """
