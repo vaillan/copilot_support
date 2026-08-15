@@ -62,10 +62,12 @@ def agente_codificador(state: ProjectState) -> Command:
     
     errores = state.get("errores_terminal")
     if errores:
-        prompt_sistema += f"\n\nATENCIÓN: La ejecución de pruebas anterior falló con los siguientes errores:\n{errores}\nDebes corregirlos inmediatamente antes de volver a llamar a CodigoCompletado."
+        errores_escaped = str(errores).replace("{", "{{").replace("}", "}}")
+        prompt_sistema += f"\n\nATENCIÓN: La ejecución de pruebas anterior falló con los siguientes errores:\n{errores_escaped}\nDebes corregirlos inmediatamente antes de volver a llamar a CodigoCompletado."
 
     plan = state.get("plan_de_accion", {})
-    prompt_sistema += f"\n\nPlan de Acción a Ejecutar:\n{plan}"
+    plan_escaped = str(plan).replace("{", "{{").replace("}", "}}")
+    prompt_sistema = prompt_sistema.replace("{plan}", plan_escaped)
 
     prompt_template = ChatPromptTemplate.from_messages([
         ("system", prompt_sistema),
@@ -122,6 +124,7 @@ def agente_codificador(state: ProjectState) -> Command:
                 return Command(
                     update={
                         "codigo_escrito": resumen,
+                        "errores_terminal": "",
                         "messages": [respuesta] + tool_messages,
                         "loop_counter": 0
                     },
