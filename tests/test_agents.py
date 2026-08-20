@@ -300,6 +300,7 @@ def test_get_tools_agente_codificador():
     tool_names = [t.name for t in tools]
     assert "read_file" in tool_names
     assert "write_file" in tool_names
+    assert "edit_file" in tool_names
     assert "file_delete" in tool_names
     assert "copy_file" in tool_names
     assert "move_file" in tool_names

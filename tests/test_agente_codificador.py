@@ -156,3 +156,122 @@ def test_codificador_detecta_herramientas_de_modificacion_para_avanzar(mock_apli
     # Debe avanzar a revisión porque sí hubo modificación de archivos (copy_file)
     assert result.goto == "agente_revisor"
     assert result.update["codigo_escrito"] == "cambios aplicados"
+
+
+@patch('app.agents.agente_codificador.get_coder_llm')
+@patch('app.agents.agente_codificador.fileSystem.get_file_content')
+@patch('app.agents.agente_codificador.aplicar_resumen_middleware')
+def test_codificador_llama_write_file_cuando_se_ordena_modificar(mock_aplicar_middleware, mock_get_file, mock_get_llm, mock_state):
+    """
+    Cuando el LLM emite una tool_call de write_file (se le ordenó modificar código),
+    el nodo debe redirigir a nodo_herramientas_codificador para que la escritura
+    se ejecute físicamente en disco.
+    """
+    mock_llm = MagicMock()
+    mock_get_llm.return_value = mock_llm
+    mock_get_file.return_value = "system prompt system prompt"
+    mock_aplicar_middleware.return_value = [HumanMessage(content="contexto")]
+
+    tool_call_write = {
+        "name": "write_file",
+        "args": {"path": "app/main.py", "content": "print('hola')"},
+        "id": "call_write_1"
+    }
+    mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(
+        content="",
+        tool_calls=[tool_call_write]
+    )
+
+    result = agente_codificador(mock_state)
+
+    # El flujo debe ejecutar físicamente la escritura en el nodo de herramientas
+    assert result.goto == "nodo_herramientas_codificador"
+    # El AIMessage con la tool_call debe añadirse al historial
+    assert len(result.update["messages"]) == 1
+    assert result.update["messages"][0].tool_calls[0]["name"] == "write_file"
+    # El loop_counter se incrementa
+    assert result.update["loop_counter"] == 1
+
+
+@patch('app.agents.agente_codificador.get_coder_llm')
+@patch('app.agents.agente_codificador.fileSystem.get_file_content')
+@patch('app.agents.agente_codificador.aplicar_resumen_middleware')
+def test_codificador_detecta_edit_file_como_modificacion(mock_aplicar_middleware, mock_get_file, mock_get_llm, mock_state):
+    """
+    La validación debe reconocer edit_file como herramienta de modificación: si el
+    historial contiene una llamada a edit_file y luego el LLM llama a CodigoCompletado,
+    el nodo debe avanzar a agente_revisor.
+    """
+    mock_llm = MagicMock()
+    mock_get_llm.return_value = mock_llm
+    mock_get_file.return_value = "system prompt system prompt"
+    mock_aplicar_middleware.return_value = [HumanMessage(content="contexto")]
+
+    # El historial contiene una llamada a edit_file (modificación puntual de archivo existente)
+    tool_call_edit = {
+        "name": "edit_file",
+        "args": {"path": "app/main.py", "old_text": "print('hola')", "new_text": "print('adiós')"},
+        "id": "call_edit_1"
+    }
+    state_con_historial = dict(mock_state)
+    state_con_historial["messages"] = [
+        AIMessage(content="", tool_calls=[tool_call_edit]),
+        HumanMessage(content="contexto")
+    ]
+
+    tool_call = {
+        "name": "CodigoCompletado",
+        "args": {"resumen_cambios": "cambios aplicados"},
+        "id": "call_cod_comp"
+    }
+    mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(content="", tool_calls=[tool_call])
+
+    result = agente_codificador(state_con_historial)
+
+    # Debe avanzar a revisión porque edit_file es una herramienta de modificación
+    assert result.goto == "agente_revisor"
+    assert result.update["codigo_escrito"] == "cambios aplicados"
+
+
+@patch('app.agents.agente_codificador.get_coder_llm')
+@patch('app.agents.agente_codificador.fileSystem.get_file_content')
+@patch('app.agents.agente_codificador.aplicar_resumen_middleware')
+def test_codificador_detecta_confirmacion_exitosa_en_toolmessage(mock_aplicar_middleware, mock_get_file, mock_get_llm, mock_state):
+    """
+    La validación debe detectar confirmaciones de éxito en ToolMessages del historial:
+    si write_file fue invocada y devolvió 'escrito exitosamente', el nodo debe avanzar
+    a agente_revisor al llamar a CodigoCompletado.
+    """
+    mock_llm = MagicMock()
+    mock_get_llm.return_value = mock_llm
+    mock_get_file.return_value = "system prompt system prompt"
+    mock_aplicar_middleware.return_value = [HumanMessage(content="contexto")]
+
+    # Historial: write_file invocada + ToolMessage con confirmación de éxito en disco
+    tool_call_write = {
+        "name": "write_file",
+        "args": {"path": "app/main.py", "content": "print('hola')"},
+        "id": "call_write_1"
+    }
+    state_con_historial = dict(mock_state)
+    state_con_historial["messages"] = [
+        AIMessage(content="", tool_calls=[tool_call_write]),
+        ToolMessage(
+            tool_call_id="call_write_1",
+            content="Archivo 'app/main.py' escrito exitosamente en 'C:\\proyecto\\app\\main.py'."
+        ),
+        HumanMessage(content="contexto")
+    ]
+
+    tool_call = {
+        "name": "CodigoCompletado",
+        "args": {"resumen_cambios": "cambios aplicados"},
+        "id": "call_cod_comp"
+    }
+    mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(content="", tool_calls=[tool_call])
+
+    result = agente_codificador(state_con_historial)
+
+    # Debe avanzar a revisión porque el ToolMessage confirma la escritura exitosa en disco
+    assert result.goto == "agente_revisor"
+    assert result.update["codigo_escrito"] == "cambios aplicados"

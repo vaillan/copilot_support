@@ -98,3 +98,150 @@ def test_read_file_summary_tool(tmp_path):
     # Archivo inexistente
     res_err = summary_tool.invoke({"file_path": "no_existe.py"})
     assert "Error" in res_err
+
+
+def test_edit_file_reemplazo_texto(tmp_path):
+    """
+    Prueba que edit_file reemplaza todas las ocurrencias de old_text por new_text
+    en un archivo existente y devuelve confirmación de éxito.
+    """
+    tools = {t.name: t for t in get_custom_file_tools(str(tmp_path))}
+    write_tool = tools["write_file"]
+    edit_tool = tools["edit_file"]
+
+    # Crear archivo inicial
+    res_write = write_tool.invoke({"path": "app.py", "content": "print('hola')\nprint('hola')\nprint('mundo')\n"})
+    assert "exitosamente" in res_write
+
+    # Editar por texto: reemplaza TODAS las ocurrencias
+    res_edit = edit_tool.invoke({
+        "path": "app.py",
+        "old_text": "print('hola')",
+        "new_text": "print('adiós')",
+    })
+    assert "editado exitosamente" in res_edit
+
+    contenido = (tmp_path / "app.py").read_text(encoding="utf-8")
+    assert "print('adiós')" in contenido
+    assert "print('hola')" not in contenido
+    assert contenido.count("print('adiós')") == 2
+
+
+def test_edit_file_reemplazo_lineas(tmp_path):
+    """
+    Prueba que edit_file reemplaza un rango de líneas (1-indexado, inclusivo)
+    por el texto de replacement y verifica el contenido resultante en disco.
+    """
+    tools = {t.name: t for t in get_custom_file_tools(str(tmp_path))}
+    write_tool = tools["write_file"]
+    edit_tool = tools["edit_file"]
+
+    contenido_inicial = "linea1\nlinea2\nlinea3\nlinea4\nlinea5\n"
+    res_write = write_tool.invoke({"path": "datos.txt", "content": contenido_inicial})
+    assert "exitosamente" in res_write
+
+    # Reemplazar líneas 2..4 por un bloque nuevo
+    res_edit = edit_tool.invoke({
+        "path": "datos.txt",
+        "line_start": 2,
+        "line_end": 4,
+        "replacement": "NUEVA_A\nNUEVA_B",
+    })
+    assert "editado exitosamente" in res_edit
+
+    contenido = (tmp_path / "datos.txt").read_text(encoding="utf-8")
+    assert contenido == "linea1\nNUEVA_A\nNUEVA_B\nlinea5\n"
+
+    # Eliminar líneas (replacement None): eliminar la línea 2
+    res_edit2 = edit_tool.invoke({
+        "path": "datos.txt",
+        "line_start": 2,
+        "line_end": 2,
+    })
+    assert "editado exitosamente" in res_edit2
+    contenido2 = (tmp_path / "datos.txt").read_text(encoding="utf-8")
+    assert contenido2 == "linea1\nNUEVA_B\nlinea5\n"
+
+
+def test_edit_file_reemplazo_lineas_edge_cases(tmp_path):
+    """
+    Prueba de regresión para los casos borde del modo de reemplazo por líneas:
+    (a) replacement que termina en '\n' no debe generar doble salto de línea.
+    (b) replacement None (eliminar líneas) debe concatenar limpiamente sin salto fantasma.
+    (c) reemplazo de la última línea no debe agregar salto de línea extra al final.
+    """
+    tools = {t.name: t for t in get_custom_file_tools(str(tmp_path))}
+    write_tool = tools["write_file"]
+    edit_tool = tools["edit_file"]
+
+    # (a) replacement termina en '\n' → sin doble salto de línea
+    res_write = write_tool.invoke({"path": "a.txt", "content": "linea1\nlinea2\nlinea3\nlinea4\nlinea5\n"})
+    assert "exitosamente" in res_write
+    res_edit = edit_tool.invoke({
+        "path": "a.txt",
+        "line_start": 2,
+        "line_end": 4,
+        "replacement": "NUEVA_A\nNUEVA_B\n",
+    })
+    assert "editado exitosamente" in res_edit
+    assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "linea1\nNUEVA_A\nNUEVA_B\nlinea5\n"
+
+    # (b) replacement None multi-línea → eliminación limpia sin salto fantasma
+    res_write = write_tool.invoke({"path": "b.txt", "content": "linea1\nlinea2\nlinea3\nlinea4\nlinea5\n"})
+    assert "exitosamente" in res_write
+    res_edit = edit_tool.invoke({
+        "path": "b.txt",
+        "line_start": 2,
+        "line_end": 4,
+    })
+    assert "editado exitosamente" in res_edit
+    assert (tmp_path / "b.txt").read_text(encoding="utf-8") == "linea1\nlinea5\n"
+
+    # (c) reemplazo de la última línea → sin salto de línea extra al final
+    res_write = write_tool.invoke({"path": "c.txt", "content": "linea1\nlinea2\nlinea3\n"})
+    assert "exitosamente" in res_write
+    res_edit = edit_tool.invoke({
+        "path": "c.txt",
+        "line_start": 3,
+        "line_end": 3,
+        "replacement": "NUEVA_ULTIMA",
+    })
+    assert "editado exitosamente" in res_edit
+    assert (tmp_path / "c.txt").read_text(encoding="utf-8") == "linea1\nlinea2\nNUEVA_ULTIMA"
+
+
+def test_edit_file_errores(tmp_path):
+    """
+    Prueba los casos de error de edit_file: archivo inexistente, old_text no
+    encontrado, line_start fuera de rango y parámetros faltantes.
+    """
+    tools = {t.name: t for t in get_custom_file_tools(str(tmp_path))}
+    write_tool = tools["write_file"]
+    edit_tool = tools["edit_file"]
+
+    # 1. Archivo inexistente
+    res = edit_tool.invoke({"path": "no_existe.txt", "old_text": "x", "new_text": "y"})
+    assert "Error" in res
+    assert "no existe" in res
+
+    # 2. old_text no encontrado
+    write_tool.invoke({"path": "existe.txt", "content": "contenido original\n"})
+    res = edit_tool.invoke({"path": "existe.txt", "old_text": "texto_que_no_esta", "new_text": "y"})
+    assert "Error" in res
+    assert "No se encontró el texto a reemplazar" in res
+
+    # 3. line_start fuera de rango (mayor que el número de líneas)
+    res = edit_tool.invoke({"path": "existe.txt", "line_start": 99, "line_end": 100, "replacement": "z"})
+    assert "Error" in res
+
+    # 4. Parámetros faltantes: sin ruta
+    res = edit_tool.invoke({"old_text": "x", "new_text": "y"})
+    assert "Error" in res
+
+    # 5. Parámetros faltantes: old_text sin new_text
+    res = edit_tool.invoke({"path": "existe.txt", "old_text": "contenido"})
+    assert "Error" in res
+
+    # 6. Parámetros faltantes: sin old_text ni line_start
+    res = edit_tool.invoke({"path": "existe.txt", "new_text": "y"})
+    assert "Error" in res

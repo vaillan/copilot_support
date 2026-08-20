@@ -19,6 +19,48 @@ class CodigoCompletado(BaseModel):
     """Llama a esta herramienta EXCLUSIVAMENTE cuando hayas terminado de programar todos los pasos del plan."""
     resumen_cambios: str = Field(description="Resumen detallado de los archivos que creaste o modificaste.")
 
+# Conjunto de herramientas que realizan una escritura física en disco.
+herramientas_modificacion = {"write_file", "edit_file", "copy_file", "move_file", "file_delete"}
+
+# Cadenas de confirmación de éxito que devuelven las herramientas de escritura en disco.
+_confirmaciones_exito = (
+    "escrito exitosamente",
+    "editado exitosamente",
+    "eliminado exitosamente",
+    "Copiado de",
+    "Movido de",
+)
+
+
+def _hubo_escritura_exitosa(msgs, respuesta) -> bool:
+    """
+    Determina si se ha realizado (o al menos invocado) una escritura física en disco.
+
+    Retorna True si:
+      (a) algún AIMessage en `msgs` o en `respuesta.tool_calls` invoca una herramienta
+          del conjunto `herramientas_modificacion`; O
+      (b) algún ToolMessage en `msgs` contiene una cadena de confirmación de éxito
+          en disco (p.ej. 'escrito exitosamente', 'editado exitosamente', 'Copiado de').
+    """
+    # (a) Herramienta de modificación invocada en el historial o en la respuesta actual
+    for m in msgs:
+        if isinstance(m, AIMessage) and m.tool_calls:
+            if any(tc.get("name") in herramientas_modificacion for tc in m.tool_calls):
+                return True
+    if respuesta.tool_calls:
+        if any(tc.get("name") in herramientas_modificacion for tc in respuesta.tool_calls):
+            return True
+
+    # (b) Confirmación de éxito en disco en ToolMessages del historial
+    for m in msgs:
+        if isinstance(m, ToolMessage):
+            content = m.content or ""
+            if any(kw in content for kw in _confirmaciones_exito):
+                return True
+
+    return False
+
+
 @lru_cache(maxsize=10)
 def _get_tools(directorio: str):
     return get_custom_file_tools(directorio)
@@ -84,27 +126,14 @@ def agente_codificador(state: ProjectState) -> Command:
     respuesta = llm_con_herramientas.invoke(prompt)
     
     if respuesta.tool_calls:
-        # Verificar si se ha llamado a alguna herramienta de modificación de archivos
-        # en el historial o en los tool_calls actuales (write_file, copy_file, move_file, file_delete)
-        herramientas_modificacion = {"write_file", "copy_file", "move_file", "file_delete"}
-        has_written_files = False
-        for m in msgs:
-            if isinstance(m, AIMessage) and m.tool_calls:
-                for tc in m.tool_calls:
-                    if tc.get("name") in herramientas_modificacion:
-                        has_written_files = True
-                        break
-            if has_written_files:
-                break
-        for tc in respuesta.tool_calls:
-            if tc.get("name") in herramientas_modificacion:
-                has_written_files = True
-                break
+        # Verificar si se ha realizado una escritura física en disco (herramienta de
+        # modificación invocada o confirmación de éxito en un ToolMessage del historial).
+        has_written_files = _hubo_escritura_exitosa(msgs, respuesta)
 
         for tool_call in respuesta.tool_calls:
             if tool_call["name"] == "CodigoCompletado":
                 if not has_written_files:
-                    msg_error = "Error: No has modificado ni creado ningún archivo usando las herramientas de escritura (write_file, copy_file, move_file, file_delete). Debes escribir el código correspondiente antes de llamar a 'CodigoCompletado'."
+                    msg_error = "Error: No has modificado ni creado ningún archivo usando las herramientas de escritura (write_file, edit_file, copy_file, move_file, file_delete). Debes escribir el código correspondiente antes de llamar a 'CodigoCompletado'."
                     return Command(
                         update={
                             "messages": [respuesta, HumanMessage(content=msg_error)],
