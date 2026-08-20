@@ -33,3 +33,10 @@ class Settings(BaseSettings):
 
     LLM_REQUESTS_PER_SECOND: float = float(os.getenv("LLM_REQUESTS_PER_SECOND", "0.0"))
     LLM_CHECKS_PER_SECOND: float = float(os.getenv("LLM_CHECKS_PER_SECOND", "10.0"))
+
+    # ==========================================
+    # Índice de Proyecto (Optimización de Tokens)
+    # ==========================================
+    PROJECT_INDEX_ENABLED: bool = os.getenv("PROJECT_INDEX_ENABLED", "true").lower() in ("true", "1", "yes")
+    PROJECT_INDEX_MAX_TOKENS_PER_FILE: int = int(os.getenv("PROJECT_INDEX_MAX_TOKENS_PER_FILE", "400"))
+    PROJECT_INDEX_CACHE_DIR: str = os.getenv("PROJECT_INDEX_CACHE_DIR", ".project_index")

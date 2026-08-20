@@ -36,8 +36,8 @@ def entregar_plan_de_accion(explicacion_arquitectura: str, pasos: List[Paso]) ->
 def _get_tools(directorio: str):
     todas = get_custom_file_tools(directorio)
     herramientas_lectura = [
-        t for t in todas 
-        if t.name in ["read_file", "list_directory"]
+        t for t in todas
+        if t.name in ["read_file", "list_directory", "get_project_index", "read_file_summary"]
     ]
     
     searx = DuckDuckGoSearchAPIWrapper(max_results=2)
@@ -69,6 +69,16 @@ def agente_planificador(state: ProjectState) -> Command:
     llm_con_herramientas = llm.bind_tools(herramientas_investigacion + [entregar_plan_de_accion])
     
     prompt_sistema = fileSystem.get_file_content(file_name="planificador_prompt.md")
+    
+    # Inyectar el índice del proyecto si está disponible en el estado (optimización de tokens)
+    project_index = state.get("project_index")
+    if project_index and isinstance(project_index, dict):
+        from app.utils.project_index import formatear_indice_para_prompt
+        indice_texto = formatear_indice_para_prompt(project_index)
+        prompt_sistema += (
+            "\n\n=== ÍNDICE DEL PROYECTO (proporcionado, NO necesitas explorar todo) ===\n"
+            f"{indice_texto}"
+        )
     
     prompt_template = ChatPromptTemplate.from_messages([
         ("system", prompt_sistema),

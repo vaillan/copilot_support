@@ -6,3 +6,5 @@ venv/
 __pycache__
 .vscode/
 media/
+.project_index.json
+.project_index/

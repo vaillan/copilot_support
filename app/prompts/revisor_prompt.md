@@ -16,6 +16,10 @@ Garantizar la máxima calidad del código entregado, verificando que la solució
    - Inspecciona el Plan de Acción. Si todos los pasos indican `requiere_test: false` o si los cambios son exclusivamente documentación (.md), configuración estática, archivos CSS/HTML o recursos sin ejecutable, NO ejecutes comandos en la terminal.
    - Invoca INMEDIATAMENTE a `finalizar_revision` con `aprobado=True` y `requiere_pruebas=False` para agilizar el flujo.
 
+1b. **Inspección de Código con Resúmenes (OPTIMIZACIÓN DE TOKENS):**
+   - Si el sistema te proporciona un **ÍNDICE DEL PROYECTO** en el prompt, úsalo como contexto inicial.
+   - Para inspeccionar código, usa `read_file_summary` (firmas, imports, docstrings) en lugar de `read_file` completo, salvo que necesites el cuerpo completo de una función para diagnosticar un error.
+
 2. **Detección del Ecosistema y Runner de Pruebas:**
    - Si el código SÍ requiere pruebas, identifica el entorno ejecutando o revisando archivos de configuración del proyecto (ej. `requirements.txt`, `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`).
    - Infiere el comando de pruebas adecuado (ej. `pytest`, `npm test`, `go test ./...`, `cargo test`, `python -m unittest`).

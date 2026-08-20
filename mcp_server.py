@@ -17,6 +17,8 @@ from fastmcp import FastMCP, Context
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from app.main import crear_grafo
+from app.utils.project_index import construir_indice
+from app.settings.settings import Settings
 
 
 mcp = FastMCP("AIDevTeam")
@@ -361,9 +363,19 @@ async def delegar_tarea_a_equipo_ia(
             msg_planificador = f"🏗️ Iniciando Agente Planificador (Arquitecto) para '{instruccion_corta}...'..."
             await notificar_progreso(ctx, msg_planificador, 20, 100)
             _log_stderr(f"[MCP] Nueva tarea '{tarea_id}': iniciando Planificador")
+            # Construir el índice del proyecto para optimizar tokens (si está habilitado)
+            project_index = None
+            try:
+                settings_mcp = Settings()
+                if getattr(settings_mcp, "PROJECT_INDEX_ENABLED", True):
+                    project_index = construir_indice(directorio_proyecto)
+            except Exception:
+                project_index = None
+
             estado_inicial = {
                 "instruccion_usuario": instruccion,
                 "directorio_proyecto": directorio_proyecto,
+                "project_index": project_index,
                 "messages": [HumanMessage(content=instruccion)],
                 "revision_count": 0,
                 "loop_counter": 0

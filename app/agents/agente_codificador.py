@@ -46,6 +46,16 @@ def agente_codificador(state: ProjectState) -> Command:
     revision_count = state.get("revision_count", 0)
     prompt_sistema = fileSystem.get_file_content(file_name="codificador_prompt.md")
     
+    # Inyectar el índice del proyecto si está disponible en el estado (optimización de tokens)
+    project_index = state.get("project_index")
+    if project_index and isinstance(project_index, dict):
+        from app.utils.project_index import formatear_indice_para_prompt
+        indice_texto = formatear_indice_para_prompt(project_index)
+        prompt_sistema += (
+            "\n\n=== ÍNDICE DEL PROYECTO (proporcionado, usa read_file_summary para detalles) ===\n"
+            f"{indice_texto}"
+        )
+    
     if errores:
         prompt_sistema += (
             f"\n\n ATENCIÓN: Tu código anterior falló las pruebas (Intento de revisión #{revision_count}). "
@@ -66,8 +76,8 @@ def agente_codificador(state: ProjectState) -> Command:
         mensajes_contexto = list(mensajes_contexto) + [HumanMessage(content="Continúa programando según el plan.")]
 
     prompt = prompt_template.invoke({
-        "messages": mensajes_contexto, 
-        "directorio": directorio, 
+        "messages": mensajes_contexto,
+        "directorio": directorio,
         "plan": plan
     })
     respuesta = llm_con_herramientas.invoke(prompt)

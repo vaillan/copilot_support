@@ -48,10 +48,32 @@ graph TD
 ```
 
 ### Gestión de Estado, Enrutamiento Dinámico y Optimización de Contexto
-- **Estado del Proyecto (`ProjectState`)**: Hereda de `MessagesState` de LangGraph, lo que permite la gestión automática del historial de mensajes (`messages`) entre los agentes y el usuario, además de mantener variables de estado globales como el plan de acción, los errores de terminal, y contadores de control (`loop_counter`, `revision_count`).
+- **Estado del Proyecto (`ProjectState`)**: Hereda de `MessagesState` de LangGraph, lo que permite la gestión automática del historial de mensajes (`messages`) entre los agentes y el usuario, además de mantener variables de estado globales como el plan de acción, los errores de terminal, contadores de control (`loop_counter`, `revision_count`) y el **índice del proyecto** (`project_index`).
 - **Control de Flujo (`Command`)**: Se utiliza el objeto `Command` de LangGraph para el enrutamiento dinámico. Esto permite a cada agente decidir de manera autónoma cuál es el siguiente nodo a ejecutar (por ejemplo, ir a su nodo de herramientas, avanzar al siguiente agente o terminar el proceso) y actualizar el estado global de forma explícita.
 - **Aristas Explícitas**: El grafo utiliza aristas explícitas para conectar los nodos de herramientas de vuelta a sus agentes correspondientes, asegurando un flujo de ejecución predecible y robusto.
 - **Resumen Automático de Contexto (`app/utils/summarization.py`)**: Para prevenir el desbordamiento de la ventana de contexto de los modelos LLM en conversaciones largas o iterativas, se implementa la función `aplicar_resumen_middleware` utilizando `SummarizationMiddleware` de LangChain. Este componente evalúa el historial de mensajes antes de cada invocación al LLM y, al superar un umbral configurable (`trigger_count=15`), resume automáticamente los mensajes más antiguos conservando los últimos mensajes recientes (`keep_count=8`), asegurando una alta eficiencia de tokens en los agentes `agente_planificador`, `agente_codificador` y `agente_revisor`.
+
+### 🧠 Índice de Proyecto con Caché Incremental (Optimización de Tokens)
+
+Para evitar que los agentes lean el proyecto completo en cada implementación, el sistema construye un **Índice de Proyecto** (`app/utils/project_index.py`) que representa de forma compacta la estructura de directorios y los resúmenes de archivos (firmas, imports, docstrings, claves de configuración).
+
+**Cómo funciona:**
+1. Al iniciar una tarea nueva, `mcp_server.py` construye el índice del proyecto y lo inyecta en el estado (`project_index`).
+2. El índice se **persiste en disco** (`.project_index.json`) y se **invalida incrementalmente** mediante hashes de contenido (`sha256` + `mtime` + tamaño), de modo que solo se recalculan los archivos que realmente cambiaron.
+3. Los agentes usan el índice como contexto inicial en lugar de explorar con `list_directory` + `read_file` repetidamente.
+
+**Nuevas herramientas:**
+- `get_project_index`: Devuelve el índice completo del proyecto (estructura + resúmenes). El Planificador la llama UNA vez al inicio.
+- `read_file_summary`: Devuelve SOLO el resumen de un archivo (firmas, imports, docstrings) en lugar del contenido completo. El Codificador y Revisor la usan para inspección.
+
+**Configuración (`.env`):**
+```env
+PROJECT_INDEX_ENABLED="true"
+PROJECT_INDEX_MAX_TOKENS_PER_FILE="400"
+PROJECT_INDEX_CACHE_DIR=".project_index"
+```
+
+**Beneficio:** La exploración del Planificador pasa de decenas de `read_file` a 1 llamada `get_project_index`, y el Codificador/Revisor reducen cada lectura completa a un resumen de ~400 tokens, con caché persistente entre tareas.
 
 ---
 
@@ -232,6 +254,7 @@ El script `./run_tests.sh` automatiza la ejecución de toda la suite de pruebas 
 │   │   └── __init__.py
 │   └── utils/              # Utilidades auxiliares
 │       ├── files.py
+│       ├── project_index.py # Índice de proyecto con caché incremental (optimización de tokens)
 │       └── summarization.py # Utilidad de resumen automático de contexto
 │   └── main.py             # Orquestador principal del Grafo (StateGraph)
 └── tests/                  # Suite de pruebas automatizadas
@@ -242,6 +265,7 @@ El script `./run_tests.sh` automatiza la ejecución de toda la suite de pruebas 
     ├── test_integration.py # Pruebas de integración LangGraph
     ├── test_llm_factory.py # Pruebas de la factoría de LLMs
     ├── test_mcp_server.py  # Pruebas del servidor MCP
+    ├── test_project_index.py # Pruebas del índice de proyecto
     ├── test_summarization.py # Pruebas unitarias de resumen de contexto
     └── test_tool_nodes.py  # Pruebas de nodos de herramientas
 ```
@@ -296,6 +320,13 @@ REVIEWER_API_KEY="tu_openrouter_api_key"
 # ==========================================
 MCP_AUTO_APPROVE="true"
 MCP_TASK_TIMEOUT_SECONDS="300"
+
+# ==========================================
+# Índice de Proyecto (Optimización de Tokens)
+# ==========================================
+PROJECT_INDEX_ENABLED="true"
+PROJECT_INDEX_MAX_TOKENS_PER_FILE="400"
+PROJECT_INDEX_CACHE_DIR=".project_index"
 ```
 
 ---

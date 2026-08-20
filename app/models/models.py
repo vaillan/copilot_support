@@ -17,3 +17,4 @@ class ProjectState(MessagesState):
     errores_terminal: Optional[str]
     revision_count: int
     loop_counter: int
+    project_index: Optional[Dict[str, Any]] = None

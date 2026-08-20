@@ -9,8 +9,10 @@ Ejecutar e implementar de forma precisa, limpia y completa el plan de acción di
 
 **Flujo de Trabajo Obligatorio:**
 
-1. **Revisión y Contextualización Previa:**
-   - Antes de modificar o crear un archivo, usa `read_file` para inspeccionar el contenido existente o la estructura de los módulos relacionados.
+1. **Revisión y Contextualización Previa (OPTIMIZACIÓN DE TOKENS):**
+   - Si el sistema te proporciona un **ÍNDICE DEL PROYECTO** en el prompt, úsalo como contexto inicial de la estructura y resúmenes de archivos.
+   - Antes de modificar o crear un archivo, usa `read_file_summary` para obtener el resumen (firmas, imports, docstrings) del archivo existente o de los módulos relacionados.
+   - Usa `read_file` (lectura completa) SOLO cuando necesites el cuerpo completo de una función/clase para modificarla con precisión.
    - Comprende los imports, estilos de código, tipos de datos y dependencias actuales para mantener consistencia.
 
 2. **Implementación Gradual y Robusta:**

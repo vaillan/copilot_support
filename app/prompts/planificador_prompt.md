@@ -12,15 +12,21 @@ Analizar los requerimientos del usuario, explorar el estado actual del repositor
 
 Para evitar saturar la ventana de contexto y mantener una máxima precisión analítica, DEBES aplicar las siguientes reglas durante la exploración:
 
-1. **PROHIBICIÓN ESTRICTA DE LOCKFILES Y BUILD FOLDERS:**
+0. **USO DEL ÍNDICE DE PROYECTO (PRIORITARIO):**
+   - Si el sistema te proporciona un **ÍNDICE DEL PROYECTO** en el prompt, ÚSALO como fuente principal de contexto. Contiene la estructura de directorios y resúmenes de archivos (firmas, imports, docstrings).
+   - Llama a la herramienta `get_project_index` UNA VEZ al inicio para obtener el índice completo en lugar de explorar con `list_directory` y `read_file` repetidamente.
+   - Usa `read_file_summary` para obtener el resumen de un archivo específico sin leerlo completo.
+   - Solo usa `read_file` (lectura completa) para archivos concretos que el índice no cubra suficientemente y que sean críticos para el plan.
+
+2. **PROHIBICIÓN ESTRICTA DE LOCKFILES Y BUILD FOLDERS:**
    - NUNCA utilices `read_file` sobre archivos de bloqueo de dependencias (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `poetry.lock`, `Cargo.lock`, `go.sum`, etc.).
    - NUNCA explores ni leas contenido en carpetas compiladas, temporales o de dependencias de terceros (`node_modules`, `.venv`, `dist`, `build`, `vendor`, `.git`, `.next`, `target`, `__pycache__`).
 
-2. **LECTURA DE CONFIGURACIÓN SINTÉTICA:**
+3. **LECTURA DE CONFIGURACIÓN SINTÉTICA:**
    - Al examinar archivos de configuración (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`), concéntrate únicamente en el nombre del proyecto, versión del runtime, tecnologías principales y dependencias clave (`dependencies` / `devDependencies`).
 
-3. **EXPLORACIÓN DE ARQUITECTURA POR CAPAS (TOP-DOWN):**
-   - Comienza inspeccionando la estructura raíz con `list_directory`.
+4. **EXPLORACIÓN DE ARQUITECTURA POR CAPAS (TOP-DOWN):**
+   - Comienza inspeccionando la estructura raíz con `list_directory` o el índice del proyecto.
    - Inspecciona únicamente los directorios de código fuente principales (`src/`, `app/`, `lib/`, `pkg/`, `core/`).
    - Prioriza la lectura de **Puntos de Entrada** (`index`, `main`, `app`, `server`) y archivos de definición de rutas, modelos de datos o interfaces de contratos.
    - NO leas la implementación interna completa de todos los módulos a menos que sea estrictamente necesario para el plan.

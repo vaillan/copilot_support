@@ -3,6 +3,11 @@ import os
 import shutil
 from typing import Optional
 from langchain_core.tools import tool
+from app.utils.project_index import (
+    construir_indice,
+    obtener_resumen_archivo,
+    formatear_indice_para_prompt,
+)
 
 class File:
     """
@@ -165,4 +170,39 @@ def get_custom_file_tools(directorio: str):
         except Exception as e:
             return f"Error al mover archivo: {str(e)}"
 
-    return [write_file, read_file, list_directory, file_delete, copy_file, move_file]
+
+    @tool
+    def get_project_index() -> str:
+        """
+        Obtiene el Índice de Proyecto: una representación compacta de la estructura
+        de directorios y resúmenes de archivos (firmas, imports, docstrings).
+        LLAMA A ESTA HERRAMIENTA UNA VEZ AL INICIO en lugar de explorar con
+        'list_directory' y 'read_file' repetidamente. Ahorra tokens.
+        """
+        try:
+            indice = construir_indice(directorio)
+            return formatear_indice_para_prompt(indice)
+        except Exception as e:
+            return f"Error al construir el índice del proyecto: {str(e)}"
+
+
+    @tool
+    def read_file_summary(file_path: Optional[str] = None, path: Optional[str] = None) -> str:
+        """
+        Lee SOLO el resumen de un archivo (firmas, imports, docstrings, claves)
+        en lugar del contenido completo. ÚSALA para inspeccionar archivos antes de
+        modificarlos o validarlos, ahorrando tokens. Soporta alias ('file_path' o 'path').
+        """
+        ruta_relativa = file_path or path
+        if not ruta_relativa:
+            return "Error: Debes proporcionar una ruta de archivo ('file_path' o 'path')."
+        try:
+            resumen = obtener_resumen_archivo(directorio, ruta_relativa)
+            if resumen.get("error"):
+                return resumen.get("resumen", "Error al obtener el resumen.")
+            return f"📄 RESUMEN DE '{ruta_relativa}':\n{resumen.get('resumen', 'Sin resumen disponible.')}"
+        except Exception as e:
+            return f"Error al obtener el resumen de '{ruta_relativa}': {str(e)}"
+
+
+    return [write_file, read_file, list_directory, file_delete, copy_file, move_file, get_project_index, read_file_summary]
