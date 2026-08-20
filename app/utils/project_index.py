@@ -362,6 +362,9 @@ def _recorrer_arbol(
     """
     Recorre el árbol de directorios construyendo el índice.
     Usa el índice existente para no recalcular archivos sin cambios.
+
+    Optimización: primero compara mtime + tamaño contra el índice previo;
+    solo calcula sha256 (vía `_hash_archivo`) cuando mtime/tamaño cambiaron.
     """
     resumenes: Dict[str, Any] = {}
     arbol: Dict[str, Any] = {}
@@ -385,13 +388,33 @@ def _recorrer_arbol(
                 _walk(entrada, hijos)
             elif entrada.is_file() and _es_archivo_indexable(entrada):
                 rel = str(entrada.relative_to(directorio)).replace("\\", "/")
-                info_hash = _hash_archivo(entrada)
-
-                # Reutilizar resumen si el archivo no cambió
                 previo = resumenes_previos.get(rel)
-                if previo and previo.get("hash") == info_hash["hash"] and previo.get("mtime") == info_hash["mtime"]:
+
+                # 1) Comparación barata: mtime + tamaño contra el índice previo.
+                #    Si coinciden, el archivo NO cambió: reutilizamos el resumen
+                #    sin leer el contenido ni calcular sha256.
+                try:
+                    stat = entrada.stat()
+                    mtime_actual = int(stat.st_mtime)
+                    tamano_actual = stat.st_size
+                except Exception:
+                    mtime_actual = 0
+                    tamano_actual = 0
+
+                if (
+                    previo
+                    and previo.get("mtime") == mtime_actual
+                    and previo.get("tamano") == tamano_actual
+                ):
                     resumen = previo
+                    info_hash = {
+                        "hash": previo.get("hash", ""),
+                        "mtime": mtime_actual,
+                        "tamano": tamano_actual,
+                    }
                 else:
+                    # 2) Solo aquí calculamos sha256 (lectura completa del archivo)
+                    info_hash = _hash_archivo(entrada)
                     resumen = resumir_archivo(entrada, max_tokens_por_archivo)
                     resumen.update(info_hash)
 
@@ -558,10 +581,20 @@ def obtener_resumen_archivo(
     return resumen
 
 
-def formatear_indice_para_prompt(indice: Dict[str, Any], max_archivos: int = 60) -> str:
+def formatear_indice_para_prompt(
+    indice: Dict[str, Any],
+    max_archivos: int = 25,
+    archivos_relevantes: Optional[List[str]] = None,
+) -> str:
     """
     Formatea el índice como texto compacto para inyectar en el prompt del LLM.
     Incluye el árbol de directorios y los resúmenes de los archivos más relevantes.
+
+    Args:
+        indice: Índice del proyecto (dict con 'arbol' y 'resumenes').
+        max_archivos: Máximo de resúmenes de archivos a incluir (default 25).
+        archivos_relevantes: Lista opcional de rutas relativas. Si se pasa,
+            solo se incluyen esos archivos, priorizándolos en el orden dado.
     """
     if not indice or not isinstance(indice, dict):
         return "Índice de proyecto no disponible."
@@ -587,12 +620,16 @@ def formatear_indice_para_prompt(indice: Dict[str, Any], max_archivos: int = 60)
     # Resúmenes de archivos (limitado)
     if resumenes:
         lineas.append("\n📄 RESUMENES DE ARCHIVOS:")
-        archivos = sorted(resumenes.keys())
+        if archivos_relevantes:
+            # Filtrar solo los archivos relevantes, priorizándolos en el orden dado
+            archivos = [rel for rel in archivos_relevantes if rel in resumenes]
+        else:
+            archivos = sorted(resumenes.keys())
         for rel in archivos[:max_archivos]:
             info = resumenes[rel]
             resumen = info.get("resumen", "")
             if resumen:
                 lineas.append(f"\n### {rel}")
-                lineas.append(resumen[:600])
+                lineas.append(resumen[:400])
 
     return "\n".join(lineas)

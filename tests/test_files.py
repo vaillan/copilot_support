@@ -245,3 +245,33 @@ def test_edit_file_errores(tmp_path):
     # 6. Parámetros faltantes: sin old_text ni line_start
     res = edit_tool.invoke({"path": "existe.txt", "new_text": "y"})
     assert "Error" in res
+
+
+def test_read_file_truncado_por_max_lines(tmp_path):
+    """
+    Prueba que read_file trunca el contenido a las primeras N líneas cuando
+    se pasa 'max_lines', añadiendo el marcador de truncado al final.
+    """
+    tools = {t.name: t for t in get_custom_file_tools(str(tmp_path))}
+    read_tool = tools["read_file"]
+
+    contenido = "\n".join(f"linea_{i}" for i in range(1, 11)) + "\n"
+    (tmp_path / "largo.txt").write_text(contenido, encoding="utf-8")
+
+    # Sin max_lines: devuelve todo el contenido
+    res_completo = read_tool.invoke({"file_path": "largo.txt"})
+    assert "linea_10" in res_completo
+    assert "truncado" not in res_completo
+
+    # Con max_lines=3: trunca a las primeras 3 líneas
+    res_truncado = read_tool.invoke({"file_path": "largo.txt", "max_lines": 3})
+    assert "linea_1" in res_truncado
+    assert "linea_2" in res_truncado
+    assert "linea_3" in res_truncado
+    assert "linea_4" not in res_truncado
+    assert "[...truncado a 3 líneas]" in res_truncado
+
+    # max_lines mayor que el número de líneas: no trunca
+    res_sin_truncar = read_tool.invoke({"file_path": "largo.txt", "max_lines": 100})
+    assert "linea_10" in res_sin_truncar
+    assert "truncado" not in res_sin_truncar

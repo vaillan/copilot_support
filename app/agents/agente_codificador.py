@@ -12,6 +12,7 @@ from app.models.llm_factory import get_coder_llm
 from app.utils.summarization import aplicar_resumen_middleware
 from app.utils.prompt_utils import escapar_llaves
 from functools import lru_cache
+from app.utils.args_utils import _get_args
 
 fileSystem = File(directory="prompts")
 
@@ -142,7 +143,7 @@ def agente_codificador(state: ProjectState) -> Command:
                         goto="agente_codificador"
                     )
 
-                resumen = tool_call["args"].get("resumen_cambios", "Código completado.")
+                resumen = _get_args(tool_call).get("resumen_cambios", "Código completado.")
                 
                 tool_messages = []
                 for tc in respuesta.tool_calls:

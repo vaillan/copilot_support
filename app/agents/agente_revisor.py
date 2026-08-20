@@ -16,6 +16,7 @@ from app.utils.files import File, get_custom_file_tools
 from app.utils.prompt_utils import escapar_llaves
 from app.settings.settings import Settings
 from functools import lru_cache
+from app.utils.args_utils import _get_args
 
 settings = Settings()
 fileSystem = File(directory="prompts")
@@ -198,9 +199,10 @@ def agente_revisor(state: ProjectState) -> Command:
 
         for tool_call in respuesta.tool_calls:
             if tool_call["name"] == "finalizar_revision":
-                aprobado = tool_call["args"].get("aprobado", False)
-                requiere_pruebas = tool_call["args"].get("requiere_pruebas", True)
-                errores = tool_call["args"].get("reporte_errores", "")
+                args_revision = _get_args(tool_call)
+                aprobado = args_revision.get("aprobado", False)
+                requiere_pruebas = args_revision.get("requiere_pruebas", True)
+                errores = args_revision.get("reporte_errores", "")
                 
                 tool_messages = [
                     ToolMessage(

@@ -14,6 +14,7 @@ from app.utils.files import File, get_custom_file_tools
 from app.utils.summarization import aplicar_resumen_middleware
 from app.utils.prompt_utils import escapar_llaves
 from functools import lru_cache
+from app.utils.args_utils import _get_args
 
 fileSystem = File(directory="prompts")
 
@@ -98,7 +99,7 @@ def agente_planificador(state: ProjectState) -> Command:
     if respuesta.tool_calls:
         for tool_call in respuesta.tool_calls:
             if tool_call["name"] == "entregar_plan_de_accion":
-                plan_generado = tool_call["args"]
+                plan_generado = _get_args(tool_call)
                 
                 tool_messages = []
                 for tc in respuesta.tool_calls:

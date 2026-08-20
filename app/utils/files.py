@@ -98,8 +98,9 @@ def get_custom_file_tools(directorio: str):
             return f"Error al editar el archivo '{ruta_relativa}': {str(e)}"
 
     @tool
-    def read_file(file_path: Optional[str] = None, path: Optional[str] = None) -> str:
-        """Lee un archivo en disco y retorna su contenido. Soporta alias ('file_path' o 'path')."""
+    def read_file(file_path: Optional[str] = None, path: Optional[str] = None, max_lines: Optional[int] = 200) -> str:
+        """Lee un archivo en disco y retorna su contenido. Soporta alias ('file_path' o 'path').
+        Si se omite 'max_lines', se truncan las primeras 200 líneas para limitar el costo de tokens."""
         ruta_relativa = file_path or path
         if not ruta_relativa:
             return "Error: Debes proporcionar una ruta de archivo ('file_path' o 'path')."
@@ -108,7 +109,12 @@ def get_custom_file_tools(directorio: str):
             if not ruta_completa.exists():
                 return f"Error: El archivo '{ruta_relativa}' no existe en '{ruta_completa}'."
             with open(ruta_completa, "r", encoding="utf-8") as f:
-                return f.read()
+                lineas = f.readlines()
+            if max_lines is not None and max_lines > 0 and len(lineas) > max_lines:
+                contenido = "".join(lineas[:max_lines])
+                contenido += f"\n[...truncado a {max_lines} líneas]"
+                return contenido
+            return "".join(lineas)
         except Exception as e:
             return f"Error al leer el archivo '{ruta_relativa}': {str(e)}"
 
