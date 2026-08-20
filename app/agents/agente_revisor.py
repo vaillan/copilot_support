@@ -13,6 +13,7 @@ from langgraph.prebuilt import ToolNode
 from app.models.models import ProjectState
 from langchain_core.runnables import RunnableConfig
 from app.utils.files import File, get_custom_file_tools
+from app.utils.prompt_utils import escapar_llaves
 from app.settings.settings import Settings
 from functools import lru_cache
 
@@ -159,7 +160,7 @@ def agente_revisor(state: ProjectState) -> Command:
     project_index = state.get("project_index")
     if project_index and isinstance(project_index, dict):
         from app.utils.project_index import formatear_indice_para_prompt
-        indice_texto = formatear_indice_para_prompt(project_index)
+        indice_texto = escapar_llaves(formatear_indice_para_prompt(project_index))
         prompt_sistema += (
             "\n\n=== ÍNDICE DEL PROYECTO (proporcionado, usa read_file_summary para inspección) ===\n"
             f"{indice_texto}"

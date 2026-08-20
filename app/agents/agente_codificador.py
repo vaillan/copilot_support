@@ -10,6 +10,7 @@ from app.utils.files import File, get_custom_file_tools
 from app.models.models import ProjectState
 from app.models.llm_factory import get_coder_llm
 from app.utils.summarization import aplicar_resumen_middleware
+from app.utils.prompt_utils import escapar_llaves
 from functools import lru_cache
 
 fileSystem = File(directory="prompts")
@@ -50,7 +51,7 @@ def agente_codificador(state: ProjectState) -> Command:
     project_index = state.get("project_index")
     if project_index and isinstance(project_index, dict):
         from app.utils.project_index import formatear_indice_para_prompt
-        indice_texto = formatear_indice_para_prompt(project_index)
+        indice_texto = escapar_llaves(formatear_indice_para_prompt(project_index))
         prompt_sistema += (
             "\n\n=== ÍNDICE DEL PROYECTO (proporcionado, usa read_file_summary para detalles) ===\n"
             f"{indice_texto}"
@@ -59,7 +60,7 @@ def agente_codificador(state: ProjectState) -> Command:
     if errores:
         prompt_sistema += (
             f"\n\n ATENCIÓN: Tu código anterior falló las pruebas (Intento de revisión #{revision_count}). "
-            f"Corrige los siguientes errores:\n{errores}"
+            f"Corrige los siguientes errores:\n{escapar_llaves(errores)}"
         )
         
     prompt_template = ChatPromptTemplate.from_messages([
@@ -83,25 +84,27 @@ def agente_codificador(state: ProjectState) -> Command:
     respuesta = llm_con_herramientas.invoke(prompt)
     
     if respuesta.tool_calls:
-        # Verificar si se ha llamado a write_file en el historial o en los tool_calls actuales
+        # Verificar si se ha llamado a alguna herramienta de modificación de archivos
+        # en el historial o en los tool_calls actuales (write_file, copy_file, move_file, file_delete)
+        herramientas_modificacion = {"write_file", "copy_file", "move_file", "file_delete"}
         has_written_files = False
         for m in msgs:
             if isinstance(m, AIMessage) and m.tool_calls:
                 for tc in m.tool_calls:
-                    if tc.get("name") == "write_file":
+                    if tc.get("name") in herramientas_modificacion:
                         has_written_files = True
                         break
             if has_written_files:
                 break
         for tc in respuesta.tool_calls:
-            if tc.get("name") == "write_file":
+            if tc.get("name") in herramientas_modificacion:
                 has_written_files = True
                 break
 
         for tool_call in respuesta.tool_calls:
             if tool_call["name"] == "CodigoCompletado":
                 if not has_written_files:
-                    msg_error = "Error: No hast modificado ni creado ningún archivo usando la herramienta 'write_file'. Debes escribir el código correspondiente antes de llamar a 'CodigoCompletado'."
+                    msg_error = "Error: No has modificado ni creado ningún archivo usando las herramientas de escritura (write_file, copy_file, move_file, file_delete). Debes escribir el código correspondiente antes de llamar a 'CodigoCompletado'."
                     return Command(
                         update={
                             "messages": [respuesta, HumanMessage(content=msg_error)],
@@ -144,20 +147,13 @@ def agente_codificador(state: ProjectState) -> Command:
             goto="nodo_herramientas_codificador"
         )
     else:
-        # Si la respuesta es de texto sin herramientas y llevamos 2 o más reintentos, avanzamos a revisión
-        if loop_counter >= 2 and respuesta.content:
-            resumen = str(respuesta.content)[:200]
-            return Command(
-                update={
-                    "codigo_escrito": resumen,
-                    "errores_terminal": "",
-                    "messages": [respuesta],
-                    "loop_counter": 0
-                },
-                goto="agente_revisor"
-            )
-
-        msg = "Debes llamar a una herramienta para escribir código o llamar a CodigoCompletado si ya terminaste."
+        # Respuesta de texto sin tool_calls: SIEMPRE reintentar. Nunca avanzar a revisión
+        # sin haber escrito archivos en disco (evita el bug de "revisión sin código").
+        msg = (
+            "No has llamado a ninguna herramienta. DEBES llamar a una herramienta de escritura "
+            "de archivos (write_file, edit_file, etc.) para implementar el plan, o llamar a "
+            "CodigoCompletado si ya escribiste todos los archivos en disco."
+        )
         return Command(
             update={
                 "messages": [respuesta, HumanMessage(content=msg)],

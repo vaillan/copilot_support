@@ -12,6 +12,7 @@ from app.models.models import ProjectState
 from langchain_core.runnables import RunnableConfig
 from app.utils.files import File, get_custom_file_tools
 from app.utils.summarization import aplicar_resumen_middleware
+from app.utils.prompt_utils import escapar_llaves
 from functools import lru_cache
 
 fileSystem = File(directory="prompts")
@@ -74,7 +75,7 @@ def agente_planificador(state: ProjectState) -> Command:
     project_index = state.get("project_index")
     if project_index and isinstance(project_index, dict):
         from app.utils.project_index import formatear_indice_para_prompt
-        indice_texto = formatear_indice_para_prompt(project_index)
+        indice_texto = escapar_llaves(formatear_indice_para_prompt(project_index))
         prompt_sistema += (
             "\n\n=== ÍNDICE DEL PROYECTO (proporcionado, NO necesitas explorar todo) ===\n"
             f"{indice_texto}"
