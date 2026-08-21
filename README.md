@@ -1,4 +1,4 @@
-# AIDevTeam - Ecosistema de Agentes de Desarrollo IA
+﻿# AIDevTeam - Ecosistema de Agentes de Desarrollo IA
 
 **AIDevTeam** is una plataforma avanzada de agentes autónomos diseñada para automatizar el ciclo de vida del desarrollo de software (SDLC). Utilizando **LangGraph** para la orquestación y el **Model Context Protocol (MCP)** para la interoperabilidad, AIDevTeam permite delegar tareas complejas de programación a un equipo virtual de expertos en IA.
 
@@ -387,6 +387,64 @@ PROJECT_INDEX_CACHE_DIR=".project_index"
 
 ### Integración con Zoo Code
 El archivo `tech-lead-export.yaml` define un "Custom Mode" (Tech Lead) para Zoo Code (y extensiones compatibles), permitiendo que el asistente actúe como gestor de proyectos y delegue el trabajo pesado de codificación al equipo de IA a través del servidor MCP.
+
+### Integración con Claude Code
+
+Claude Code es compatible con este servidor MCP mediante el transporte **stdio** (por defecto). Para configurarlo:
+
+#### 1. Registrar el servidor MCP
+Añade la siguiente configuración al archivo `~/.claude.json` (nivel de usuario) o `.mcp.json` (raíz del proyecto):
+
+```json
+{
+  "mcpServers": {
+    "AIDevTeam": {
+      "command": "python",
+      "args": [
+        "/ruta/a/copilot_support/mcp_server.py"
+      ],
+      "cwd": "/ruta/a/copilot_support",
+      "env": {
+        "LLM_API_KEY": "tu_api_key",
+        "LLM_MODEL": "gemini-2.5-flash-lite",
+        "LLM_PROVIDER": "google",
+        "PLANNER_PROVIDER": "anthropic",
+        "PLANNER_MODEL": "claude-3-5-sonnet",
+        "PLANNER_API_KEY": "tu_anthropic_api_key",
+        "CODER_PROVIDER": "openai",
+        "CODER_MODEL": "gpt-4o",
+        "CODER_API_KEY": "tu_openai_api_key",
+        "REVIEWER_PROVIDER": "openrouter",
+        "REVIEWER_MODEL": "nvidia/nemotron-3-super-120b-a12b:free",
+        "REVIEWER_API_KEY": "tu_openrouter_api_key",
+        "FASTMCP_LOG_LEVEL": "CRITICAL",
+        "MCP_AUTO_APPROVE": "true",
+        "MCP_TASK_TIMEOUT_SECONDS": "300"
+      },
+      "alwaysAllow": [
+        "delegar_tarea_a_equipo_ia"
+      ],
+      "timeout": 600
+    }
+  }
+}
+```
+
+> ⚠️ **Importante**: Configura `cwd` apuntando a la raíz del proyecto. Si el proceso se lanza desde otro directorio, los imports relativos (`app.main`, `app.utils`, etc.) fallarán y recibirás el error `MCP error -32000: Connection closed`.
+
+#### 2. Instalar el modo personalizado “Tech Lead”
+El archivo `tech-lead-export.yaml` usa el formato `customModes` con `source: project`, nativo de Claude Code. Para instalarlo:
+1. Copia el archivo a la carpeta de modos del proyecto:
+   ```
+   .claude/modes/tech-lead-export.yaml
+   ```
+2. Reinicia Claude Code y selecciona el modo **Tech Lead** desde el selector de modos.
+
+#### 3. Verificar el entorno
+1. Instala las dependencias: `pip install -r requirements.txt`
+2. Configura las variables de entorno en tu `.env`
+3. Ejecuta `python mcp_server.py` para confirmar que el servidor arranca sin errores
+4. En Claude Code, usa el comando `/mcp` para verificar que el servidor `AIDevTeam` aparece conectado.
 
 ---
 
