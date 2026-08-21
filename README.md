@@ -59,8 +59,9 @@ Para evitar que los agentes lean el proyecto completo en cada implementación, e
 
 **Cómo funciona:**
 1. Al iniciar una tarea nueva, `mcp_server.py` construye el índice del proyecto y lo inyecta en el estado (`project_index`).
-2. El índice se **persiste en disco** (`.project_index.json`) y se **invalida incrementalmente** mediante hashes de contenido (`sha256` + `mtime` + tamaño), de modo que solo se recalculan los archivos que realmente cambiaron.
+2. El índice se **persiste en disco** en `<proyecto>/.project_index/.project_index.json` (ubicación configurable mediante `PROJECT_INDEX_CACHE_DIR`) y se **invalida incrementalmente** mediante una firma compuesta por `mtime_ns` (nanosegundos, para detectar cambios dentro del mismo segundo) + tamaño + `sha256`, de modo que solo se recalculan los archivos que realmente cambiaron.
 3. Los agentes usan el índice como contexto inicial en lugar de explorar con `list_directory` + `read_file` repetidamente.
+4. **Refresco automático tras escritura**: cada vez que el `nodo_herramientas_codificador` ejecuta las herramientas de escritura del Agente Codificador (`write_file`, `edit_file`, `copy_file`, `move_file`, `file_delete`), el índice se **refresca automáticamente** llamando a `actualizar_indice_incremental(directorio, project_index)` y la versión actualizada se fusiona de vuelta en el estado (`project_index`), garantizando que los agentes posteriores trabajen siempre con un índice coherente con el disco.
 
 **Nuevas herramientas:**
 - `get_project_index`: Devuelve el índice completo del proyecto (estructura + resúmenes). El Planificador la llama UNA vez al inicio.

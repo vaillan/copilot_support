@@ -1,3 +1,5 @@
+import json
+import os
 from pathlib import Path
 
 from app.utils.project_index import (
@@ -95,7 +97,7 @@ def test_cargar_y_guardar_indice(tmp_path):
     indice = construir_indice(str(proyecto), usar_cache=False)
 
     guardar_indice(str(proyecto), indice)
-    assert (proyecto / INDEX_FILENAME).exists()
+    assert (proyecto / ".project_index" / INDEX_FILENAME).exists()
 
     cargado = cargar_indice(str(proyecto))
     assert cargado is not None
@@ -172,4 +174,62 @@ def test_hash_archivo(tmp_path):
     info = _hash_archivo(archivo)
     assert info["hash"]
     assert info["mtime"] > 0
+    assert info["mtime_ns"] > 0
     assert info["tamano"] > 0
+
+
+def test_indice_detecta_cambio_mismo_segundo(tmp_path):
+    """Test que detecta cambios de contenido dentro del mismo segundo (mtime_ns)."""
+    proyecto = _crear(tmp_path)
+    archivo = proyecto / "app" / "main.py"
+
+    contenido_a = '"""Módulo A."""\n\ndef funcion_a():\n    return "A"\n'
+    contenido_b = '"""Módulo B."""\n\ndef funcion_b():\n    return "B"\n'
+    # Ambos contenidos deben tener el MISMO tamaño para que solo el mtime_ns
+    # (y no el tamaño) revele el cambio.
+    assert len(contenido_a) == len(contenido_b)
+
+    archivo.write_text(contenido_a, encoding="utf-8")
+    indice = construir_indice(str(proyecto), usar_cache=False)
+    assert indice_es_valido(str(proyecto), indice) is True
+
+    # Reescribir con contenido B del mismo tamaño, forzando el MISMO segundo
+    # pero nanosegundos distintos (cambio dentro del mismo segundo).
+    archivo.write_text(contenido_b, encoding="utf-8")
+    t = archivo.stat().st_mtime_ns // 1_000_000_000  # mismo segundo
+    os.utime(archivo, ns=(t * 1_000_000_000 + 1, t * 1_000_000_000 + 1))
+
+    assert indice_es_valido(str(proyecto), indice) is False
+
+    indice_actualizado = actualizar_indice_incremental(str(proyecto), indice)
+    assert "funcion_b" in indice_actualizado["resumenes"]["app/main.py"]["resumen"]
+
+
+def test_obtener_resumen_archivo_path_traversal_prefijo_hermano(tmp_path):
+    """Test que previene path traversal a un directorio hermano cuyo nombre es prefijo del proyecto."""
+    proyecto = _crear(tmp_path)
+    indice = construir_indice(str(proyecto), usar_cache=False)
+
+    # Directorio hermano junto a tmp_path (p.ej. 'proyecto' vs 'proyecto_evil').
+    # El antiguo check con startswith fallaba con este caso de prefijo.
+    hermano = tmp_path.parent / "proyecto_evil"
+    hermano.mkdir()
+    (hermano / "x.py").write_text("print('evil')", encoding="utf-8")
+
+    resumen = obtener_resumen_archivo(str(proyecto), "../proyecto_evil/x.py", indice)
+    assert resumen.get("error") is True
+
+
+def test_cargar_indice_legacy_migracion(tmp_path):
+    """Test que cargar_indice recupera un índice legacy guardado en la raíz del proyecto."""
+    proyecto = _crear(tmp_path)
+    indice = construir_indice(str(proyecto), usar_cache=False)
+
+    # Escribir el índice legacy en la raíz (sin la nueva ubicación .project_index/)
+    ruta_legacy = proyecto / INDEX_FILENAME
+    ruta_legacy.write_text(json.dumps(indice, ensure_ascii=False), encoding="utf-8")
+
+    cargado = cargar_indice(str(proyecto))
+    assert cargado is not None
+    assert cargado["directorio"] == indice["directorio"]
+    assert "app/main.py" in cargado["resumenes"]

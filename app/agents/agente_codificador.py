@@ -143,7 +143,7 @@ def agente_codificador(state: ProjectState) -> Command:
                         goto="agente_codificador"
                     )
 
-                resumen = _get_args(tool_call).get("resumen_cambios", "Código completado.")
+                resumen = _get_args(tool_call).get("resumen_cambios", "Código completado.") # pyright: ignore[reportArgumentType]
                 
                 tool_messages = []
                 for tc in respuesta.tool_calls:
@@ -195,8 +195,29 @@ def agente_codificador(state: ProjectState) -> Command:
 def nodo_herramientas_codificador(state: ProjectState, config: RunnableConfig):
     """
     Ejecuta las herramientas de manejo de archivos utilizando ToolNode de LangGraph.
+
+    Tras la ejecución de las herramientas (que pueden escribir archivos en disco),
+    refresca automáticamente el índice del proyecto si está habilitado
+    (PROJECT_INDEX_ENABLED=true), actualizando la clave 'project_index' del estado
+    para que los agentes posteriores trabajen con un índice coherente.
     """
     directorio = state.get("directorio_proyecto", "./")
     herramientas = _get_tools(directorio)
     nodo = ToolNode(herramientas)
-    return nodo.invoke(state, config=config)
+    resultado = nodo.invoke(state, config=config)
+
+    try:
+        import os
+        from app.settings.settings import Settings
+        from app.utils.project_index import actualizar_indice_incremental
+
+        if Settings().PROJECT_INDEX_ENABLED and os.path.isdir(directorio):
+            indice_actualizado = actualizar_indice_incremental(directorio, state.get("project_index"))
+            if isinstance(resultado, dict):
+                return {**resultado, "project_index": indice_actualizado}
+    except Exception:
+        # Si el refresco del índice falla, devolvemos el resultado original sin
+        # interrumpir el flujo normal de ejecución de las herramientas.
+        pass
+
+    return resultado

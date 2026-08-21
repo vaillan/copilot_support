@@ -15,7 +15,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.settings.settings import Settings
 
@@ -107,7 +107,35 @@ def _hash_archivo(ruta: Path) -> Dict[str, Any]:
             sha = hashlib.sha256(f.read()).hexdigest()
     except Exception:
         sha = ""
-    return {"hash": sha, "mtime": mtime, "tamano": tamano}
+    return {"hash": sha, "mtime": mtime, "mtime_ns": stat.st_mtime_ns, "tamano": tamano}
+
+
+def _leer_contenido_y_hash(ruta: Path) -> Tuple[str, Dict[str, Any]]:
+    """Lee un archivo UNA sola vez en binario y devuelve su contenido + metadatos.
+
+    Evita la doble lectura de disco que ocurría al llamar secuencialmente a
+    `_hash_archivo` (lectura binaria para sha256) y a `resumir_archivo` (que
+    releía el archivo en texto). Aquí se leen los bytes una única vez y se
+    calculan simultáneamente el hash sha256, el mtime (segundos), el mtime_ns
+    (nanosegundos, para detectar cambios dentro del mismo segundo) y el tamaño.
+
+    Returns:
+        Tupla (contenido, info_hash) donde `contenido` es el texto decodificado
+        con utf-8 (errors='replace') e `info_hash` contiene las claves:
+        'hash', 'mtime', 'mtime_ns' y 'tamano'.
+    """
+    with open(ruta, "rb") as f:
+        datos = f.read()
+    stat = ruta.stat()
+    sha = hashlib.sha256(datos).hexdigest()
+    contenido = datos.decode("utf-8", errors="replace")
+    info_hash = {
+        "hash": sha,
+        "mtime": int(stat.st_mtime),
+        "mtime_ns": stat.st_mtime_ns,
+        "tamano": stat.st_size,
+    }
+    return contenido, info_hash
 
 
 def _es_excluido(nombre: str, es_dir: bool) -> bool:
@@ -284,16 +312,23 @@ def _resumir_generico(contenido: str, max_tokens: int) -> Dict[str, Any]:
     return {"resumen": resumen}
 
 
-def resumir_archivo(ruta: Path, max_tokens: int = 400) -> Dict[str, Any]:
+def resumir_archivo(ruta: Path, max_tokens: int = 400, contenido: Optional[str] = None) -> Dict[str, Any]:
     """
     Genera un resumen compacto de un archivo según su extensión.
     Devuelve dict con 'resumen' (texto) y metadatos adicionales.
+
+    Args:
+        ruta: Ruta del archivo a resumir.
+        max_tokens: Límite aproximado de tokens del resumen.
+        contenido: Contenido ya leído del archivo (opcional). Si se pasa,
+            no se vuelve a leer el archivo de disco (evita doble lectura).
     """
     ext = ruta.suffix.lower()
-    try:
-        contenido = ruta.read_text(encoding="utf-8", errors="replace")
-    except Exception:
-        return {"resumen": "[No se pudo leer el archivo]", "error": True}
+    if contenido is None:
+        try:
+            contenido = ruta.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            return {"resumen": "[No se pudo leer el archivo]", "error": True}
 
     if ext == ".py":
         return _resumir_python(contenido, max_tokens)
@@ -307,15 +342,30 @@ def resumir_archivo(ruta: Path, max_tokens: int = 400) -> Dict[str, Any]:
 
 
 def _ruta_cache(directorio: str) -> Path:
-    """Devuelve la ruta del archivo de caché del índice."""
-    return Path(directorio) / INDEX_FILENAME
+    """Devuelve la ruta del archivo de caché del índice.
+
+    Respeta la configuración PROJECT_INDEX_CACHE_DIR: si está definida,
+    la caché se guarda en <directorio>/<PROJECT_INDEX_CACHE_DIR>/INDEX_FILENAME;
+    en caso contrario, en la raíz del proyecto (comportamiento legacy).
+    """
+    base = Path(directorio)
+    cache_dir = (getattr(settings, "PROJECT_INDEX_CACHE_DIR", "") or "").strip()
+    if cache_dir:
+        return base / cache_dir / INDEX_FILENAME
+    return base / INDEX_FILENAME
 
 
 def cargar_indice(directorio: str) -> Optional[Dict[str, Any]]:
     """Carga el índice cacheado en disco si existe y es válido."""
     ruta = _ruta_cache(directorio)
     if not ruta.exists():
-        return None
+        # Migración transparente: si la nueva ubicación no existe, intentar
+        # la ruta legacy (raíz del proyecto) para cachés antiguas.
+        ruta_legacy = Path(directorio) / INDEX_FILENAME
+        if ruta_legacy != ruta and ruta_legacy.exists():
+            ruta = ruta_legacy
+        else:
+            return None
     try:
         with open(ruta, "r", encoding="utf-8") as f:
             indice = json.load(f)
@@ -390,32 +440,41 @@ def _recorrer_arbol(
                 rel = str(entrada.relative_to(directorio)).replace("\\", "/")
                 previo = resumenes_previos.get(rel)
 
-                # 1) Comparación barata: mtime + tamaño contra el índice previo.
-                #    Si coinciden, el archivo NO cambió: reutilizamos el resumen
-                #    sin leer el contenido ni calcular sha256.
+                # 1) Comparación barata: mtime_ns (con fallback a mtime) + tamaño
+                #    contra el índice previo. Si coinciden, el archivo NO cambió:
+                #    reutilizamos el resumen sin leer el contenido ni calcular sha256.
                 try:
                     stat = entrada.stat()
+                    mtime_ns_actual = stat.st_mtime_ns
                     mtime_actual = int(stat.st_mtime)
                     tamano_actual = stat.st_size
                 except Exception:
+                    mtime_ns_actual = 0
                     mtime_actual = 0
                     tamano_actual = 0
 
+                # mtime_ns como criterio primario; fallback a mtime para cachés legacy
+                if previo and previo.get("mtime_ns") is not None:
+                    mtime_coincide = previo.get("mtime_ns") == mtime_ns_actual
+                else:
+                    mtime_coincide = bool(previo) and previo.get("mtime") == mtime_actual
+
                 if (
                     previo
-                    and previo.get("mtime") == mtime_actual
+                    and mtime_coincide
                     and previo.get("tamano") == tamano_actual
                 ):
                     resumen = previo
                     info_hash = {
                         "hash": previo.get("hash", ""),
                         "mtime": mtime_actual,
+                        "mtime_ns": mtime_ns_actual,
                         "tamano": tamano_actual,
                     }
                 else:
-                    # 2) Solo aquí calculamos sha256 (lectura completa del archivo)
-                    info_hash = _hash_archivo(entrada)
-                    resumen = resumir_archivo(entrada, max_tokens_por_archivo)
+                    # 2) Solo aquí leemos el archivo (una única vez) y calculamos sha256
+                    contenido, info_hash = _leer_contenido_y_hash(entrada)
+                    resumen = resumir_archivo(entrada, max_tokens_por_archivo, contenido=contenido)
                     resumen.update(info_hash)
 
                 resumenes[rel] = resumen
@@ -496,8 +555,13 @@ def indice_es_valido(directorio: str, indice: Optional[Dict[str, Any]]) -> bool:
             return False
         try:
             stat = ruta.stat()
-            if int(stat.st_mtime) != info.get("mtime"):
-                return False
+            # mtime_ns como criterio primario; fallback a mtime para cachés legacy
+            if info.get("mtime_ns") is not None:
+                if stat.st_mtime_ns != info.get("mtime_ns"):
+                    return False
+            else:
+                if int(stat.st_mtime) != info.get("mtime"):
+                    return False
             if stat.st_size != info.get("tamano"):
                 return False
         except Exception:
@@ -551,8 +615,12 @@ def obtener_resumen_archivo(
     dir_resuelto = str(Path(directorio).resolve())
     ruta_completa = (Path(dir_resuelto) / ruta_relativa).resolve()
 
-    # Seguridad: evitar path traversal fuera del directorio del proyecto
-    if not str(ruta_completa).startswith(dir_resuelto):
+    # Seguridad: evitar path traversal fuera del directorio del proyecto.
+    # Se usa Path.is_relative_to (el antiguo startswith fallaba con directorios
+    # hermanos cuyo nombre es prefijo del proyecto, p.ej. 'proyecto' vs 'proyecto_hermano').
+    if ruta_completa == Path(dir_resuelto):
+        return {"resumen": f"Error: La ruta '{ruta_relativa}' apunta al propio directorio del proyecto.", "error": True}
+    if not ruta_completa.is_relative_to(Path(dir_resuelto)):
         return {"resumen": f"Error: La ruta '{ruta_relativa}' está fuera del directorio del proyecto.", "error": True}
 
     if not ruta_completa.exists() or not ruta_completa.is_file():
@@ -562,16 +630,23 @@ def obtener_resumen_archivo(
         indice = cargar_indice(dir_resuelto)
 
     rel = ruta_relativa.replace("\\", "/")
-    info_hash = _hash_archivo(ruta_completa)
+    # Lectura única en binario: contenido + hash sha256 + mtime/mtime_ns/tamaño
+    contenido, info_hash = _leer_contenido_y_hash(ruta_completa)
 
     if indice and isinstance(indice, dict):
         resumenes = indice.get("resumenes", {})
         previo = resumenes.get(rel)
-        if previo and previo.get("hash") == info_hash["hash"] and previo.get("mtime") == info_hash["mtime"]:
-            return previo
+        if previo:
+            # mtime_ns como criterio primario; fallback a mtime para cachés legacy
+            if previo.get("mtime_ns") is not None:
+                mtime_coincide = previo.get("mtime_ns") == info_hash["mtime_ns"]
+            else:
+                mtime_coincide = previo.get("mtime") == info_hash["mtime"]
+            if previo.get("hash") == info_hash["hash"] and mtime_coincide:
+                return previo
 
     # El archivo cambió o no está en el índice: recalcular y actualizar índice
-    resumen = resumir_archivo(ruta_completa)
+    resumen = resumir_archivo(ruta_completa, contenido=contenido)
     resumen.update(info_hash)
 
     if indice and isinstance(indice, dict):
