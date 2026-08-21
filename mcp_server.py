@@ -6,6 +6,15 @@ import uuid
 import hashlib
 from typing import Optional, Dict, Any, List
 
+# Asegurar que el directorio del script esté en sys.path.
+# Esto evita el error "MCP error -32000: Connection closed" cuando el cliente
+# (Zoo Code / Cursor / CLI) lanza el proceso desde un directorio de trabajo
+# distinto al del proyecto, lo que provocaría que los imports relativos
+# (app.main, app.utils, etc.) fallaran y el proceso se cerrara abruptamente.
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+
 class MuteStderr:
     def write(self, x): pass
     def flush(self): pass
@@ -18,12 +27,16 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from app.main import crear_grafo
 from app.utils.project_index import construir_indice
+from app.utils.task_registry import task_registry
 from app.settings.settings import Settings
 
 
 mcp = FastMCP("AIDevTeam")
 
 agentes_app = crear_grafo()
+
+# Mapa de tareas activas: tarea_id -> asyncio.Task en curso (para cancelación).
+tareas_activas: Dict[str, asyncio.Task] = {}
 
 
 def _log_stderr(msg: str):
@@ -75,9 +88,19 @@ async def notificar_progreso(ctx: Optional[Context], mensaje: str, progreso: Opt
         else:
             mensaje_formateado = mensaje_resumido
 
+        # Enviar mensaje de log al cliente MCP (Zoo Code).
+        # FastMCP 3.2.4: ctx.info existe y envía 'notifications/message' de nivel INFO.
+        # ctx.log(level, message) es el método genérico equivalente a report_log_message.
         if hasattr(ctx, "info"):
             try:
                 res = ctx.info(mensaje_formateado)
+                if asyncio.iscoroutine(res):
+                    await _safe_await(res, timeout=1.0)
+            except Exception:
+                pass
+        elif hasattr(ctx, "log"):
+            try:
+                res = ctx.log(level="info", message=mensaje_formateado)
                 if asyncio.iscoroutine(res):
                     await _safe_await(res, timeout=1.0)
             except Exception:
@@ -299,6 +322,19 @@ async def delegar_tarea_a_equipo_ia(
         
     config = {"configurable": {"thread_id": tarea_id}, "recursion_limit": 100}
 
+    # Registrar la tarea en el TaskRegistry (si no existe aún).
+    try:
+        if task_registry.get_task(tarea_id) is None:
+            task_registry.register_task(
+                tarea_id=tarea_id,
+                thread_id=config["configurable"]["thread_id"],
+                directorio_proyecto=directorio_proyecto,
+                instruccion=instruccion,
+                estado="running",
+            )
+    except Exception:
+        pass
+
     # Notificación inicial
     await notificar_progreso(ctx, f"🚀 Iniciando procesamiento para tarea '{tarea_id}'...", 10, 100)
     _log_stderr(f"[MCP] Iniciando tarea '{tarea_id}' con auto_approve={effective_auto_approve}")
@@ -419,6 +455,10 @@ async def delegar_tarea_a_equipo_ia(
                 msg_pausa1 = f"⏸️ PAUSA 1: Plan de acción listo. Esperando revisión del usuario (tarea '{tarea_id}').\n\n{markdown_pausa}"
                 await notificar_progreso(ctx, msg_pausa1, 40, 100)
                 _log_stderr(f"[MCP] PAUSA 1 - tarea '{tarea_id}' esperando aprobación de plan")
+                try:
+                    task_registry.update_status(tarea_id, "paused_planning", detalle=explicacion)
+                except Exception:
+                    pass
                 return markdown_pausa
                 
             elif siguiente_nodo == "agente_revisor":
@@ -435,6 +475,10 @@ async def delegar_tarea_a_equipo_ia(
                 msg_cambios = f"⏸️ PAUSA 2: Código escrito. Esperando aprobación antes de pruebas QA (tarea '{tarea_id}').\n\n{markdown_pausa}"
                 await notificar_progreso(ctx, msg_cambios, 70, 100)
                 _log_stderr(f"[MCP] PAUSA 2 - tarea '{tarea_id}' esperando aprobación de código")
+                try:
+                    task_registry.update_status(tarea_id, "paused_code", detalle=codigo_escrito)
+                except Exception:
+                    pass
                 return markdown_pausa
 
         # Si no hay 'next', el grafo llegó a END
@@ -451,14 +495,27 @@ async def delegar_tarea_a_equipo_ia(
             msg_fin += "\n\n⚠️ ADVERTENCIA: No se detectaron cambios ni modificaciones en los archivos del disco (git diff / status está vacío)."
         await notificar_progreso(ctx, msg_fin, 100, 100)
         _log_stderr(f"[MCP] Tarea '{tarea_id}' COMPLETADA")
-        reporte_final = (
-            f"✅ Tarea completada exitosamente por el equipo LangGraph.\n"
-            f"ID de Tarea: {tarea_id}\n"
-            f"Resumen de cambios: {codigo_escrito}\n"
-            f"Estado final de los tests (QA): {errores_qa}"
-        )
-        if not diff_git:
-            reporte_final += f"\n\n⚠️ ADVERTENCIA: La tarea finalizó pero git diff no muestra modificaciones en '{directorio_proyecto}'. Comprueba si el Agente Codificador omitió la escritura de archivos."
+        try:
+            task_registry.update_status(tarea_id, "completed", detalle=codigo_escrito)
+        except Exception:
+            pass
+        # Si el grafo terminó en un análisis puro (sin programación), el estado
+        # contiene 'analisis_final'. Se extrae del estado o del resultado para
+        # generar un reporte de análisis dedicado en lugar del reporte de tarea
+        # de programación (codigo_escrito/errores_qa).
+        analisis_final = values.get("analisis_final") or (resultado.get("analisis_final") if isinstance(resultado, dict) else None)
+
+        if analisis_final:
+            reporte_final = f"✅ Análisis completado por el equipo LangGraph.\nID de Tarea: {tarea_id}\n\n📋 REPORTE DE ANÁLISIS:\n{analisis_final}"
+        else:
+            reporte_final = (
+                f"✅ Tarea completada exitosamente por el equipo LangGraph.\n"
+                f"ID de Tarea: {tarea_id}\n"
+                f"Resumen de cambios: {codigo_escrito}\n"
+                f"Estado final de los tests (QA): {errores_qa}"
+            )
+            if not diff_git:
+                reporte_final += f"\n\n⚠️ ADVERTENCIA: La tarea finalizó pero git diff no muestra modificaciones en '{directorio_proyecto}'. Comprueba si el Agente Codificador omitió la escritura de archivos."
         return reporte_final
 
     try:
@@ -467,18 +524,171 @@ async def delegar_tarea_a_equipo_ia(
         msg_timeout = f"🚨 Timeout: La tarea '{tarea_id}' excedió el límite máximo de ejecución ({timeout_seconds}s)."
         await notificar_progreso(ctx, msg_timeout, 100, 100)
         _log_stderr(f"[MCP] TIMEOUT tarea '{tarea_id}'")
+        try:
+            task_registry.update_status(tarea_id, "timeout", detalle=msg_timeout)
+        except Exception:
+            pass
         return f"{msg_timeout} Por favor, reintenta dividiendo la instrucción en pasos más específicos o verifica el estado de la tarea con tarea_id='{tarea_id}'."
     except BaseException as e:
         err_msg = str(e)
         msg_err = f"🚨 El equipo de agentes falló con un error interno en tarea '{tarea_id}': {err_msg}"
         _log_stderr(f"[MCP] ERROR tarea '{tarea_id}': {err_msg}")
         await notificar_progreso(ctx, msg_err, 100, 100)
+        try:
+            task_registry.update_status(tarea_id, "error", detalle=err_msg)
+        except Exception:
+            pass
         return msg_err
+
+
+@mcp.tool()
+async def consultar_estado_tarea(
+    tarea_id: str,
+    directorio_proyecto: str = "",
+    ctx: Optional[Context] = None
+) -> str:
+    """
+    Consulta el estado actual de una tarea delegada al equipo de IA.
+
+    Reutiliza la lógica de visualizar_cambios() para obtener el estado del grafo
+    y el git diff, y además consulta el TaskRegistry para reportar el estado
+    registrado (running/paused/completed/timeout/error).
+
+    Args:
+        tarea_id: Identificador de la tarea a consultar.
+        directorio_proyecto: Ruta del proyecto (opcional, se infiere del grafo si se omite).
+        ctx: Contexto MCP para notificaciones de progreso.
+    """
+    try:
+        await notificar_progreso(ctx, f"🔍 Consultando estado de la tarea '{tarea_id}'...", 10, 100)
+
+        partes = []
+
+        # 1. Estado registrado en el TaskRegistry
+        tarea = task_registry.get_task(tarea_id)
+        if tarea is not None:
+            estado_registrado = tarea.get("estado", "desconocido")
+            partes.append(f"### 📌 Estado registrado de la tarea '{tarea_id}'")
+            partes.append(f"- **Estado:** `{estado_registrado}`")
+            partes.append(f"- **Directorio:** `{tarea.get('directorio_proyecto', '')}`")
+            partes.append(f"- **Última actualización:** `{tarea.get('timestamp_actualizacion', '')}`")
+            if tarea.get("detalle"):
+                partes.append(f"- **Detalle:** {tarea.get('detalle')}")
+            partes.append("")
+        else:
+            partes.append(f"ℹ️ La tarea '{tarea_id}' no está registrada en el TaskRegistry (puede que aún no se haya iniciado o que haya sido eliminada).")
+
+        # 2. Estado del grafo y cambios en disco (reutiliza visualizar_cambios)
+        try:
+            estado_grafo = await visualizar_cambios(tarea_id=tarea_id, directorio_proyecto=directorio_proyecto, ctx=ctx)
+            partes.append(estado_grafo)
+        except Exception as e:
+            partes.append(f"⚠️ No se pudo obtener el estado del grafo: {e}")
+
+        await notificar_progreso(ctx, "✅ Consulta de estado completada.", 100, 100)
+        return "\n\n".join(partes)
+    except Exception as e:
+        return f"⚠️ Error al consultar el estado de la tarea '{tarea_id}': {e}"
+
+
+@mcp.tool()
+async def listar_tareas(
+    estado: str = "",
+    ctx: Optional[Context] = None
+) -> str:
+    """
+    Lista las tareas registradas en el servidor MCP.
+
+    Args:
+        estado: Filtro opcional por estado (running, paused_planning, paused_code, completed, cancelled, timeout, error).
+        ctx: Contexto MCP para notificaciones de progreso.
+    """
+    try:
+        await notificar_progreso(ctx, "📋 Listando tareas registradas...", 10, 100)
+
+        tareas = task_registry.list_tasks(estado=estado)
+
+        if not tareas:
+            msg = "ℹ️ No hay tareas registradas" + (f" con estado '{estado}'" if estado else "") + "."
+            await notificar_progreso(ctx, msg, 100, 100)
+            return msg
+
+        lineas = ["### 📋 Tareas Registradas"]
+        lineas.append("| tarea_id | estado | directorio_proyecto | última actualización |")
+        lineas.append("|---|---|---|---|")
+        for t in tareas:
+            tid = str(t.get("tarea_id", "")).replace("|", "\\|")
+            est = str(t.get("estado", "")).replace("|", "\\|")
+            dirp = str(t.get("directorio_proyecto", "")).replace("|", "\\|")
+            ts = str(t.get("timestamp_actualizacion", "")).replace("|", "\\|")
+            lineas.append(f"| `{tid}` | `{est}` | `{dirp}` | `{ts}` |")
+        lineas.append("")
+
+        await notificar_progreso(ctx, f"✅ Se encontraron {len(tareas)} tareas.", 100, 100)
+        return "\n".join(lineas)
+    except Exception as e:
+        return f"⚠️ Error al listar las tareas: {e}"
+
+
+@mcp.tool()
+async def cancelar_tarea(
+    tarea_id: str,
+    ctx: Optional[Context] = None
+) -> str:
+    """
+    Cancela una tarea en curso registrada en el TaskRegistry.
+
+    Marca la tarea como 'cancelled' e intenta cancelar la asyncio.Task activa
+    asociada si está disponible.
+
+    Args:
+        tarea_id: Identificador de la tarea a cancelar.
+        ctx: Contexto MCP para notificaciones de progreso.
+    """
+    try:
+        await notificar_progreso(ctx, f"🛑 Intentando cancelar la tarea '{tarea_id}'...", 10, 100)
+
+        tarea = task_registry.get_task(tarea_id)
+        if tarea is None:
+            msg = f"⚠️ No se encontró la tarea '{tarea_id}' en el registro. No se puede cancelar."
+            await notificar_progreso(ctx, msg, 100, 100)
+            return msg
+
+        # Marcar como cancelada en el registro
+        task_registry.update_status(tarea_id, "cancelled", detalle="Cancelada por el usuario")
+
+        # Intentar cancelar la asyncio.Task activa si existe
+        task_activa = tareas_activas.get(tarea_id)
+        if task_activa is not None and not task_activa.done():
+            try:
+                task_activa.cancel()
+                msg = f"✅ Tarea '{tarea_id}' marcada como cancelada y su ejecución en curso fue interrumpida."
+            except Exception:
+                msg = f"✅ Tarea '{tarea_id}' marcada como cancelada (no se pudo interrumpir la ejecución en curso)."
+        else:
+            msg = f"✅ Tarea '{tarea_id}' marcada como cancelada en el registro."
+
+        await notificar_progreso(ctx, msg, 100, 100)
+        return msg
+    except Exception as e:
+        return f"⚠️ Error al cancelar la tarea '{tarea_id}': {e}"
 
 
 if __name__ == "__main__":
     try:
-        mcp.run(transport="stdio")
+        transporte = os.environ.get("FASTMCP_TRANSPORT", "stdio").lower()
+        if transporte in ("sse", "streamable-http", "http"):
+            host = os.environ.get("FASTMCP_HOST", "127.0.0.1")
+            port = int(os.environ.get("FASTMCP_PORT", "8000"))
+            _log_stderr(f"[MCP] Iniciando servidor con transporte '{transporte}' en {host}:{port}")
+            mcp.run(
+                transport=transporte,
+                host=host,
+                port=port,
+            )
+        else:
+            _log_stderr("[MCP] Iniciando servidor con transporte 'stdio'")
+            mcp.run(transport="stdio")
     except (KeyboardInterrupt, BrokenPipeError, ConnectionResetError):
         sys.exit(0)
     except Exception as e:

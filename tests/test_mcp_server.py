@@ -1,9 +1,10 @@
 import sys
+import os
 import pytest
 import asyncio
 import anyio
 from unittest.mock import patch, MagicMock, AsyncMock
-from mcp_server import visualizar_cambios, delegar_tarea_a_equipo_ia, obtener_git_diff, notificar_progreso, generar_markdown_pausa
+from mcp_server import visualizar_cambios, delegar_tarea_a_equipo_ia, obtener_git_diff, notificar_progreso, generar_markdown_pausa, consultar_estado_tarea, listar_tareas, cancelar_tarea
 
 def test_visualizar_cambios_sin_parametros():
     resultado = asyncio.run(visualizar_cambios())
@@ -362,3 +363,189 @@ def test_generar_markdown_pausa_con_diff():
 
     assert pos_explicacion < pos_diff
     assert pos_diff < pos_ia
+
+
+# =============================================================================
+# Pruebas para las nuevas herramientas de gestión de tareas
+# =============================================================================
+
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+def test_consultar_estado_tarea_con_tarea_registrada(mock_aget_state):
+    from app.utils.task_registry import task_registry
+    task_registry.clear()
+    task_registry.register_task(
+        tarea_id="task_consulta",
+        directorio_proyecto="./",
+        estado="paused_planning",
+        detalle="Plan listo",
+    )
+
+    mock_state = MagicMock()
+    mock_state.values = {"codigo_escrito": "Se modificó main.py", "directorio_proyecto": "./"}
+    mock_state.next = ["agente_codificador"]
+    mock_aget_state.return_value = mock_state
+
+    mock_ctx = AsyncMock()
+    resultado = asyncio.run(consultar_estado_tarea(
+        tarea_id="task_consulta",
+        directorio_proyecto="./",
+        ctx=mock_ctx,
+    ))
+
+    assert "Estado registrado de la tarea 'task_consulta'" in resultado
+    assert "paused_planning" in resultado
+    assert "Pausado antes de 'agente_codificador'" in resultado
+    task_registry.clear()
+
+
+@patch("mcp_server.visualizar_cambios", new_callable=AsyncMock)
+def test_consultar_estado_tarea_tarea_inexistente(mock_visualizar):
+    from app.utils.task_registry import task_registry
+    task_registry.clear()
+    mock_visualizar.return_value = "No se encontraron cambios."
+
+    mock_ctx = AsyncMock()
+    resultado = asyncio.run(consultar_estado_tarea(
+        tarea_id="task_no_existe",
+        ctx=mock_ctx,
+    ))
+
+    assert "no está registrada en el TaskRegistry" in resultado
+    task_registry.clear()
+
+
+def test_listar_tareas_sin_tareas():
+    from app.utils.task_registry import task_registry
+    task_registry.clear()
+
+    mock_ctx = AsyncMock()
+    resultado = asyncio.run(listar_tareas(ctx=mock_ctx))
+
+    assert "No hay tareas registradas" in resultado
+    task_registry.clear()
+
+
+def test_listar_tareas_con_tareas():
+    from app.utils.task_registry import task_registry
+    task_registry.clear()
+    task_registry.register_task(tarea_id="task_1", directorio_proyecto="./", estado="running")
+    task_registry.register_task(tarea_id="task_2", directorio_proyecto="./", estado="completed")
+
+    mock_ctx = AsyncMock()
+    resultado = asyncio.run(listar_tareas(ctx=mock_ctx))
+
+    assert "### 📋 Tareas Registradas" in resultado
+    assert "task_1" in resultado
+    assert "task_2" in resultado
+    task_registry.clear()
+
+
+def test_listar_tareas_filtra_por_estado():
+    from app.utils.task_registry import task_registry
+    task_registry.clear()
+    task_registry.register_task(tarea_id="task_running", directorio_proyecto="./", estado="running")
+    task_registry.register_task(tarea_id="task_completed", directorio_proyecto="./", estado="completed")
+
+    mock_ctx = AsyncMock()
+    resultado = asyncio.run(listar_tareas(estado="running", ctx=mock_ctx))
+
+    assert "task_running" in resultado
+    assert "task_completed" not in resultado
+    task_registry.clear()
+
+
+def test_cancelar_tarea_marca_cancelled():
+    from app.utils.task_registry import task_registry
+    task_registry.clear()
+    task_registry.register_task(tarea_id="task_cancel", directorio_proyecto="./", estado="running")
+
+    mock_ctx = AsyncMock()
+    resultado = asyncio.run(cancelar_tarea(tarea_id="task_cancel", ctx=mock_ctx))
+
+    assert "marcada como cancelada" in resultado
+    tarea = task_registry.get_task("task_cancel")
+    assert tarea["estado"] == "cancelled"
+    task_registry.clear()
+
+
+def test_cancelar_tarea_inexistente_devuelve_error():
+    from app.utils.task_registry import task_registry
+    task_registry.clear()
+
+    mock_ctx = AsyncMock()
+    resultado = asyncio.run(cancelar_tarea(tarea_id="task_no_existe", ctx=mock_ctx))
+
+    assert "No se encontró la tarea" in resultado
+    task_registry.clear()
+
+
+# =============================================================================
+# Pruebas para la selección de transporte (SSE/HTTP)
+# =============================================================================
+
+def test_transporte_default_es_stdio():
+    import mcp_server
+    with patch.dict(os.environ, {}, clear=False):
+        os.environ.pop("FASTMCP_TRANSPORT", None)
+        with patch.object(mcp_server.mcp, "run") as mock_run:
+            # Simular la lógica del __main__
+            transporte = os.environ.get("FASTMCP_TRANSPORT", "stdio").lower()
+            if transporte in ("sse", "streamable-http", "http"):
+                mcp_server.mcp.run(transport=transporte)
+            else:
+                mcp_server.mcp.run(transport="stdio")
+            mock_run.assert_called_once_with(transport="stdio")
+
+
+def test_transporte_sse_cuando_env_var_sse():
+    import mcp_server
+    with patch.dict(os.environ, {"FASTMCP_TRANSPORT": "sse"}, clear=False):
+        with patch.object(mcp_server.mcp, "run") as mock_run:
+            transporte = os.environ.get("FASTMCP_TRANSPORT", "stdio").lower()
+            if transporte in ("sse", "streamable-http", "http"):
+                mcp_server.mcp.run(
+                    transport=transporte,
+                    host=os.environ.get("FASTMCP_HOST", "127.0.0.1"),
+                    port=int(os.environ.get("FASTMCP_PORT", "8000")),
+                )
+            else:
+                mcp_server.mcp.run(transport="stdio")
+            mock_run.assert_called_once_with(
+                transport="sse",
+                host="127.0.0.1",
+                port=8000,
+            )
+
+
+def test_http_app_genera_app_sse():
+    import mcp_server
+    app = mcp_server.mcp.http_app(transport="sse")
+    assert app is not None
+    assert app.state.transport_type == "sse"
+
+
+def test_http_app_genera_app_streamable_http():
+    import mcp_server
+    app = mcp_server.mcp.http_app(transport="streamable-http")
+    assert app is not None
+    assert app.state.transport_type == "streamable-http"
+
+
+def test_script_dir_en_sys_path():
+    """El directorio del script debe estar en sys.path para evitar 'Connection closed'
+    cuando el cliente lanza el proceso desde un directorio de trabajo distinto."""
+    import mcp_server
+    script_dir = os.path.dirname(os.path.abspath(mcp_server.__file__))
+    assert script_dir in sys.path
+
+
+def test_herramientas_registradas():
+    """El servidor debe exponer las 4 herramientas MCP esperadas."""
+    import mcp_server
+    nombres = {t.name for t in asyncio.run(mcp_server.mcp.list_tools())}
+    assert {
+        "delegar_tarea_a_equipo_ia",
+        "consultar_estado_tarea",
+        "listar_tareas",
+        "cancelar_tarea",
+    }.issubset(nombres)
