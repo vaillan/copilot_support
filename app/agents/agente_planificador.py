@@ -18,6 +18,38 @@ from app.utils.args_utils import _get_args
 
 fileSystem = File(directory="prompts")
 
+# Palabras que indican intención de ANÁLISIS puro (no programación).
+PALABRAS_ANALISIS = (
+    "analiza", "análisis", "analizar", "explica", "explicar", "revisa",
+    "diagnostica", "¿qué hace", "resume", "compara", "investiga",
+    "describe", "cómo funciona", "qué es",
+)
+
+# Palabras que indican intención de CREACIÓN/MODIFICACIÓN de código.
+# Su presencia anula la detección de análisis puro.
+PALABRAS_CREACION = (
+    "escribe", "crea", "implementa", "modifica", "añade", "agrega",
+    "corrige", "refactoriza", "construye", "genera código",
+)
+
+
+def _es_peticion_analisis(instruccion: str) -> bool:
+    """
+    Detecta si la instrucción del usuario expresa intención de ANÁLISIS puro.
+
+    Devuelve True si la instrucción contiene alguna palabra de análisis
+    (PALABRAS_ANALISIS) y NO contiene ninguna palabra de creación/modificación
+    de código (PALABRAS_CREACION). La detección es por subcadena (no
+    tokenización), por lo que "analiza" dentro de "analizador" también se
+    detecta (aceptable). La presencia de cualquier palabra de creación anula
+    la detección de análisis aunque también contenga palabras de análisis.
+    """
+    texto = instruccion.lower()
+    tiene_analisis = any(p in texto for p in PALABRAS_ANALISIS)
+    tiene_creacion = any(p in texto for p in PALABRAS_CREACION)
+    return tiene_analisis and not tiene_creacion
+
+
 class Paso(BaseModel):
     archivo: str = Field(description="Ruta relativa del archivo a modificar o crear")
     tarea: str = Field(description="Descripción técnica de lo que el codificador debe programar")
@@ -60,6 +92,31 @@ def agente_planificador(state: ProjectState) -> Command:
         return Command(
             update={
                 "messages": [HumanMessage(content="Error: Se ha excedido el límite máximo de iteraciones (15) en el Agente Planificador. El proceso se detiene para evitar un bucle infinito.")]
+            },
+            goto=END
+        )
+
+    # --- CAMINO ALTERNATIVO: ANÁLISIS PURO (sin programación) ---
+    # Si la instrucción expresa intención de análisis y NO de creación de
+    # código, se genera un análisis directamente con el LLM del planificador
+    # (sin bindear herramientas para evitar tool_calls) y se termina el grafo
+    # sin pasar por el codificador ni el revisor.
+    instruccion = state.get("instruccion_usuario", "")
+    if _es_peticion_analisis(instruccion):
+        llm_analisis = get_planner_llm(temperature=0.0)
+        prompt_analisis = (
+            "Eres un analista técnico senior. Analiza el siguiente requerimiento "
+            "sobre el proyecto y proporciona un análisis detallado y estructurado "
+            "en Markdown:\n\n"
+            f"Requerimiento:\n{instruccion}"
+        )
+        respuesta_analisis = llm_analisis.invoke(prompt_analisis)
+        analisis_texto = str(respuesta_analisis.content)
+        return Command(
+            update={
+                "analisis_final": analisis_texto,
+                "messages": state.get("messages", []) + [AIMessage(content=analisis_texto)],
+                "loop_counter": 0,
             },
             goto=END
         )
