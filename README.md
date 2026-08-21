@@ -164,6 +164,22 @@ Implementado utilizando **FastMCP**, el servidor expone capacidades avanzadas pa
 - **Notificaciones Progreso**: Tiempo real con formato `[XX%]`, compatible `progressToken`, fallback `[XX%]` si no hay token. Timeout configurable (`MCP_TASK_TIMEOUT_SECONDS`, default 300s).
 - **Inspección Cambios**: `git diff`/`git status` automático en pausas y fin. Detecta si Codificador omitió escritura.
 
+### Transporte del Servidor (stdio / SSE)
+
+El servidor MCP soporta dos modos de transporte, seleccionables mediante la variable de entorno `FASTMCP_TRANSPORT`:
+
+| Transporte | Variable | Uso |
+|-----------|----------|-----|
+| **stdio** (por defecto) | `FASTMCP_TRANSPORT=stdio` | Recomendado para clientes que lanzan el proceso localmente (Zoo Code, Cursor, CLI). |
+| **SSE** | `FASTMCP_TRANSPORT=sse` | Para visualización en tiempo real vía HTTP. Requiere `FASTMCP_HOST` y `FASTMCP_PORT`. |
+
+**Ejemplo de arranque en modo SSE:**
+```bash
+FASTMCP_TRANSPORT=sse FASTMCP_HOST=127.0.0.1 FASTMCP_PORT=8000 python mcp_server.py
+```
+
+> ⚠️ **Importante**: El error `MCP error -32000: Connection closed` en Zoo Code suele deberse a que el proceso del servidor se cierra al iniciar porque los imports relativos (`app.main`, `app.utils`, etc.) fallan cuando el cliente lanza el proceso desde un directorio de trabajo distinto al del proyecto. Para evitarlo, el servidor agrega automáticamente su propio directorio a `sys.path` y se recomienda configurar `cwd` en el `mcp_settings.json` del cliente apuntando a la raíz del proyecto.
+
 ---
 
 ### Ejemplo Uso (Cliente MCP)
