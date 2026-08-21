@@ -40,3 +40,21 @@ def test_reporte_final_incluye_analisis(mock_ainvoke, mock_aget_state):
 
     assert "✅ Análisis completado por el equipo LangGraph" in resultado
     assert "Análisis detallado del módulo X" in resultado
+
+
+def test_es_peticion_analisis_con_refactorizacion_contexto():
+    """Verifica que 'refactorizacion' como sustantivo de contexto NO anula el análisis."""
+    assert _es_peticion_analisis(
+        "Realiza el analisis para los demas tipos de facturas, en este caso solo se cubrio la refactorizacion para estimaciones"
+    ) is True
+
+
+def test_es_peticion_analisis_analiza_y_luego_implementa():
+    """Verifica que 'analiza y luego implementa' se considera creación (no análisis puro)."""
+    assert _es_peticion_analisis("analiza y luego implementa el módulo") is False
+
+
+def test_es_peticion_analisis_frases_inicio():
+    """Verifica que las frases de análisis al inicio de la instrucción se detectan."""
+    assert _es_peticion_analisis("haz el analisis del proyecto") is True
+    assert _es_peticion_analisis("realiza un analisis de la arquitectura") is True

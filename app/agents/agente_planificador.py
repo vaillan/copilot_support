@@ -1,3 +1,4 @@
+import re
 from langchain_community.utilities import DuckDuckGoSearchAPIWrapper
 from typing import List
 from pydantic import BaseModel, Field
@@ -32,19 +33,66 @@ PALABRAS_CREACION = (
     "corrige", "refactoriza", "construye", "genera código",
 )
 
+# Frases compuestas que, cuando la instrucción COMIENZA con ellas, indican
+# intención de ANÁLISIS puro (p. ej. "Realiza el analisis para los demas
+# tipos de facturas..."). Se incluyen variantes con y sin tilde.
+FRASES_ANALISIS_INICIO = (
+    "realiza el analisis", "haz el analisis", "realiza un analisis",
+    "haz un analisis", "realiza el análisis", "haz el análisis",
+    "realiza un análisis", "haz un análisis",
+)
+
+
+def _contiene_verbo_creacion(texto: str) -> bool:
+    """
+    Detecta si el texto contiene algún VERBO de creación como PALABRA COMPLETA.
+
+    A diferencia de la detección por subcadena, el matching por palabra
+    completa (word boundary) permite distinguir verbos de creación usados como
+    órdenes directas ("implementa", "crea", "refactoriza"...) de sustantivos
+    derivados usados como contexto descriptivo ("refactorizacion",
+    "implementacion"...). Por ejemplo, "refactorizacion" NO matchea
+    "refactoriza" (tras el verbo viene "cion", sin límite de palabra), pero
+    "implementa" SÍ matchea dentro de "implementa el módulo".
+    """
+    for p in PALABRAS_CREACION:
+        if re.search(rf"\b{re.escape(p)}\b", texto):
+            return True
+    return False
+
 
 def _es_peticion_analisis(instruccion: str) -> bool:
     """
     Detecta si la instrucción del usuario expresa intención de ANÁLISIS puro.
 
-    Devuelve True si la instrucción contiene alguna palabra de análisis
-    (PALABRAS_ANALISIS) y NO contiene ninguna palabra de creación/modificación
-    de código (PALABRAS_CREACION). La detección es por subcadena (no
-    tokenización), por lo que "analiza" dentro de "analizador" también se
-    detecta (aceptable). La presencia de cualquier palabra de creación anula
-    la detección de análisis aunque también contenga palabras de análisis.
+    La detección se realiza en 3 niveles jerárquicos:
+
+    1. Si la instrucción COMIENZA con una frase de análisis explícita
+       (FRASES_ANALISIS_INICIO, p. ej. "realiza el analisis", "haz el
+       analisis") o con un verbo de análisis directo (PALABRAS_ANALISIS,
+       p. ej. "analiza", "explica"), se considera análisis puro salvo que
+       contenga un VERBO de creación como orden directa (p. ej. "analiza y
+       luego implementa" es creación porque "implementa" es una orden).
+    2. Para distinguir verbos de creación (órdenes) de sustantivos de
+       creación (contexto descriptivo), se usa matching de palabra completa
+       (word boundary) en lugar de subcadena. Así, "refactorizacion" como
+       contexto descriptivo NO anula el análisis, pero "implementa" como
+       orden directa SÍ lo anula.
+    3. Como fallback (la instrucción no comienza con análisis), se mantiene
+       la lógica original: análisis si contiene alguna palabra de análisis
+       y NO contiene ninguna palabra de creación (por subcadena).
     """
-    texto = instruccion.lower()
+    texto = instruccion.lower().strip()
+
+    comienza_con_frase = any(texto.startswith(f) for f in FRASES_ANALISIS_INICIO)
+    comienza_con_verbo = any(texto.startswith(p) for p in PALABRAS_ANALISIS)
+    tiene_verbo_creacion = _contiene_verbo_creacion(texto)
+
+    if comienza_con_frase or comienza_con_verbo:
+        # Análisis puro salvo que haya un verbo de creación como orden directa.
+        return not tiene_verbo_creacion
+
+    # Fallback: comportamiento original (detección por subcadena).
     tiene_analisis = any(p in texto for p in PALABRAS_ANALISIS)
     tiene_creacion = any(p in texto for p in PALABRAS_CREACION)
     return tiene_analisis and not tiene_creacion
@@ -156,7 +204,7 @@ def agente_planificador(state: ProjectState) -> Command:
     if respuesta.tool_calls:
         for tool_call in respuesta.tool_calls:
             if tool_call["name"] == "entregar_plan_de_accion":
-                plan_generado = _get_args(tool_call)
+                plan_generado = _get_args(tool_call) # pyright: ignore[reportArgumentType]
                 
                 tool_messages = []
                 for tc in respuesta.tool_calls:
