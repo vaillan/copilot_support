@@ -17,5 +17,5 @@ class ProjectState(MessagesState):
     errores_terminal: Optional[str]
     revision_count: int
     loop_counter: int
-    project_index: Optional[Dict[str, Any]] = None
-    analisis_final: Optional[str] = None
+    project_index: Optional[Dict[str, Any]] = None # pyright: ignore[reportGeneralTypeIssues]
+    analisis_final: Optional[str] = None # pyright: ignore[reportGeneralTypeIssues]
