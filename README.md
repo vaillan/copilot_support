@@ -47,8 +47,26 @@ graph TD
     end
 ```
 
+### Modo "Solo Análisis / Reporte / Arquitectura" (sin generación de código)
+
+El Planificador detecta automáticamente cuándo la instrucción del usuario es de **análisis puro** (reportes, arquitectura, documentación, explicaciones) y en ese caso **NO genera ni modifica código**: produce el documento solicitado con el LLM del Planificador y termina el grafo en `END`, sin pasar por el Agente Codificador ni el Revisor.
+
+**Detección (`_es_peticion_analisis` en `app/agents/agente_planificador.py`):**
+- **Frases de inicio** (`FRASES_ANALISIS_INICIO`): "genera un reporte", "genera una arquitectura", "genera un documento", "genera la documentación", "elabora un reporte", "redacta un reporte", "propón una arquitectura", "diseña la arquitectura", "documenta el/la/los/las", etc.
+- **Palabras de análisis** (`PALABRAS_ANALISIS`): "analiza", "explica", "resume", "reporte", "arquitectura", "documentación", "documenta", "elabora", "redacta", etc.
+- **Anulación por creación**: si la instrucción contiene un verbo de creación como orden directa ("implementa", "crea", "escribe", "genera código", "refactoriza"...), se considera una tarea de código y el flujo normal continúa (Pausa 1 → Codificador → Pausa 2 → Revisor).
+
+**Resultado:** El reporte/arquitectura se devuelve en `analisis_final` y `mcp_server.py` lo presenta como "📋 REPORTE DE ANÁLISIS" al finalizar, sin tocar el disco.
+
+**Modo forzado `solo_analisis`:** La herramienta `delegar_tarea_a_equipo_ia` acepta el parámetro opcional `solo_analisis: bool = False`. Cuando es `True`, se fuerza el camino de análisis puro **independientemente de la heurística**: el Planificador genera el reporte/arquitectura y el grafo termina en `END` sin pasar por el Codificador ni el Revisor, incluso si la instrucción contiene verbos de creación.
+
+**Protección contra generación de código no deseada:** Si el Planificador responde con texto plano (sin invocar `entregar_plan_de_accion`) y la instrucción es de análisis puro, el contenido se entrega directamente como `analisis_final` (terminando en `END`). Si la instrucción es de creación, se reintenta pidiendo el plan formal. En ningún caso se fabrica un plan artificial con texto plano hacia el Agente Codificador.
+
+**Cancelación efectiva:** Cada tarea en ejecución se registra en `tareas_activas` (tarea_id → `asyncio.Task`). La herramienta `cancelar_tarea` interrumpe realmente la ejecución en curso cancelando la `asyncio.Task` activa y propagando la cancelación al grafo.
+
 ### Gestión de Estado, Enrutamiento Dinámico y Optimización de Contexto
 - **Estado del Proyecto (`ProjectState`)**: Hereda de `MessagesState` de LangGraph, lo que permite la gestión automática del historial de mensajes (`messages`) entre los agentes y el usuario, además de mantener variables de estado globales como el plan de acción, los errores de terminal, contadores de control (`loop_counter`, `revision_count`) y el **índice del proyecto** (`project_index`).
+- **Reducers `Annotated` para contadores**: `loop_counter` y `revision_count` usan el reducer `_ultimo_valor` (`Annotated[int, _ultimo_valor]`), lo que permite múltiples actualizaciones concurrentes al mismo key dentro de un superstep sin lanzar el error de LangGraph `INVALID_CONCURRENT_GRAPH_UPDATE` ("At key 'loop_counter': Can receive only one value per step"). Esto ocurre cuando `mcp_server.py` reanuda el grafo con `ainvoke(None)` en bucles y varios nodos actualizan los contadores a la vez.
 - **Control de Flujo (`Command`)**: Se utiliza el objeto `Command` de LangGraph para el enrutamiento dinámico. Esto permite a cada agente decidir de manera autónoma cuál es el siguiente nodo a ejecutar (por ejemplo, ir a su nodo de herramientas, avanzar al siguiente agente o terminar el proceso) y actualizar el estado global de forma explícita.
 - **Aristas Explícitas**: El grafo utiliza aristas explícitas para conectar los nodos de herramientas de vuelta a sus agentes correspondientes, asegurando un flujo de ejecución predecible y robusto.
 - **Resumen Automático de Contexto (`app/utils/summarization.py`)**: Para prevenir el desbordamiento de la ventana de contexto de los modelos LLM en conversaciones largas o iterativas, se implementa la función `aplicar_resumen_middleware` utilizando `SummarizationMiddleware` de LangChain. Este componente evalúa el historial de mensajes antes de cada invocación al LLM y, al superar un umbral configurable (`trigger_count=15`), resume automáticamente los mensajes más antiguos conservando los últimos mensajes recientes (`keep_count=8`), asegurando una alta eficiencia de tokens en los agentes `agente_planificador`, `agente_codificador` y `agente_revisor`.
@@ -219,11 +237,13 @@ El proyecto incluye una suite completa de pruebas unitarias, de integración y E
 
 ### Módulos de Prueba
 - `tests/test_agents.py`: Valida el comportamiento individual de los agentes (planificador, codificador y revisor).
+- `tests/test_analisis.py`: Verifica la detección de peticiones de análisis puro (incluye reportes, arquitectura y documentación) y que el reporte final del MCP incluye `analisis_final`.
 - `tests/test_e2e.py`: Pruebas End-to-End del ciclo completo del grafo bajo escenarios simulados.
 - `tests/test_files.py`: Verifica la utilidad de lectura y manipulación de archivos y system prompts.
-- `tests/test_integration.py`: Comprueba la correcta interacción entre nodos, aristas y herramientas de LangGraph.
+- `tests/test_integration.py`: Comprueba la correcta interacción entre nodos, aristas y herramientas de LangGraph. Incluye pruebas de que una instrucción de solo reporte/arquitectura NO invoca al agente codificador.
 - `tests/test_llm_factory.py`: Valida la inicialización correcta de la factoría de LLMs para múltiples proveedores.
 - `tests/test_mcp_server.py`: Prueba los endpoints y herramientas expuestas por el servidor FastMCP.
+- `tests/test_models.py`: Valida la estructura de `ProjectState` y el reducer `_ultimo_valor` de los contadores `loop_counter`/`revision_count`.
 - `tests/test_tool_nodes.py`: Verifica la correcta ejecución de los nodos de herramientas.
 - `tests/test_summarization.py`: Valida el comportamiento del middleware de resumen automático de contexto (`aplicar_resumen_middleware`), comprobando la preservación del historial por debajo del umbral (`trigger_count`) y el resumen correcto al superarlo.
 

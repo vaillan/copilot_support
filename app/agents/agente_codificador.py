@@ -124,7 +124,20 @@ def agente_codificador(state: ProjectState) -> Command:
         "directorio": directorio,
         "plan": plan
     })
-    respuesta = llm_con_herramientas.invoke(prompt)
+    # P5: Manejo de errores en la invocación LLM para no propagar excepciones
+    # que dejen el grafo sin mensaje claro.
+    try:
+        respuesta = llm_con_herramientas.invoke(prompt)
+    except BaseException as e:
+        msg_err = f"Error al invocar el LLM del Codificador: {str(e)}"
+        return Command(
+            update={
+                "errores_terminal": msg_err,
+                "messages": [HumanMessage(content=msg_err)],
+                "loop_counter": loop_counter,
+            },
+            goto=END
+        )
     
     if respuesta.tool_calls:
         # Verificar si se ha realizado una escritura física en disco (herramienta de

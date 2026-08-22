@@ -1,6 +1,12 @@
 import pytest
-from app.models.models import ProjectState
+from app.models.models import ProjectState, _ultimo_valor
 from app.main import crear_grafo
+
+def test_loop_counter_reducer_ultimo_valor():
+    """Verifica que el reducer Annotated conserva el último valor ante actualizaciones concurrentes."""
+    assert _ultimo_valor(1, 5) == 5
+    assert _ultimo_valor(0, 3) == 3
+    assert _ultimo_valor(7, 7) == 7
 
 def test_project_state_structure():
     state: ProjectState = {

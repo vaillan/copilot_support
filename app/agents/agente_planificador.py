@@ -20,14 +20,26 @@ from app.utils.args_utils import _get_args
 fileSystem = File(directory="prompts")
 
 # Palabras que indican intención de ANÁLISIS puro (no programación).
+# Incluye términos de REPORTE, ARQUITECTURA y DOCUMENTACIÓN para que
+# peticiones como "genera un reporte" o "genera una arquitectura" NO
+# desencadenen la fase de codificación.
 PALABRAS_ANALISIS = (
     "analiza", "análisis", "analizar", "explica", "explicar", "revisa",
     "diagnostica", "¿qué hace", "resume", "compara", "investiga",
     "describe", "cómo funciona", "qué es",
+    # Reportes / documentación / arquitectura (solo análisis, sin código).
+    # NOTA: "diseña"/"propón" NO se incluyen aquí (son ambiguos: pueden
+    # implicar implementación); solo se detectan en FRASES_ANALISIS_INICIO
+    # con contexto específico de arquitectura/diseño.
+    "reporte", "reporta", "arquitectura", "documenta", "documentación",
+    "documentar", "documento", "elabora", "redacta", "redactar",
 )
 
 # Palabras que indican intención de CREACIÓN/MODIFICACIÓN de código.
 # Su presencia anula la detección de análisis puro.
+# NOTA: "genera" NO se incluye a propósito: "genera un reporte" / "genera una
+# arquitectura" son análisis, mientras que "genera código" (subcadena exacta)
+# sí es creación y se detecta en el fallback por subcadena.
 PALABRAS_CREACION = (
     "escribe", "crea", "implementa", "modifica", "añade", "agrega",
     "corrige", "refactoriza", "construye", "genera código",
@@ -40,6 +52,14 @@ FRASES_ANALISIS_INICIO = (
     "realiza el analisis", "haz el analisis", "realiza un analisis",
     "haz un analisis", "realiza el análisis", "haz el análisis",
     "realiza un análisis", "haz un análisis",
+    # Reportes / arquitectura / documentación (solo análisis, sin código)
+    "genera un reporte", "genera una arquitectura", "genera un documento",
+    "genera la documentación", "genera un analisis", "genera un análisis",
+    "elabora un reporte", "elabora una arquitectura", "elabora un documento",
+    "redacta un reporte", "redacta la documentación", "redacta un documento",
+    "propón una arquitectura", "propón un diseño", "propón una solución",
+    "diseña la arquitectura", "diseña una arquitectura", "diseña un diseño",
+    "documenta el", "documenta la", "documenta los", "documenta las",
 )
 
 
@@ -137,28 +157,102 @@ def agente_planificador(state: ProjectState) -> Command:
     """
     loop_counter = state.get("loop_counter", 0) + 1
     if loop_counter > 15:
+        # P2: Guardar el error en 'errores_terminal' para que mcp_server.py lo
+        # reporte correctamente en lugar de devolver "Tarea completada" con None.
+        msg_limite = "Error: Se ha excedido el límite máximo de iteraciones (15) en el Agente Planificador. El proceso se detiene para evitar un bucle infinito."
         return Command(
             update={
-                "messages": [HumanMessage(content="Error: Se ha excedido el límite máximo de iteraciones (15) en el Agente Planificador. El proceso se detiene para evitar un bucle infinito.")]
+                "errores_terminal": msg_limite,
+                "messages": [HumanMessage(content=msg_limite)]
             },
             goto=END
         )
 
     # --- CAMINO ALTERNATIVO: ANÁLISIS PURO (sin programación) ---
     # Si la instrucción expresa intención de análisis y NO de creación de
-    # código, se genera un análisis directamente con el LLM del planificador
-    # (sin bindear herramientas para evitar tool_calls) y se termina el grafo
-    # sin pasar por el codificador ni el revisor.
+    # código, se genera un análisis con el LLM del planificador. P3: se bindean
+    # las herramientas de LECTURA para que el LLM pueda explorar el proyecto y
+    # fundamentar el reporte en el código real (antes solo generaba texto sin
+    # contexto). Si el LLM llama herramientas, se enruta al nodo de herramientas
+    # y se reintenta; si responde con texto, se entrega como 'analisis_final'.
     instruccion = state.get("instruccion_usuario", "")
-    if _es_peticion_analisis(instruccion):
+    if state.get("solo_analisis") or _es_peticion_analisis(instruccion):
+        directorio = state.get("directorio_proyecto", "./")
+        herramientas_lectura = _get_tools(directorio)
+
         llm_analisis = get_planner_llm(temperature=0.0)
+        llm_analisis_con_herramientas = llm_analisis.bind_tools(herramientas_lectura)
+
+        # P6: Prompt estructurado con secciones claras e instrucción explícita
+        # de usar las herramientas de lectura para fundamentar el reporte.
         prompt_analisis = (
             "Eres un analista técnico senior. Analiza el siguiente requerimiento "
             "sobre el proyecto y proporciona un análisis detallado y estructurado "
-            "en Markdown:\n\n"
+            "en Markdown con las siguientes secciones:\n"
+            "## Resumen Ejecutivo\n"
+            "## Análisis Detallado\n"
+            "## Recomendaciones\n"
+            "## Conclusión\n\n"
+            "IMPORTANTE:\n"
+            "- NO generes ni modifiques código; entrega únicamente el "
+            "reporte/análisis/arquitectura solicitado.\n"
+            "- Puedes usar las herramientas de lectura (read_file, "
+            "list_directory, get_project_index, read_file_summary) para "
+            "explorar el proyecto y fundamentar tu análisis en el código real.\n"
+            "- Si necesitas más contexto, llama a las herramientas de lectura "
+            "antes de redactar el reporte final.\n\n"
             f"Requerimiento:\n{instruccion}"
         )
-        respuesta_analisis = llm_analisis.invoke(prompt_analisis)
+        # Inyectar el índice del proyecto si está disponible (mejora la calidad
+        # del reporte/arquitectura sin necesidad de explorar el disco).
+        project_index = state.get("project_index")
+        if project_index and isinstance(project_index, dict):
+            from app.utils.project_index import formatear_indice_para_prompt
+            indice_texto = escapar_llaves(formatear_indice_para_prompt(project_index))
+            prompt_analisis += (
+                "\n\n=== ÍNDICE DEL PROYECTO (contexto de referencia) ===\n"
+                f"{indice_texto}"
+            )
+
+        # Usar ChatPromptTemplate con MessagesPlaceholder para mantener el
+        # historial de mensajes (incluidos los resultados de las herramientas
+        # de lectura) en contexto entre iteraciones del bucle de análisis.
+        prompt_template_analisis = ChatPromptTemplate.from_messages([
+            ("system", prompt_analisis),
+            MessagesPlaceholder(variable_name="messages")
+        ])
+
+        msgs_analisis = state.get("messages", [])
+        mensajes_contexto_analisis = aplicar_resumen_middleware(msgs_analisis, llm_analisis)
+        if mensajes_contexto_analisis and isinstance(mensajes_contexto_analisis[-1], AIMessage):
+            mensajes_contexto_analisis = list(mensajes_contexto_analisis) + [HumanMessage(content="Continúa con el análisis.")]
+
+        prompt_analisis_final = prompt_template_analisis.invoke({"messages": mensajes_contexto_analisis})
+
+        # P5: Manejo de errores en la invocación LLM.
+        try:
+            respuesta_analisis = llm_analisis_con_herramientas.invoke(prompt_analisis_final)
+        except BaseException as e:
+            msg_err = f"Error al generar el análisis: {str(e)}"
+            return Command(
+                update={
+                    "errores_terminal": msg_err,
+                    "messages": state.get("messages", []) + [HumanMessage(content=msg_err)],
+                    "loop_counter": 0,
+                },
+                goto=END
+            )
+
+        # Si el LLM quiere explorar el proyecto, enrutar al nodo de herramientas.
+        if respuesta_analisis.tool_calls:
+            return Command(
+                update={
+                    "messages": state.get("messages", []) + [respuesta_analisis],
+                    "loop_counter": loop_counter,
+                },
+                goto="nodo_herramientas_planificador"
+            )
+
         analisis_texto = str(respuesta_analisis.content)
         return Command(
             update={
@@ -199,7 +293,20 @@ def agente_planificador(state: ProjectState) -> Command:
         mensajes_contexto = list(mensajes_contexto) + [HumanMessage(content="Continúa con la planificación.")]
 
     prompt = prompt_template.invoke({"messages": mensajes_contexto, "directorio": directorio})
-    respuesta = llm_con_herramientas.invoke(prompt)
+    # P5: Manejo de errores en la invocación LLM para no propagar excepciones
+    # que dejen el grafo sin mensaje claro.
+    try:
+        respuesta = llm_con_herramientas.invoke(prompt)
+    except BaseException as e:
+        msg_err = f"Error al invocar el LLM del Planificador: {str(e)}"
+        return Command(
+            update={
+                "errores_terminal": msg_err,
+                "messages": [HumanMessage(content=msg_err)],
+                "loop_counter": loop_counter,
+            },
+            goto=END
+        )
     
     if respuesta.tool_calls:
         for tool_call in respuesta.tool_calls:
@@ -238,20 +345,22 @@ def agente_planificador(state: ProjectState) -> Command:
             goto="nodo_herramientas_planificador"
         )
     else:
-        # Si la respuesta es de texto y llevamos 2 o más reintentos sin herramientas, derivamos un plan con el contenido generado
-        if loop_counter >= 2 and respuesta.content:
+        # Respuesta de texto sin tool_calls.
+        # 1) Si la instrucción es de análisis puro (reporte/arquitectura/documentación),
+        #    el contenido generado ES el entregable: terminar el grafo en END con
+        #    'analisis_final' sin pasar por el codificador ni el revisor.
+        # 2) Si es creación de código, reintentar pidiendo al LLM que use
+        #    'entregar_plan_de_accion'. NUNCA fabricar un plan artificial con texto
+        #    plano hacia el agente_codificador (evita generación de código no deseada).
+        if respuesta.content and _es_peticion_analisis(state.get("instruccion_usuario", "")):
             text_content = str(respuesta.content)
-            plan_generado = {
-                "explicacion_arquitectura": text_content[:200],
-                "pasos": [{"archivo": "main.py", "tarea": state.get("instruccion_usuario", text_content), "requiere_test": False}]
-            }
             return Command(
                 update={
-                    "plan_de_accion": plan_generado,
+                    "analisis_final": text_content,
                     "messages": [respuesta],
                     "loop_counter": 0
                 },
-                goto="agente_codificador"
+                goto=END
             )
 
         msg = "Debes llamar a una herramienta para investigar o llamar a entregar_plan_de_accion si ya terminaste."
