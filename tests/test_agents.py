@@ -289,7 +289,7 @@ def test_agente_revisor_comando_duplicado_evita_bucle(mock_get_file, mock_get_ll
 
 def test_herramienta_terminal_aislada():
     from app.agents.agente_revisor import terminal
-    res = terminal.invoke({"commands": "echo hola"})
+    res = terminal.invoke({"comando": "echo hola"})
     assert "$ echo hola" in res
     assert "hola" in res
 
