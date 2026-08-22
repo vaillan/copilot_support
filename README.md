@@ -166,7 +166,108 @@ Implementado utilizando **FastMCP**, el servidor expone capacidades avanzadas pa
 
 ---
 
-#### 2. `visualizar_cambios` (Función Interna - **NO EXPUESTA COMO HERRAMIENTA MCP**)
+#### 2. `consultar_estado_tarea`
+
+Consulta el estado actual de una tarea delegada al equipo de IA. Combina el estado registrado en el `TaskRegistry` con el estado del grafo LangGraph (vía `visualizar_cambios`) y el `git diff`/`git status` en disco.
+
+**Firma:**
+```python
+async def consultar_estado_tarea(
+    tarea_id: str,
+    directorio_proyecto: str = "",
+    ctx: Optional[Context] = None
+) -> str
+```
+
+**Parámetros:**
+
+| Parámetro | Tipo | Requerido | Descripción |
+|-----------|------|-----------|-------------|
+| `tarea_id` | `string` | **Sí** | Identificador de la tarea a consultar (ej. `task_a1b2c3d4`). |
+| `directorio_proyecto` | `string` | No (default: `""`) | Ruta del proyecto. Si se omite, se infiere del estado del grafo. |
+| `ctx` | `Context` | No | Contexto MCP para notificaciones de progreso. |
+
+**Respuesta:** Markdown con el estado registrado en el `TaskRegistry` (`running`, `paused_planning`, `paused_code`, `completed`, `cancelled`, `timeout`, `error`), el directorio, la última actualización y el detalle, seguido del estado del grafo (resumen de cambios, nodo en el que está pausado o finalizado, y cambios en disco).
+
+**Ejemplo de invocación JSON:**
+```json
+{
+  "tool": "consultar_estado_tarea",
+  "arguments": {
+    "tarea_id": "task_a1b2c3d4"
+  }
+}
+```
+
+---
+
+#### 3. `listar_tareas`
+
+Lista las tareas registradas en el servidor MCP, con filtro opcional por estado.
+
+**Firma:**
+```python
+async def listar_tareas(
+    estado: str = "",
+    ctx: Optional[Context] = None
+) -> str
+```
+
+**Parámetros:**
+
+| Parámetro | Tipo | Requerido | Descripción |
+|-----------|------|-----------|-------------|
+| `estado` | `string` | No (default: `""`) | Filtro opcional por estado. Valores válidos (definidos en `app/utils/task_registry.py`): `running`, `paused_planning`, `paused_code`, `completed`, `cancelled`, `timeout`, `error`. Vacío = listar todas. |
+| `ctx` | `Context` | No | Contexto MCP para notificaciones de progreso. |
+
+**Respuesta:** Tabla Markdown con el formato `| tarea_id | estado | directorio_proyecto | última actualización |`. Si no hay tareas, devuelve un mensaje informativo.
+
+**Ejemplo de invocación JSON:**
+```json
+{
+  "tool": "listar_tareas",
+  "arguments": {
+    "estado": "paused_planning"
+  }
+}
+```
+
+---
+
+#### 4. `cancelar_tarea`
+
+Cancela una tarea en curso registrada en el `TaskRegistry`. Marca la tarea como `cancelled` e interrumpe **realmente** la ejecución en curso cancelando la `asyncio.Task` activa registrada en el dict `tareas_activas` de `mcp_server.py` (cancelación efectiva, **no** `asyncio.shield`), propagando la cancelación al grafo LangGraph.
+
+**Firma:**
+```python
+async def cancelar_tarea(
+    tarea_id: str,
+    ctx: Optional[Context] = None
+) -> str
+```
+
+**Parámetros:**
+
+| Parámetro | Tipo | Requerido | Descripción |
+|-----------|------|-----------|-------------|
+| `tarea_id` | `string` | **Sí** | Identificador de la tarea a cancelar (ej. `task_a1b2c3d4`). |
+| `ctx` | `Context` | No | Contexto MCP para notificaciones de progreso. |
+
+**Respuesta:** Mensaje confirmando que la tarea fue marcada como `cancelled` en el registro y, si había una `asyncio.Task` activa, que su ejecución en curso fue interrumpida. Si la tarea no existe en el registro, devuelve un aviso.
+
+**Ejemplo de invocación JSON:**
+```json
+{
+  "tool": "cancelar_tarea",
+  "arguments": {
+    "tarea_id": "task_a1b2c3d4"
+  }
+}
+```
+
+---
+
+#### 5. `visualizar_cambios` (Función Interna - **NO EXPUESTA COMO HERRAMIENTA MCP**)
 
 > ⚠️ **Nota**: Ya no está expuesta como herramienta MCP. Función auxiliar interna para consultar estado de tarea o cambios en disco.
 
@@ -181,6 +282,22 @@ Implementado utilizando **FastMCP**, el servidor expone capacidades avanzadas pa
 - **Auto-Aprobación**: Global (`MCP_AUTO_APPROVE="true"`) o por tarea (`auto_approve=True`).
 - **Notificaciones Progreso**: Tiempo real con formato `[XX%]`, compatible `progressToken`, fallback `[XX%]` si no hay token. Timeout configurable (`MCP_TASK_TIMEOUT_SECONDS`, default 300s).
 - **Inspección Cambios**: `git diff`/`git status` automático en pausas y fin. Detecta si Codificador omitió escritura.
+
+### Capa Modular MCP (`app/mcp/`)
+
+Los helpers del servidor MCP que no dependen del grafo LangGraph viven en una capa modular separada bajo `app/mcp/`, lo que permite testearlos de forma directa y unitaria sin arrancar el servidor completo:
+
+- **`app/mcp/progress.py`** — Notificaciones de progreso en tiempo real:
+  - `_log_stderr(msg)`: escribe a `stderr` de forma segura (*fire-and-forget*).
+  - `_safe_await(coro, timeout=1.0)`: await seguro con timeout de 1s que nunca propaga excepciones.
+  - `notificar_progreso(ctx, mensaje, progreso, total)`: usa `ctx.report_progress` con `progressToken` cuando está disponible; si no hay token, hace *fallback* al formato `[XX%]` en `ctx.info`. Captura `anyio.BrokenResourceError` y cualquier otra excepción para nunca bloquear la ejecución principal.
+
+- **`app/mcp/git_utils.py`** — Utilidades de Git:
+  - `obtener_git_diff(directorio)`: ejecuta `git diff` + `git status --short` vía `subprocess` (timeout 5s). Tolerante a fallos: si el directorio no existe, no es un repo git o `git` no está instalado, devuelve `""` sin lanzar excepción.
+
+- **`app/mcp/reporting.py`** — Reporting en Markdown:
+  - `generar_markdown_pausa(...)`: genera el reporte de pausa con **orden estricto**: título → explicación → tabla de pasos → `git diff` → bloque `🛑 ATENCIÓN ASISTENTE DE IA` → `👉 INSTRUCCIONES PARA EL USUARIO HUMANO`.
+  - `visualizar_cambios(...)`: consulta el estado del grafo y los cambios en disco. Usa **import perezoso** de `mcp_server` **dentro de la función** para evitar el import circular con el grafo (`agentes_app`). ⚠️ **NO refactorizar este patrón**: los tests existentes parchean `mcp_server.visualizar_cambios` y `mcp_server.agentes_app`.
 
 ### Transporte del Servidor (stdio / SSE)
 
@@ -266,18 +383,25 @@ El script `./run_tests.sh` automatiza la ejecución de toda la suite de pruebas 
 .
 ├── .env                    # Variables de entorno
 ├── .gitignore              # Archivos ignorados por git
-├── checkpoints.sqlite      # Base de datos de persistencia (MemorySaver)
 ├── LICENSE                 # Licencia del proyecto
 ├── mcp_server.py           # Punto de entrada para el servidor FastMCP
 ├── README.md               # Documentación completa del proyecto
 ├── requirements.txt        # Dependencias de Python
 ├── run_tests.sh            # Script automatizado de pruebas y linter
 ├── tech-lead-export.yaml   # Perfil personalizado "Tech Lead" para Zoo Code
+├── test.py                 # Script de depuración manual
+├── test_graph.py           # Script de depuración manual del grafo LangGraph
+├── test_tool.py            # Script de depuración manual de herramientas
 ├── app/                    # Código fuente principal
 │   ├── agents/             # Lógica de agentes especializados
 │   │   ├── agente_codificador.py
 │   │   ├── agente_planificador.py
 │   │   ├── agente_revisor.py
+│   │   └── __init__.py
+│   ├── mcp/                # Capa modular del servidor MCP (helpers puros)
+│   │   ├── git_utils.py    #   obtener_git_diff (subprocess git diff/status)
+│   │   ├── progress.py     #   notificar_progreso, _safe_await, _log_stderr
+│   │   ├── reporting.py    #   generar_markdown_pausa, visualizar_cambios
 │   │   └── __init__.py
 │   ├── models/             # Esquemas de datos y fábrica de LLMs
 │   │   ├── llm_factory.py
@@ -289,21 +413,38 @@ El script `./run_tests.sh` automatiza la ejecución de toda la suite de pruebas 
 │   ├── settings/           # Configuración dinámica con pydantic-settings
 │   │   ├── settings.py
 │   │   └── __init__.py
-│   └── utils/              # Utilidades auxiliares
-│       ├── files.py
-│       ├── project_index.py # Índice de proyecto con caché incremental (optimización de tokens)
-│       └── summarization.py # Utilidad de resumen automático de contexto
+│   ├── utils/              # Utilidades auxiliares
+│   │   ├── args_utils.py   #   Parseo seguro de argumentos de tool_calls
+│   │   ├── files.py        #   Herramientas de archivos (File, get_custom_file_tools)
+│   │   ├── project_index.py#   Índice de proyecto con caché incremental (optimización de tokens)
+│   │   ├── prompt_utils.py #   Utilidades de construcción segura de prompts
+│   │   ├── review_utils.py #   Helpers puros de revisión para el Agente Revisor
+│   │   ├── summarization.py#   Utilidad de resumen automático de contexto
+│   │   ├── task_registry.py#   TaskRegistry thread-safe (estados del ciclo de vida)
+│   │   ├── terminal.py     #   Ejecución segura de comandos de terminal
+│   │   └── tool_nodes.py   #   Nodos de herramientas del grafo
 │   └── main.py             # Orquestador principal del Grafo (StateGraph)
 └── tests/                  # Suite de pruebas automatizadas
     ├── conftest.py         # Configuración y fixtures compartidas de pytest
+    ├── test_agente_codificador.py
     ├── test_agents.py      # Pruebas de agentes
+    ├── test_analisis.py
+    ├── test_args_parsing.py
     ├── test_e2e.py         # Pruebas End-to-End
     ├── test_files.py       # Pruebas de utilidades de archivos
     ├── test_integration.py # Pruebas de integración LangGraph
     ├── test_llm_factory.py # Pruebas de la factoría de LLMs
-    ├── test_mcp_server.py  # Pruebas del servidor MCP
+    ├── test_mcp_git_utils.py  # Pruebas directas de app/mcp/git_utils.py
+    ├── test_mcp_progress.py   # Pruebas directas de app/mcp/progress.py
+    ├── test_mcp_reporting.py  # Pruebas directas de app/mcp/reporting.py
+    ├── test_mcp_server.py  # Pruebas del servidor MCP (vía fachada)
+    ├── test_models.py
     ├── test_project_index.py # Pruebas del índice de proyecto
+    ├── test_prompt_utils.py
+    ├── test_review_utils.py
     ├── test_summarization.py # Pruebas unitarias de resumen de contexto
+    ├── test_task_registry.py
+    ├── test_terminal.py
     └── test_tool_nodes.py  # Pruebas de nodos de herramientas
 ```
 
@@ -366,6 +507,15 @@ PROJECT_INDEX_MAX_TOKENS_PER_FILE="400"
 PROJECT_INDEX_CACHE_DIR=".project_index"
 ```
 
+**Variables de control del servidor MCP:**
+
+| Variable | Default | Valores aceptados | Descripción |
+|----------|---------|-------------------|-------------|
+| `MCP_AUTO_APPROVE` | `"false"` | `"true"`, `"1"`, `"yes"` | Auto-aprueba las pausas Human-in-the-Loop (Pausa 1 y Pausa 2) sin confirmación manual, ejecutando el flujo completo de forma automática. Cualquier otro valor (o ausencia) se interpreta como `false`. |
+| `MCP_TASK_TIMEOUT_SECONDS` | `"300"` | Entero positivo (segundos) | Timeout máximo de ejecución de una tarea delegada. Si una tarea supera este tiempo sin completarse, se cancela automáticamente y se marca con estado **`timeout`** en el `TaskRegistry` (distinto de `cancelled`, que corresponde a cancelación manual vía `cancelar_tarea`). |
+
+> ⚠️ **Nota sobre estados del ciclo de vida**: Las tareas canceladas por **timeout** se registran en el `TaskRegistry` con el estado `timeout`, mientras que las canceladas manualmente con la herramienta `cancelar_tarea` se registran como `cancelled`. Ambos estados son consultables con `consultar_estado_tarea` y filtrables con `listar_tareas`.
+
 ---
 
 ## 🔌 Integración con MCP y Zoo Code
@@ -397,7 +547,10 @@ PROJECT_INDEX_CACHE_DIR=".project_index"
         "MCP_TASK_TIMEOUT_SECONDS": "300"
       },
       "alwaysAllow": [
-        "delegar_tarea_a_equipo_ia"
+        "delegar_tarea_a_equipo_ia",
+        "consultar_estado_tarea",
+        "listar_tareas",
+        "cancelar_tarea"
       ],
       "timeout": 600
     }
@@ -442,7 +595,10 @@ Añade la siguiente configuración al archivo `~/.claude.json` (nivel de usuario
         "MCP_TASK_TIMEOUT_SECONDS": "300"
       },
       "alwaysAllow": [
-        "delegar_tarea_a_equipo_ia"
+        "delegar_tarea_a_equipo_ia",
+        "consultar_estado_tarea",
+        "listar_tareas",
+        "cancelar_tarea"
       ],
       "timeout": 600
     }
