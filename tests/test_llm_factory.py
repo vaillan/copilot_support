@@ -14,6 +14,7 @@ class TestLLMFactory(unittest.TestCase):
         mock_settings.LLM_MODEL = None
         mock_settings.LLM_API_KEY = "test_key"
         mock_settings.LLM_REQUESTS_PER_SECOND = 0.0
+        mock_settings.LLM_TIMEOUT = 60.0
         
         get_llm()
         
@@ -23,7 +24,7 @@ class TestLLMFactory(unittest.TestCase):
             temperature=0.0,
             api_key="test_key",
             max_retries=5,
-            timeout=10000
+            timeout=60.0
         )
 
     @patch('app.models.llm_factory.settings')
@@ -33,6 +34,7 @@ class TestLLMFactory(unittest.TestCase):
         mock_settings.LLM_MODEL = "gpt-4"
         mock_settings.LLM_API_KEY = "openai_key"
         mock_settings.LLM_REQUESTS_PER_SECOND = 0.0
+        mock_settings.LLM_TIMEOUT = 60.0
         
         get_llm(temperature=0.5)
         
@@ -42,7 +44,7 @@ class TestLLMFactory(unittest.TestCase):
             temperature=0.5,
             api_key="openai_key",
             max_retries=5,
-            timeout=10000
+            timeout=60.0
         )
 
     @patch('app.models.llm_factory.settings')
@@ -53,6 +55,7 @@ class TestLLMFactory(unittest.TestCase):
         mock_settings.LLM_API_KEY = "openai_key"
         mock_settings.LLM_REQUESTS_PER_SECOND = 5.0
         mock_settings.LLM_CHECKS_PER_SECOND = 10.0
+        mock_settings.LLM_TIMEOUT = 60.0
         
         get_llm()
         
@@ -75,6 +78,27 @@ class TestLLMFactory(unittest.TestCase):
         _, kwargs = mock_chat_ollama.call_args
         self.assertIn("rate_limiter", kwargs)
         self.assertIsInstance(kwargs["rate_limiter"], InMemoryRateLimiter)
+
+    @patch('app.models.llm_factory.settings')
+    @patch('app.models.llm_factory.init_chat_model')
+    def test_get_llm_uses_settings_timeout(self, mock_init, mock_settings):
+        mock_settings.LLM_PROVIDER = "openai"
+        mock_settings.LLM_MODEL = "gpt-4"
+        mock_settings.LLM_API_KEY = "openai_key"
+        mock_settings.LLM_REQUESTS_PER_SECOND = 0.0
+        mock_settings.LLM_TIMEOUT = 30.0
+
+        get_llm()
+
+        _, kwargs = mock_init.call_args
+        self.assertEqual(kwargs["timeout"], 30.0)
+
+    @patch('app.settings.settings.os.getenv')
+    def test_settings_llm_timeout_default(self, mock_getenv):
+        mock_getenv.return_value = ""
+        from app.settings.settings import Settings
+        settings = Settings()
+        self.assertEqual(settings.LLM_TIMEOUT, 60.0)
 
 if __name__ == '__main__':
     unittest.main()

@@ -48,7 +48,7 @@ def _create_llm(provider: str, model_name: str, api_key: str, temperature: float
                 "temperature": temperature,
                 "api_key": api_key,
                 "max_retries": 5,
-                "timeout": 10000
+                "timeout": settings.LLM_TIMEOUT
             }
             if rate_limiter:
                 kwargs["rate_limiter"] = rate_limiter

@@ -105,6 +105,7 @@ Todas las variables de límite de contexto se leen desde el entorno (`.env`) en 
 | `PROJECT_INDEX_MAX_DEPTH` | 8 | Profundidad máxima del árbol de directorios indexado | `app/utils/project_index.py` |
 | `PROJECT_INDEX_MAX_FILE_SIZE` | 262144 | Tamaño máximo en bytes de un archivo para ser indexado | `app/utils/project_index.py` |
 | `GIT_DIFF_MAX_FILE_SIZE` | 1048576 | Tamaño máximo en bytes del diff por archivo | `app/mcp/git_utils.py` |
+| `LLM_TIMEOUT` | 60 | Timeout en segundos para las llamadas al LLM (init_chat_model) | `app/models/llm_factory.py` |
 
 Ejemplo de override en `.env`:
 
@@ -114,6 +115,7 @@ TERMINAL_MAX_CHARS_PER_LINE="600"
 PROJECT_INDEX_MAX_DEPTH="10"
 PROJECT_INDEX_MAX_FILE_SIZE="524288"
 GIT_DIFF_MAX_FILE_SIZE="2097152"
+LLM_TIMEOUT="60"
 ```
 
 > **Nota:** Los valores se aplican al arrancar el servidor MCP; no requieren reinicio del cliente, solo del proceso.

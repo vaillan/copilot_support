@@ -33,6 +33,8 @@ class Settings(BaseSettings):
 
     LLM_REQUESTS_PER_SECOND: float = float(os.getenv("LLM_REQUESTS_PER_SECOND", "0.0"))
     LLM_CHECKS_PER_SECOND: float = float(os.getenv("LLM_CHECKS_PER_SECOND", "10.0"))
+    # Timeout en SEGUNDOS para las llamadas al LLM (init_chat_model). Default 60s.
+    LLM_TIMEOUT: float = float(os.getenv("LLM_TIMEOUT", "60"))
 
     # ==========================================
     # Índice de Proyecto (Optimización de Tokens)
