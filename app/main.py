@@ -4,9 +4,10 @@ Este módulo define y compila el grafo de LangGraph conectando los agentes
 (Planificador, Codificador, Revisor) y sus respectivos nodos de herramientas.
 """
 
+import sqlite3
 from typing import Optional
 from langgraph.graph import StateGraph, START
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 from app.models.models import ProjectState
 from app.agents.agente_planificador import agente_planificador
@@ -22,7 +23,7 @@ from app.utils.tool_nodes import (
 def crear_grafo(
     interrumpir_en_codificador: bool = True,
     interrumpir_en_revisor: bool = True,
-    checkpointer: Optional[MemorySaver] = None,
+    checkpointer: Optional[SqliteSaver] = None,
 ):
     """
     Construye y compila el flujo de trabajo multi-agente en LangGraph.
@@ -40,7 +41,7 @@ def crear_grafo(
     Args:
         interrumpir_en_codificador: Si es True, pausa la ejecución antes del codificador para revisión humana.
         interrumpir_en_revisor: Si es True, pausa la ejecución antes del revisor para revisión humana.
-        checkpointer: Instancia opcional de persistencia de estado (por defecto usa MemorySaver).
+        checkpointer: Instancia opcional de persistencia de estado (por defecto usa SqliteSaver con checkpoints.sqlite).
 
     Returns:
         CompiledStateGraph: Grafo compilado y listo para ejecución.
@@ -66,8 +67,16 @@ def crear_grafo(
     workflow.add_edge("nodo_herramientas_revisor", "agente_revisor")
 
     # 5. Checkpointer para persistencia del estado
+    # NOTA: SqliteSaver.from_conn_string() es un context manager (decorado con
+    # @contextmanager); llamarlo directamente devuelve un _GeneratorContextManager,
+    # NO una instancia de BaseCheckpointSaver, y workflow.compile() lanza TypeError.
+    # Por eso se crea la conexión sqlite3 manualmente y se pasa al constructor
+    # SqliteSaver(conn), que sí es un checkpointer válido.
+    # check_same_thread=False: LangGraph puede invocar el checkpointer desde
+    # múltiples threads (invocaciones async/threadpool).
     if checkpointer is None:
-        checkpointer = MemorySaver()
+        conn = sqlite3.connect("checkpoints.sqlite", check_same_thread=False)
+        checkpointer = SqliteSaver(conn)
 
     # 6. Configuración de interrupciones para Human-in-the-loop
     interrupt_before = []
