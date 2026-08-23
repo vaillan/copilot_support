@@ -38,7 +38,7 @@ def test_construir_indice_estructura(tmp_path):
     proyecto = _crear(tmp_path)
     indice = construir_indice(str(proyecto), usar_cache=False)
 
-    assert indice["version"] == 1
+    assert indice["version"] == 2
     assert indice["directorio"] == str(proyecto.resolve())
 
     # El árbol debe contener app/ y README.md
@@ -233,3 +233,168 @@ def test_cargar_indice_legacy_migracion(tmp_path):
     assert cargado is not None
     assert cargado["directorio"] == indice["directorio"]
     assert "app/main.py" in cargado["resumenes"]
+
+
+# ---------------------------------------------------------------------------
+# Resúmenes especializados de dependencias y configuración de ecosistemas
+# ---------------------------------------------------------------------------
+
+
+def test_resumir_requisitos_requirements_txt(tmp_path):
+    """requirements.txt: extrae dependencias y omite comentarios."""
+    archivo = tmp_path / "requirements.txt"
+    archivo.write_text(
+        "# Dependencias del proyecto\n"
+        "fastapi==0.115.0\n"
+        "uvicorn[standard]==0.30.0\n"
+        "\n"
+        "# Herramientas de desarrollo\n"
+        "pytest>=8.0.0\n",
+        encoding="utf-8",
+    )
+    resumen = resumir_archivo(archivo, max_tokens=400)
+
+    assert "fastapi==0.115.0" in resumen["resumen"]
+    assert "uvicorn[standard]==0.30.0" in resumen["resumen"]
+    assert "pytest>=8.0.0" in resumen["resumen"]
+    assert "Dependencias del proyecto" not in resumen["resumen"]
+    assert "Herramientas de desarrollo" not in resumen["resumen"]
+    assert resumen["dependencias"] == [
+        "fastapi==0.115.0",
+        "uvicorn[standard]==0.30.0",
+        "pytest>=8.0.0",
+    ]
+
+
+def test_resumir_requisitos_pyproject_toml(tmp_path):
+    """pyproject.toml: extrae claves de [project] y secciones tool/optional."""
+    archivo = tmp_path / "pyproject.toml"
+    archivo.write_text(
+        "[project]\n"
+        'name = "mi-proyecto"\n'
+        'version = "1.0.0"\n'
+        'dependencies = ["fastapi", "uvicorn"]\n'
+        'requires-python = ">=3.10"\n'
+        "\n"
+        "[project.optional-dependencies]\n"
+        'dev = ["pytest", "ruff"]\n'
+        "\n"
+        "[tool.black]\n"
+        "line-length = 88\n",
+        encoding="utf-8",
+    )
+    resumen = resumir_archivo(archivo, max_tokens=400)
+
+    assert "name" in resumen["resumen"]
+    assert "version" in resumen["resumen"]
+    assert "dependencies" in resumen["resumen"]
+    assert "requires-python" in resumen["resumen"]
+    assert "[project.optional-dependencies]" in resumen["resumen"]
+    assert "[tool.black]" in resumen["resumen"]
+
+
+def test_resumir_requisitos_package_json(tmp_path):
+    """package.json: extrae dependencies y devDependencies con versiones."""
+    archivo = tmp_path / "package.json"
+    archivo.write_text(
+        '{\n'
+        '  "name": "app",\n'
+        '  "version": "1.0.0",\n'
+        '  "dependencies": {"express": "^4.18.0", "lodash": "^4.17.21"},\n'
+        '  "devDependencies": {"jest": "^29.0.0"}\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    resumen = resumir_archivo(archivo, max_tokens=400)
+
+    assert "express: ^4.18.0" in resumen["resumen"]
+    assert "lodash: ^4.17.21" in resumen["resumen"]
+    assert "jest: ^29.0.0" in resumen["resumen"]
+
+
+def test_resumir_requisitos_contenido_vacio(tmp_path):
+    """Contenido vacío en archivos de requisitos -> resumen vacío sin excepción."""
+    for nombre in ("requirements.txt", "pyproject.toml", "package.json"):
+        archivo = tmp_path / nombre
+        archivo.write_text("", encoding="utf-8")
+        resumen = resumir_archivo(archivo, max_tokens=400)
+        assert resumen["resumen"] == ""
+        assert resumen["dependencias"] == []
+
+
+def test_resumir_dockerfile(tmp_path):
+    """Dockerfile: extrae FROM, RUN, ENV, EXPOSE, WORKDIR y CMD."""
+    archivo = tmp_path / "Dockerfile"
+    archivo.write_text(
+        "FROM python:3.11-slim\n"
+        "WORKDIR /app\n"
+        "RUN pip install --no-cache-dir -r requirements.txt\n"
+        "ENV PYTHONUNBUFFERED=1\n"
+        "EXPOSE 8000\n"
+        'CMD ["uvicorn", "app.main:app"]\n',
+        encoding="utf-8",
+    )
+    resumen = resumir_archivo(archivo, max_tokens=400)
+
+    assert "FROM python:3.11-slim" in resumen["resumen"]
+    assert "RUN pip install" in resumen["resumen"]
+    assert "ENV PYTHONUNBUFFERED=1" in resumen["resumen"]
+    assert "EXPOSE 8000" in resumen["resumen"]
+    assert "WORKDIR /app" in resumen["resumen"]
+    assert "CMD" in resumen["resumen"]
+
+
+def test_resumir_makefile(tmp_path):
+    """Makefile: extrae targets y variables."""
+    archivo = tmp_path / "Makefile"
+    archivo.write_text(
+        "PYTHON=python3\n"
+        "VENV=.venv\n"
+        "\n"
+        "install:\n"
+        "\tpip install -r requirements.txt\n"
+        "\n"
+        "test:\n"
+        "\tpytest\n",
+        encoding="utf-8",
+    )
+    resumen = resumir_archivo(archivo, max_tokens=400)
+
+    assert "install" in resumen["resumen"]
+    assert "test" in resumen["resumen"]
+    assert "PYTHON=python3" in resumen["resumen"]
+    assert "VENV=.venv" in resumen["resumen"]
+
+
+def test_resumir_gitignore(tmp_path):
+    """.gitignore: extrae patrones y omite comentarios."""
+    archivo = tmp_path / ".gitignore"
+    archivo.write_text(
+        "# Entornos virtuales\n"
+        ".venv/\n"
+        "venv/\n"
+        "\n"
+        "# Caché de Python\n"
+        "__pycache__/\n"
+        "*.pyc\n"
+        ".env\n",
+        encoding="utf-8",
+    )
+    resumen = resumir_archivo(archivo, max_tokens=400)
+
+    assert ".venv/" in resumen["resumen"]
+    assert "venv/" in resumen["resumen"]
+    assert "__pycache__/" in resumen["resumen"]
+    assert "*.pyc" in resumen["resumen"]
+    assert ".env" in resumen["resumen"]
+    assert "Entornos virtuales" not in resumen["resumen"]
+    assert "Caché de Python" not in resumen["resumen"]
+
+
+def test_resumir_ecosistemas_contenido_vacio(tmp_path):
+    """Contenido vacío en Dockerfile/Makefile/.gitignore -> resumen vacío sin excepción."""
+    for nombre in ("Dockerfile", "Makefile", ".gitignore"):
+        archivo = tmp_path / nombre
+        archivo.write_text("", encoding="utf-8")
+        resumen = resumir_archivo(archivo, max_tokens=400)
+        assert resumen["resumen"] == ""
