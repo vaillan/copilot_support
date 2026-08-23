@@ -4,6 +4,8 @@ import pytest
 import asyncio
 import anyio
 from unittest.mock import patch, MagicMock, AsyncMock
+import mcp_server
+from app.utils.task_registry import task_registry
 from mcp_server import visualizar_cambios, delegar_tarea_a_equipo_ia, obtener_git_diff, notificar_progreso, generar_markdown_pausa, consultar_estado_tarea, listar_tareas, cancelar_tarea
 
 def test_visualizar_cambios_sin_parametros():
@@ -371,7 +373,6 @@ def test_generar_markdown_pausa_con_diff():
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
 def test_consultar_estado_tarea_con_tarea_registrada(mock_aget_state):
-    from app.utils.task_registry import task_registry
     task_registry.clear()
     task_registry.register_task(
         tarea_id="task_consulta",
@@ -400,7 +401,6 @@ def test_consultar_estado_tarea_con_tarea_registrada(mock_aget_state):
 
 @patch("mcp_server.visualizar_cambios", new_callable=AsyncMock)
 def test_consultar_estado_tarea_tarea_inexistente(mock_visualizar):
-    from app.utils.task_registry import task_registry
     task_registry.clear()
     mock_visualizar.return_value = "No se encontraron cambios."
 
@@ -415,7 +415,6 @@ def test_consultar_estado_tarea_tarea_inexistente(mock_visualizar):
 
 
 def test_listar_tareas_sin_tareas():
-    from app.utils.task_registry import task_registry
     task_registry.clear()
 
     mock_ctx = AsyncMock()
