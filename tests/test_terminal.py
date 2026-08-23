@@ -87,6 +87,69 @@ class TestLimitarSalida:
         """El límite por defecto de la herramienta es 4000 caracteres."""
         assert _MAX_SALIDA_DEFAULT == 4000
 
+    def test_limitar_salida_retrocompatible_sin_limites_extra(self):
+        """Con max_lineas=None y max_caracteres_por_linea=None el resultado
+        es exactamente el original (solo el cap max_chars)."""
+        salida = "linea1\nlinea2\nlinea3"
+        resultado = _limitar_salida(salida, max_chars=4000)
+        assert resultado == salida
+
+    def test_limitar_salida_por_lineas(self):
+        """Se conservan las primeras max_lineas y se añade el marcador."""
+        salida = "\n".join(f"linea{i}" for i in range(10))
+        resultado = _limitar_salida(salida, max_lineas=3)
+        lineas = resultado.splitlines()
+        assert lineas[0] == "linea0"
+        assert lineas[1] == "linea1"
+        assert lineas[2] == "linea2"
+        assert lineas[3] == "[lineas restantes omitidas: 7]"
+        assert len(lineas) == 4
+
+    def test_limitar_salida_por_lineas_sin_omitir(self):
+        """Si no se supera max_lineas, la salida queda intacta."""
+        salida = "a\nb\nc"
+        resultado = _limitar_salida(salida, max_lineas=5)
+        assert resultado == salida
+
+    def test_limitar_salida_por_lineas_limite_cero(self):
+        """max_lineas <= 0 trunca toda la salida."""
+        resultado = _limitar_salida("a\nb\nc", max_lineas=0)
+        assert resultado == ""
+
+    def test_limitar_salida_por_caracteres_por_linea(self):
+        """Las líneas que exceden el límite se truncan con el marcador."""
+        salida = "a" * 100 + "\n" + "b" * 10
+        resultado = _limitar_salida(salida, max_caracteres_por_linea=20)
+        lineas = resultado.splitlines()
+        assert lineas[0] == "a" * 20 + "[...]"
+        assert lineas[1] == "b" * 10
+
+    def test_limitar_salida_por_caracteres_por_linea_limite_cero(self):
+        """max_caracteres_por_linea <= 0 trunca toda la salida."""
+        resultado = _limitar_salida("abc", max_caracteres_por_linea=0)
+        assert resultado == ""
+
+    def test_limitar_salida_combinado(self):
+        """Se aplican límite de líneas, por línea y global en orden."""
+        salida = "\n".join("x" * 100 for _ in range(10))
+        resultado = _limitar_salida(
+            salida,
+            max_chars=4000,
+            max_lineas=3,
+            max_caracteres_por_linea=10,
+        )
+        lineas = resultado.splitlines()
+        assert lineas[0] == "x" * 10 + "[...]"
+        assert lineas[1] == "x" * 10 + "[...]"
+        assert lineas[2] == "x" * 10 + "[...]"
+        assert lineas[3] == "[lineas restantes omitidas: 7]"
+
+    def test_limitar_salida_vacia(self):
+        """La salida vacía retorna cadena vacía."""
+        assert _limitar_salida("") == ""
+        assert _limitar_salida("", max_lineas=3) == ""
+        assert _limitar_salida("", max_caracteres_por_linea=3) == ""
+
 
 class TestEjecutarComando:
     def test_ejecutar_comando_exitoso(self):

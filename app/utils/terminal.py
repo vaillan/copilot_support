@@ -22,9 +22,14 @@ del grafo) para permitir pruebas unitarias aisladas.
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 from langchain_core.tools import tool
+from app.settings.settings import Settings
+
+# Instancia module-level de configuración (patrón de project_index.py).
+# settings.py no importa terminal.py, por lo que no hay ciclo de import.
+settings = Settings()
 
 # Prefijos de comandos seguros permitidos. Un comando es válido si coincide
 # exactamente con un prefijo o si comienza con el prefijo seguido de un
@@ -83,6 +88,12 @@ _FLAGS_RM: Tuple[str, ...] = (
 
 # Límite por defecto de caracteres de salida.
 _MAX_SALIDA_DEFAULT: int = 4000
+
+# Límite por defecto de líneas de salida conservadas.
+_MAX_SALIDA_LINEAS_DEFAULT: int = 200
+
+# Límite por defecto de caracteres por línea de salida.
+_MAX_CARACTERES_POR_LINEA_DEFAULT: int = 500
 
 # Timeout por defecto en segundos.
 _TIMEOUT_DEFAULT: int = 30
@@ -158,22 +169,70 @@ def _validar_rutas_rm(comando: str) -> Tuple[bool, str]:
     return True, ""
 
 
-def _limitar_salida(salida: str, max_chars: int = _MAX_SALIDA_DEFAULT) -> str:
+def _limitar_salida(
+    salida: str,
+    max_chars: int = _MAX_SALIDA_DEFAULT,
+    max_lineas: Optional[int] = None,
+    max_caracteres_por_linea: Optional[int] = None,
+) -> str:
     """
-    Trunca la salida a ``max_chars`` caracteres añadiendo un marcador.
+    Trunca la salida por líneas, por caracteres por línea y por caracteres.
+
+    El orden de aplicación es: (1) límite de líneas, (2) límite de caracteres
+    por línea y (3) límite global de caracteres. Con ``max_lineas=None`` y
+    ``max_caracteres_por_linea=None`` el comportamiento es exactamente el
+    original (solo el cap ``max_chars``), preservando la retrocompatibilidad.
 
     Args:
         salida: Salida cruda del comando.
-        max_chars: Número máximo de caracteres a conservar.
+        max_chars: Número máximo de caracteres totales a conservar.
+        max_lineas: Número máximo de líneas a conservar (``None`` = sin límite).
+        max_caracteres_por_linea: Número máximo de caracteres por línea
+            (``None`` = sin límite).
 
     Returns:
-        Salida truncada (o la original si no excede el límite).
+        Salida truncada (o la original si no excede los límites).
     """
     if not salida:
         return ""
-    if len(salida) <= max_chars:
-        return salida
-    return salida[:max_chars] + "[...salida truncada...]"
+
+    # 1. Límite de líneas.
+    if max_lineas is not None:
+        lineas = salida.splitlines()
+        if max_lineas <= 0:
+            lineas = []
+        elif len(lineas) > max_lineas:
+            omitidas = len(lineas) - max_lineas
+            lineas = lineas[:max_lineas]
+            lineas.append(f"[lineas restantes omitidas: {omitidas}]")
+        salida = "\n".join(lineas)
+
+    # 2. Límite de caracteres por línea.
+    if max_caracteres_por_linea is not None:
+        if max_caracteres_por_linea <= 0:
+            salida = ""
+        else:
+            lineas = salida.splitlines()
+            lineas = [
+                # El marcador de líneas omitidas es información crítica de
+                # resumen y debe conservarse intacto (no se trunca ni se le
+                # añade el sufijo '[...]').
+                linea
+                if linea.startswith("[lineas restantes omitidas:")
+                else (
+                    linea[:max_caracteres_por_linea] + "[...]"
+                    if len(linea) > max_caracteres_por_linea
+                    else linea
+                )
+                for linea in lineas
+            ]
+            salida = "\n".join(lineas)
+
+    # 3. Límite global de caracteres.
+    if len(salida) > max_chars:
+        salida = salida[:max_chars] + "[...salida truncada...]"
+
+    return salida
 
 
 def _ejecutar_comando(comando: str, directorio: str, timeout: int = _TIMEOUT_DEFAULT) -> str:
@@ -279,7 +338,15 @@ def terminal(comando: str, directorio: str = ".") -> str:
 
     # 4. Ejecutar con timeout y limitar la salida.
     salida = _ejecutar_comando(comando, str(ruta_directorio), timeout=_TIMEOUT_DEFAULT)
-    return _limitar_salida(salida, max_chars=_MAX_SALIDA_DEFAULT)
+    return _limitar_salida(
+        salida,
+        max_lineas=int(
+            getattr(settings, "TERMINAL_MAX_OUTPUT_LINES", _MAX_SALIDA_LINEAS_DEFAULT)
+        ),
+        max_caracteres_por_linea=int(
+            getattr(settings, "TERMINAL_MAX_CHARS_PER_LINE", _MAX_CARACTERES_POR_LINEA_DEFAULT)
+        ),
+    )
 
 
 def _validar_rutas_rm_dentro_de(comando: str, directorio: Path) -> Tuple[bool, str]:
