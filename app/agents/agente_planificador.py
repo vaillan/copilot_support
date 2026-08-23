@@ -18,20 +18,18 @@ from functools import lru_cache
 from app.utils.args_utils import _get_args
 
 # Límite máximo de iteraciones del Agente Planificador.
-# Se aumentó de 15 a 25 para permitir que la fase de análisis/planificación
-# pueda explorar el proyecto sin agotar el contador prematuramente (el anterior
-# límite de 15 provocaba fallos en tareas de análisis que requerían varias
-# lecturas antes de poder redactar el informe).
-MAX_ITERACIONES_PLANIFICADOR = 25
+# Se redujo a 12 para acotar la exploración y evitar bucles prolongados; el
+# planificador debe entregar el plan con un número acotado de iteraciones.
+MAX_ITERACIONES_PLANIFICADOR = 12
 
 # Umbral a partir del cual (en modo análisis) se instruye al LLM a cerrar la
 # exploración y redactar el informe final, para evitar un ciclo de lecturas.
-UMBRAL_INSTAR_CIERRE_ANALISIS = 10
+UMBRAL_INSTAR_CIERRE_ANALISIS = 5
 
 # Umbral duro: si al alcanzarlo el LLM sigue solicitando herramientas de
 # lectura, se fuerza la entrega del análisis con el contexto ya acumulado
 # (una única llamada LLM sin herramientas), sin agotar el límite de iteraciones.
-UMBRAL_FORZAR_ENTREGA_ANALISIS = 20
+UMBRAL_FORZAR_ENTREGA_ANALISIS = 10
 
 fileSystem = File(directory="prompts")
 
@@ -494,6 +492,24 @@ def agente_planificador(state: ProjectState) -> Command:
                     "loop_counter": 0
                 },
                 goto=END
+            )
+
+        # Escape de bucle: si el LLM responde texto plano sin llamar herramientas
+        # tras varias iteraciones (loop_counter > 3), forzar la entrega del plan
+        # construyendo un plan_de_accion mínimo y avanzar al codificador para no
+        # quedar en bucle. Para loop_counter <= 3 se conserva el reintento actual.
+        if loop_counter > 3:
+            plan_minimo = {
+                "explicacion_arquitectura": str(respuesta.content),
+                "pasos": []
+            }
+            return Command(
+                update={
+                    "plan_de_accion": plan_minimo,
+                    "messages": [respuesta],
+                    "loop_counter": 0
+                },
+                goto="agente_codificador"
             )
 
         msg = "Debes llamar a una herramienta para investigar o llamar a entregar_plan_de_accion si ya terminaste."

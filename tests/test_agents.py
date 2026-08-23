@@ -25,7 +25,7 @@ def test_agente_planificador_analisis_bucle_forzado(mock_state):
     entrega del análisis y terminar en END (evita el bucle infinito)."""
     mock_state["instruccion_usuario"] = "realiza un analisis del proyecto"
     mock_state["solo_analisis"] = True
-    mock_state["loop_counter"] = 20  # igual al umbral de fuerza
+    mock_state["loop_counter"] = 10  # igual al nuevo UMBRAL_FORZAR_ENTREGA_ANALISIS (10), que es < MAX_ITERACIONES_PLANIFICADOR (12)
     mock_state["directorio_proyecto"] = "./"
 
     with patch('app.agents.agente_planificador.get_planner_llm') as mock_get_llm:
@@ -54,19 +54,19 @@ def test_agente_planificador_analisis_bucle_forzado(mock_state):
 
 
 def test_agente_planificador_limite_iteraciones(mock_state):
-    """Al superar MAX_ITERACIONES_PLANIFICADOR (25), el planificador termina en
-    END con un mensaje de error que muestra el nuevo límite (25)."""
+    """Al superar MAX_ITERACIONES_PLANIFICADOR (12), el planificador termina en
+    END con un mensaje de error que muestra el nuevo límite (12)."""
     mock_state["instruccion_usuario"] = "realiza un analisis del proyecto"
-    mock_state["loop_counter"] = 26  # supera el nuevo límite de 25
+    mock_state["loop_counter"] = 13  # supera el nuevo límite de 12
 
     result = agente_planificador(mock_state)
 
     assert isinstance(result, Command)
     assert result.goto == END
     update = result.update or {}
-    assert "límite máximo de iteraciones (25)" in update.get("errores_terminal", "")
+    assert "límite máximo de iteraciones (12)" in update.get("errores_terminal", "")
     from app.agents.agente_planificador import MAX_ITERACIONES_PLANIFICADOR
-    assert MAX_ITERACIONES_PLANIFICADOR == 25
+    assert MAX_ITERACIONES_PLANIFICADOR == 12
 
 
 @patch('app.agents.agente_planificador.get_planner_llm')
