@@ -18,6 +18,7 @@ Los estados válidos son:
 
 import threading
 import time
+from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 # Estados válidos del ciclo de vida de una tarea.
@@ -44,6 +45,9 @@ class TaskRegistry:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._tareas: Dict[str, Dict[str, Any]] = {}
+        # Métricas de tokens por tarea y agente:
+        # tarea_id -> agente -> {'tokens_entrada': int, 'tokens_salida': int}
+        self._metricas_tokens: Dict[str, Dict[str, Dict[str, int]]] = {}
 
     def register_task(
         self,
@@ -169,6 +173,50 @@ class TaskRegistry:
         """Elimina todas las tareas del registro (útil en pruebas)."""
         with self._lock:
             self._tareas.clear()
+
+    def registrar_metricas_tokens(
+        self,
+        tarea_id: str,
+        agente: str,
+        tokens_entrada: int,
+        tokens_salida: int,
+    ) -> None:
+        """
+        Acumula métricas de tokens consumidos por un agente dentro de una tarea.
+
+        Si la tarea aún no tiene métricas registradas, se inicializan. Los
+        valores se suman a los ya existentes para el mismo agente, permitiendo
+        acumular múltiples invocaciones del agente a lo largo del ciclo de vida
+        de la tarea.
+
+        Args:
+            tarea_id: Identificador de la tarea.
+            agente: Nombre del agente (p.ej. 'planificador', 'codificador').
+            tokens_entrada: Tokens de entrada consumidos en esta invocación.
+            tokens_salida: Tokens de salida generados en esta invocación.
+        """
+        with self._lock:
+            por_agente = self._metricas_tokens.setdefault(tarea_id, {})
+            actual = por_agente.setdefault(
+                agente, {"tokens_entrada": 0, "tokens_salida": 0}
+            )
+            actual["tokens_entrada"] += max(0, tokens_entrada)
+            actual["tokens_salida"] += max(0, tokens_salida)
+
+    def obtener_metricas_tokens(self, tarea_id: str) -> Dict[str, Dict[str, int]]:
+        """
+        Devuelve una copia profunda de las métricas de tokens de una tarea.
+
+        Args:
+            tarea_id: Identificador de la tarea.
+
+        Returns:
+            Diccionario ``agente -> {'tokens_entrada': int, 'tokens_salida': int}``
+            con las métricas acumuladas, o ``{}`` si la tarea no tiene métricas.
+        """
+        with self._lock:
+            por_agente = self._metricas_tokens.get(tarea_id)
+            return deepcopy(por_agente) if por_agente is not None else {}
 
 
 # Instancia singleton compartida por todo el servidor MCP.
