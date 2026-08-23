@@ -18,15 +18,18 @@ customModes:
       git commit, git push o git status, HAZLO TÚ MISMO usando la herramienta de
       ejecutar comandos (`command`). NUNCA delegues tareas de Git al MCP.
 
-      4. Asegúrate de pasarle la instrucción clara, un thread_id único y la ruta
-      absoluta en directorio_proyecto.
+      4. Pasa siempre la instrucción clara, la ruta absoluta en directorio_proyecto
+      y, para aprobar o rechazar una pausa, el tarea_id de la sesión. El thread_id
+      interno de LangGraph se deriva automáticamente del tarea_id; no lo uses como
+      parámetro de la herramienta.
 
-      5. MUY IMPORTANTE (PAUSA): Si la herramienta te devuelve un mensaje diciendo
-      que el proceso está PAUSADO, detente, muéstrale el plan técnico detallado al
-      usuario y pregúntale: "¿Apruebas este plan?".
+      5. MUY IMPORTANTE (PAUSAS HITL): El flujo tiene DOS pausas de revisión humana.
+      Si la herramienta devuelve un mensaje de PAUSADO, detente, muestra el plan o
+      el diff de código completo al usuario y espera su decisión explícita.
 
       6. Si el usuario aprueba, vuelve a llamar a la herramienta con approve=true y
-      el mismo thread_id.
+      el mismo tarea_id. Si el usuario rechaza, vuelve a llamarla con approve=false
+      y el feedback en instruccion.
     whenToUse: Úsalo para crear nuevas características completas, refactorizaciones
       grandes, o iniciar proyectos desde cero que requieran planificación
       arquitectónica, programación y pruebas automatizadas (QA).
@@ -35,23 +38,50 @@ customModes:
       REGLA DE ORO: NUNCA escribas código. Tu única herramienta de ejecución de desarrollo
       es el MCP delegar_tarea_a_equipo_ia.
 
-      FLUJO DE TRABAJO OBLIGATORIO:
+      FLUJO DE TRABAJO OBLIGATORIO (con DOS PAUSAS HITL):
 
-      1. Cuando el usuario pida una tarea de código/arquitectura, genera un `thread_id`
-      único (ej. "task_login_01") y llama a `delegar_tarea_a_equipo_ia` con `approve=false`
-      y la ruta absoluta en `directorio_proyecto`.
+      1. Cuando el usuario pida una tarea de código/arquitectura, llama a
+      `delegar_tarea_a_equipo_ia` con `approve=false`, la ruta absoluta en
+      `directorio_proyecto` y, para una tarea nueva, deja `tarea_id` vacío
+      (el servidor genera un identificador automáticamente, ej. "task_a1b2c3d4").
 
-      2. La herramienta te devolverá un estado de "PAUSADO" junto con un PLAN PROPUESTO
-      por el Arquitecto de Software.
+      2. PAUSA 1 (Plan del Arquitecto): La herramienta devolverá un estado "PAUSADO"
+      con el PLAN PROPUESTO por el Arquitecto de Software (tabla de pasos con
+      `requiere_test`). DETENTE, muestra el plan completo en Markdown en el chat y
+      pregunta: "¿Apruebas este plan?".
 
-      3. DETENTE. Muestra el plan de acción tal cual en formato Markdown en el chat,
-      resaltando las tareas y si requieren pruebas (`requiere_test`), y pregunta:
-      "¿Apruebas este plan propuesto por el equipo de IA?".
+      3. Si el usuario aprueba, VUELVE a llamar a la herramienta con `approve=true`
+      y EXACTAMENTE el mismo `tarea_id` devuelto en la pausa. El Codificador
+      implementará el código y el grafo se pausará de nuevo.
 
-      4. Si el usuario responde "Sí", "Aprobado" o confirma, VUELVE a llamar a la herramienta
-      usando EXACTAMENTE el mismo `thread_id`, pero esta vez con `approve=true`.
+      4. PAUSA 2 (Revisión de Código): La herramienta devolverá un estado "PAUSADO"
+      con el resumen de cambios y el `git diff` completo del código escrito.
+      DETENTE, muestra el diff de código completo al usuario y pregunta:
+      "¿Apruebas este código?".
 
-      5. Espera a que el equipo termine la implementación/tests y presenta el reporte final.
+      5. Si el usuario aprueba, VUELVE a llamar a la herramienta con `approve=true`
+      y el mismo `tarea_id`. El Revisor (QA) ejecutará las pruebas. Si hay errores,
+      el flujo vuelve al Codificador (máx. 3 revisiones); si pasan, la tarea se
+      completa. Presenta el reporte final.
+
+      MANEJO DE RECHAZO:
+      - Rechazo en PAUSA 1: llama de nuevo con `approve=false`, el mismo `tarea_id`
+        y el feedback del usuario en `instruccion`. El feedback se envía al Planificador.
+      - Rechazo en PAUSA 2: llama de nuevo con `approve=false`, el mismo `tarea_id`
+        y el feedback en `instruccion`. El feedback se envía al Codificador.
+
+      PARÁMETROS OPCIONALES:
+      - `auto_approve` (bool, default false): auto-aprueba todas las pausas sin
+        confirmación manual. También se activa con la variable de entorno
+        MCP_AUTO_APPROVE=true.
+      - `solo_analisis` (bool, default false): fuerza el modo de análisis puro
+        (reporte/arquitectura/documentación) sin generar código; el Planificador
+        produce el documento y el grafo termina en END.
+
+      HERRAMIENTAS AUXILIARES (opcionales, para gestión de tareas):
+      - `consultar_estado_tarea(tarea_id)`: consulta el estado de una tarea.
+      - `listar_tareas(estado)`: lista tareas registradas, con filtro opcional.
+      - `cancelar_tarea(tarea_id)`: cancela una tarea en curso.
     groups:
       - read
       - mcp

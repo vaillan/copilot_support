@@ -6,8 +6,11 @@ Este módulo define y compila el grafo de LangGraph conectando los agentes
 
 import sqlite3
 from typing import Optional
+import aiosqlite
 from langgraph.graph import StateGraph, START
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app.models.models import ProjectState
 from app.agents.agente_planificador import agente_planificador
@@ -23,7 +26,8 @@ from app.utils.tool_nodes import (
 def crear_grafo(
     interrumpir_en_codificador: bool = True,
     interrumpir_en_revisor: bool = True,
-    checkpointer: Optional[SqliteSaver] = None,
+    checkpointer: Optional[BaseCheckpointSaver] = None,
+    usar_checkpointer_async: bool = False,
 ):
     """
     Construye y compila el flujo de trabajo multi-agente en LangGraph.
@@ -42,6 +46,10 @@ def crear_grafo(
         interrumpir_en_codificador: Si es True, pausa la ejecución antes del codificador para revisión humana.
         interrumpir_en_revisor: Si es True, pausa la ejecución antes del revisor para revisión humana.
         checkpointer: Instancia opcional de persistencia de estado (por defecto usa SqliteSaver con checkpoints.sqlite).
+        usar_checkpointer_async: Si es True, usa AsyncSqliteSaver (requiere aiosqlite) en lugar de
+            SqliteSaver síncrono. OBLIGATORIO cuando el grafo se invoca con métodos async
+            (ainvoke/aget_state), como hace el servidor MCP. Los tests síncronos (graph.invoke)
+            deben dejar este parámetro en False (default).
 
     Returns:
         CompiledStateGraph: Grafo compilado y listo para ejecución.
@@ -74,9 +82,19 @@ def crear_grafo(
     # SqliteSaver(conn), que sí es un checkpointer válido.
     # check_same_thread=False: LangGraph puede invocar el checkpointer desde
     # múltiples threads (invocaciones async/threadpool).
+    #
+    # FIX (v1.0.2): El servidor MCP invoca el grafo con métodos async (ainvoke/aget_state),
+    # pero SqliteSaver (síncrono) lanza "The SqliteSaver does not support async methods".
+    # Por eso, cuando usar_checkpointer_async=True se usa AsyncSqliteSaver con una conexión
+    # aiosqlite (lazy, sin await a nivel de módulo). Los tests síncronos mantienen el default
+    # síncrono (usar_checkpointer_async=False) para no romper graph.invoke()/get_state().
     if checkpointer is None:
-        conn = sqlite3.connect("checkpoints.sqlite", check_same_thread=False)
-        checkpointer = SqliteSaver(conn)
+        if usar_checkpointer_async:
+            conn = aiosqlite.connect("checkpoints.sqlite")
+            checkpointer = AsyncSqliteSaver(conn)
+        else:
+            conn = sqlite3.connect("checkpoints.sqlite", check_same_thread=False)
+            checkpointer = SqliteSaver(conn)
 
     # 6. Configuración de interrupciones para Human-in-the-loop
     interrupt_before = []

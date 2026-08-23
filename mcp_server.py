@@ -2,6 +2,7 @@ import os
 import sys
 import subprocess
 import asyncio
+import threading
 import uuid
 import hashlib
 from typing import Optional, Dict, Any, List
@@ -28,7 +29,26 @@ from app.settings.settings import Settings
 
 mcp = FastMCP("AIDevTeam")
 
-agentes_app = crear_grafo()
+# FIX (v1.0.2): El servidor MCP invoca el grafo con métodos async (ainvoke/aget_state),
+# por lo que DEBE usar AsyncSqliteSaver (usar_checkpointer_async=True). Con SqliteSaver
+# síncrono, langgraph-checkpoint-sqlite >= 3.0 lanza "The SqliteSaver does not support
+# async methods" y ninguna tarea delegada puede arrancar.
+#
+# AsyncSqliteSaver requiere un event loop EN EJECUCIÓN en el momento de su creación
+# (asyncio.get_running_loop()). Como FastMCP gestiona su propio loop al arrancar, se
+# compila el grafo en un event loop dedicado que se mantiene vivo en un thread daemon;
+# el checkpointer programa sus operaciones async en ese loop vía run_coroutine_threadsafe
+# cuando se invoca desde el loop de FastMCP.
+_grafo_loop = asyncio.new_event_loop()
+_grafo_thread = threading.Thread(target=_grafo_loop.run_forever, daemon=True)
+_grafo_thread.start()
+
+
+async def _compilar_grafo_async():
+    return crear_grafo(usar_checkpointer_async=True)
+
+
+agentes_app = asyncio.run_coroutine_threadsafe(_compilar_grafo_async(), _grafo_loop).result()
 
 # Mapa de tareas activas: tarea_id -> asyncio.Task en curso (para cancelación).
 tareas_activas: Dict[str, asyncio.Task] = {}
