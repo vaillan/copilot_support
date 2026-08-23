@@ -17,6 +17,22 @@ from app.utils.prompt_utils import escapar_llaves
 from functools import lru_cache
 from app.utils.args_utils import _get_args
 
+# Límite máximo de iteraciones del Agente Planificador.
+# Se aumentó de 15 a 25 para permitir que la fase de análisis/planificación
+# pueda explorar el proyecto sin agotar el contador prematuramente (el anterior
+# límite de 15 provocaba fallos en tareas de análisis que requerían varias
+# lecturas antes de poder redactar el informe).
+MAX_ITERACIONES_PLANIFICADOR = 25
+
+# Umbral a partir del cual (en modo análisis) se instruye al LLM a cerrar la
+# exploración y redactar el informe final, para evitar un ciclo de lecturas.
+UMBRAL_INSTAR_CIERRE_ANALISIS = 10
+
+# Umbral duro: si al alcanzarlo el LLM sigue solicitando herramientas de
+# lectura, se fuerza la entrega del análisis con el contexto ya acumulado
+# (una única llamada LLM sin herramientas), sin agotar el límite de iteraciones.
+UMBRAL_FORZAR_ENTREGA_ANALISIS = 20
+
 fileSystem = File(directory="prompts")
 
 # Palabras que indican intención de ANÁLISIS puro (no programación).
@@ -151,15 +167,110 @@ def _get_tools(directorio: str):
     herramientas = herramientas_lectura + [tool_busqueda]
     return herramientas
 
+
+def _construir_analisis_desde_contexto(state: ProjectState, instruccion: str) -> str:
+    """
+    Última red de seguridad: construye un análisis básico a partir del contexto
+    ya recopilado en los mensajes cuando la llamada LLM final falla o no
+    devuelve texto. Evita que el grafo termine sin entregables.
+    """
+    msgs = state.get("messages", [])
+    fragmentos = []
+    for m in msgs[-8:]:
+        contenido = str(getattr(m, "content", "")).strip()
+        if contenido and contenido not in fragmentos:
+            fragmentos.append(contenido[:400])
+    contexto = "\n\n".join(fragmentos[-4:]) if fragmentos else "Sin contexto adicional disponible."
+    return (
+        "## Resumen Ejecutivo\n"
+        "El análisis alcanzó el límite de iteraciones de investigación. Se "
+        "entrega la evaluación basada en la información recopilada durante la "
+        "exploración del proyecto.\n\n"
+        "## Análisis Detallado\n"
+        f"{contexto}\n\n"
+        "## Recomendaciones\n"
+        "- Reconsiderar el alcance de la consulta para reducir iteraciones de "
+        "exploración si se requiere exactitud adicional.\n"
+        "- Revisar los archivos señalados en el índice del proyecto.\n\n"
+        "## Conclusión\n"
+        "Proceso concluido con la información disponible; el informe puede "
+        "refinarse en una segunda ejecución."
+    )
+
+
+def _forzar_entrega_analisis(
+    state: ProjectState,
+    instruccion: str,
+    llm_analisis,
+    prompt_template_analisis: ChatPromptTemplate,
+    mensajes_contexto_analisis: List,
+) -> Command:
+    """
+    Fuerza la entrega del análisis cuando el LLM lleva muchas iteraciones
+    llamando herramientas de lectura sin redactar el informe (evita agotar el
+    límite de iteraciones del Planificador en un bucle infinito).
+
+    Normaliza los mensajes (reemplaza ToolMessages y AIMessages con tool_calls
+    por texto plano) y hace UNA única llamada LLM SIN herramientas para redactar
+    el análisis final con el contexto ya acumulado. Si esa llamada falla o no
+    produce texto, se construye el análisis desde el contexto de los mensajes.
+    """
+    mensajes_normalizados: List = []
+    for m in mensajes_contexto_analisis or []:
+        if isinstance(m, ToolMessage):
+            contenido = str(getattr(m, "content", ""))
+            mensajes_normalizados.append(
+                HumanMessage(content="Resultado de herramienta:\n" + contenido[:2000])
+            )
+        elif isinstance(m, AIMessage) and getattr(m, "tool_calls", None):
+            contenido = str(getattr(m, "content", "")).strip()
+            if contenido:
+                mensajes_normalizados.append(HumanMessage(content=contenido))
+            mensajes_normalizados.append(
+                HumanMessage(content="(El modelo consultó herramientas; los resultados se incluyen a continuación)")
+            )
+        else:
+            mensajes_normalizados.append(m)
+
+    mensajes_normalizados.append(
+        HumanMessage(
+            content=(
+                "Redacta RAHORA el informe final completo en Markdown con las "
+                "secciones solicitadas. No vuelvas a consultar herramientas."
+            ).replace("RAHORA", "AHORA")
+        )
+    )
+
+    texto_final = ""
+    try:
+        prompt_final = prompt_template_analisis.invoke({"messages": mensajes_normalizados})
+        respuesta_final = llm_analisis.invoke(prompt_final)
+        texto_final = str(getattr(respuesta_final, "content", "") or "").strip()
+    except Exception:
+        texto_final = ""
+
+    if not texto_final:
+        texto_final = _construir_analisis_desde_contexto(state, instruccion)
+
+    return Command(
+        update={
+            "analisis_final": texto_final,
+            "messages": state.get("messages", []) + [AIMessage(content=texto_final)],
+            "loop_counter": 0,
+        },
+        goto=END
+    )
+
+
 def agente_planificador(state: ProjectState) -> Command:
     """
     Analiza el requerimiento, investiga el proyecto/internet y genera un plan.
     """
     loop_counter = state.get("loop_counter", 0) + 1
-    if loop_counter > 15:
+    if loop_counter > MAX_ITERACIONES_PLANIFICADOR:
         # P2: Guardar el error en 'errores_terminal' para que mcp_server.py lo
         # reporte correctamente en lugar de devolver "Tarea completada" con None.
-        msg_limite = "Error: Se ha excedido el límite máximo de iteraciones (15) en el Agente Planificador. El proceso se detiene para evitar un bucle infinito."
+        msg_limite = f"Error: Se ha excedido el límite máximo de iteraciones ({MAX_ITERACIONES_PLANIFICADOR}) en el Agente Planificador. El proceso se detiene para evitar un bucle infinito."
         return Command(
             update={
                 "errores_terminal": msg_limite,
@@ -214,6 +325,16 @@ def agente_planificador(state: ProjectState) -> Command:
                 f"{indice_texto}"
             )
 
+        # Freno de bucle: cuando se acumulan suficientes iteraciones de lectura,
+        # se instruye al LLM a entregar el informe final ya, para no agotar el
+        # límite de iteraciones en un ciclo de búsqueda de herramientas.
+        if loop_counter >= UMBRAL_INSTAR_CIERRE_ANALISIS:
+            prompt_analisis += (
+                "\n\nIMPORTANTE: Has investigado el proyecto lo suficiente. "
+                "Redacta AHORA el análisis final completo en Markdown, con las "
+                "secciones solicitadas, sin llamar a más herramientas."
+            )
+
         # Usar ChatPromptTemplate con MessagesPlaceholder para mantener el
         # historial de mensajes (incluidos los resultados de las herramientas
         # de lectura) en contexto entre iteraciones del bucle de análisis.
@@ -245,6 +366,18 @@ def agente_planificador(state: ProjectState) -> Command:
 
         # Si el LLM quiere explorar el proyecto, enrutar al nodo de herramientas.
         if respuesta_analisis.tool_calls:
+            # Freno de emergencia: si el LLM sigue llamando herramientas de
+            # lectura tras muchas iteraciones, forzamos la entrega del análisis
+            # con el contexto ya acumulado para no agotar el límite (bucle).
+            if loop_counter >= UMBRAL_FORZAR_ENTREGA_ANALISIS:
+                return _forzar_entrega_analisis(
+                    state=state,
+                    instruccion=instruccion,
+                    llm_analisis=llm_analisis,
+                    prompt_template_analisis=prompt_template_analisis,
+                    mensajes_contexto_analisis=mensajes_contexto_analisis,
+                )
+
             return Command(
                 update={
                     "messages": state.get("messages", []) + [respuesta_analisis],
