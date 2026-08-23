@@ -11,3 +11,7 @@ media/
 *.sqlite
 checkpoints.sqlite
 .pytest_cache/
+*.sqlite-shm
+*.sqlite-wal
+checkpoints.sqlite-shm
+checkpoints.sqlite-wal
