@@ -68,6 +68,71 @@ class TestValidarComando:
         assert permitido is False
         assert "Error" in mensaje
 
+    def test_validar_comando_php_artisan_test(self):
+        """`php artisan test` (Laravel/PHP) es un comando permitido."""
+        permitido, mensaje = _validar_comando("php artisan test")
+        assert permitido is True
+        assert mensaje == ""
+
+    def test_validar_comando_composer_test(self):
+        """`composer test` (Composer/PHP) es un comando permitido."""
+        permitido, mensaje = _validar_comando("composer test")
+        assert permitido is True
+        assert mensaje == ""
+
+    def test_validar_comando_go_test(self):
+        """`go test ./...` (Go) es un comando permitido."""
+        permitido, mensaje = _validar_comando("go test ./...")
+        assert permitido is True
+        assert mensaje == ""
+
+    def test_validar_comando_mvn_test(self):
+        """`mvn test` (Maven/Java) es un comando permitido."""
+        permitido, mensaje = _validar_comando("mvn test")
+        assert permitido is True
+        assert mensaje == ""
+
+    def test_validar_comando_gradle_test(self):
+        """`gradle test` (Gradle/Java) es un comando permitido."""
+        permitido, mensaje = _validar_comando("gradle test")
+        assert permitido is True
+        assert mensaje == ""
+
+    def test_validar_comando_npm_test(self):
+        """`npm test` (Node.js) es un comando permitido."""
+        permitido, mensaje = _validar_comando("npm test")
+        assert permitido is True
+        assert mensaje == ""
+
+    def test_validar_comando_jest(self):
+        """`jest` (Node.js) es un comando permitido."""
+        permitido, mensaje = _validar_comando("jest")
+        assert permitido is True
+        assert mensaje == ""
+
+    def test_validar_comando_cargo_test(self):
+        """`cargo test` (Cargo/Rust) es un comando permitido."""
+        permitido, mensaje = _validar_comando("cargo test")
+        assert permitido is True
+        assert mensaje == ""
+
+    def test_validar_comando_prefijo_nuevo_sin_espacio_no_falso_positivo(self):
+        """Un prefijo nuevo sin espacio no produce un falso positivo."""
+        permitido, mensaje = _validar_comando("npmtest")
+        assert permitido is False
+        assert "Error" in mensaje
+
+    def test_validar_comando_operadores_peligrosos_con_nuevos_prefijos(self):
+        """Los operadores peligrosos se rechazan incluso con los nuevos
+        prefijos de la whitelist ampliada."""
+        permitido, mensaje = _validar_comando("npm test; rm -rf /")
+        assert permitido is False
+        assert "Error" in mensaje
+
+        permitido, mensaje = _validar_comando("go test && echo pwned")
+        assert permitido is False
+        assert "Error" in mensaje
+
 
 class TestLimitarSalida:
     def test_limitar_salida(self):

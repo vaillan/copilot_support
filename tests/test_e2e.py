@@ -2,6 +2,7 @@ import os
 import pytest
 import uuid
 from langchain_core.messages import HumanMessage
+from langgraph.checkpoint.memory import InMemorySaver
 from app.main import crear_grafo
 
 @pytest.mark.e2e
@@ -10,7 +11,7 @@ def test_flujo_completo_e2e():
     Prueba End-to-End que verifica el flujo completo de los agentes
     utilizando el LLM real.
     """
-    graph = crear_grafo()
+    graph = crear_grafo(checkpointer=InMemorySaver())
     
     thread_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}, "recursion_limit": 50}

@@ -29,6 +29,19 @@ from app.settings.settings import Settings
 
 mcp = FastMCP("AIDevTeam")
 
+# FIX (v1.0.3): Limpiar el checkpointer SQLite obsoleto al arrancar el servidor.
+# El archivo 'checkpoints.sqlite' persiste el estado del grafo entre ejecuciones
+# y crece sin límite (puede alcanzar decenas de MB), además de quedar bloqueado
+# en Windows por conexiones sqlite abiertas. Se elimina al arrancar para evitar
+# que el estado de tareas previas interfiera con nuevas ejecuciones.
+try:
+    if os.path.exists("checkpoints.sqlite"):
+        os.remove("checkpoints.sqlite")
+except OSError:
+    # Si el archivo está bloqueado (Windows), se ignora: el checkpointer lo
+    # sobrescribirá al compilar el grafo.
+    pass
+
 # FIX (v1.0.2): El servidor MCP invoca el grafo con métodos async (ainvoke/aget_state),
 # por lo que DEBE usar AsyncSqliteSaver (usar_checkpointer_async=True). Con SqliteSaver
 # síncrono, langgraph-checkpoint-sqlite >= 3.0 lanza "The SqliteSaver does not support

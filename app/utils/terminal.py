@@ -5,8 +5,10 @@ Este módulo extrae la herramienta ``terminal`` del agente revisor a un helper
 puro y reutilizable, añadiendo medidas de seguridad:
 
 - **Whitelist de comandos**: solo se permiten prefijos de comandos seguros
-  (pytest, python, git status/diff/log, ls, cat, find, grep, echo, mkdir,
-  touch, cp, mv y ``rm`` restringido a archivos dentro del proyecto).
+  (pytest, python, pip, git status/diff/log, ls, cat, find, grep, echo, mkdir,
+  touch, cp, mv, ``rm`` restringido a archivos dentro del proyecto, php,
+  artisan, composer, go, mvn, java, javac, gradle, npm, node, jest, npx y
+  cargo).
 - **Anti-inyección**: se rechazan operadores de shell peligrosos
   (``;``, ``&&``, ``||``, ``|``, ``>``, ``<``, `` ` ``, ``$(``).
 - **Restricción del directorio de trabajo**: el comando se ejecuta con
@@ -53,6 +55,24 @@ _VALIDAR_COMANDOS_PERMITIDOS: Tuple[str, ...] = (
     "cp",
     "mv",
     "rm",
+    # Laravel/PHP
+    "php",
+    "artisan",
+    "composer",
+    # Go
+    "go",
+    # Java
+    "mvn",
+    "java",
+    "javac",
+    "gradle",
+    # Node.js
+    "npm",
+    "node",
+    "jest",
+    "npx",
+    # Cargo/Rust
+    "cargo",
 )
 
 # Operadores/constructores de shell que indican posible inyección de comandos.
@@ -301,9 +321,10 @@ def terminal(comando: str, directorio: str = ".") -> str:
     Ejecuta un comando seguro en la terminal del proyecto.
 
     Solo se permiten comandos de la whitelist (pytest, python, pip, git
-    status/diff/log, ls, cat, find, grep, echo, mkdir, touch, cp, mv y rm
-    restringido a archivos del proyecto). Se rechazan operadores de shell
-    peligrosos (;, &&, ||, |, >, <, `, $()).
+    status/diff/log, ls, cat, find, grep, echo, mkdir, touch, cp, mv, rm
+    restringido a archivos del proyecto, php, artisan, composer, go, mvn,
+    java, javac, gradle, npm, node, jest, npx y cargo). Se rechazan operadores
+    de shell peligrosos (;, &&, ||, |, >, <, `, $()).
 
     Args:
         comando: Comando a ejecutar (p.ej. "pytest tests/").

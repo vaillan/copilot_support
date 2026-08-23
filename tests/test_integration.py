@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.checkpoint.memory import InMemorySaver
 from app.main import crear_grafo
 
 @pytest.fixture
@@ -41,7 +42,7 @@ def test_flujo_completo_exito(mock_llm, mock_file_system):
         tool_calls=[{"name": "finalizar_revision", "args": {"aprobado": True}, "id": "3"}]
     )
     
-    graph = crear_grafo()
+    graph = crear_grafo(checkpointer=InMemorySaver())
     config = {"configurable": {"thread_id": "1"}}
     
     state = {
@@ -98,7 +99,7 @@ def test_flujo_con_errores_y_correccion(mock_llm, mock_file_system):
         )
     ]
     
-    graph = crear_grafo()
+    graph = crear_grafo(checkpointer=InMemorySaver())
     config = {"configurable": {"thread_id": "2"}}
     
     state = {
@@ -144,7 +145,7 @@ def test_flujo_analisis_puro_no_genera_codigo(mock_llm, mock_file_system):
         content="Reporte de arquitectura detallado del módulo de pagos..."
     )
 
-    graph = crear_grafo()
+    graph = crear_grafo(checkpointer=InMemorySaver())
     config = {"configurable": {"thread_id": "analisis-1"}}
 
     state = {
@@ -180,7 +181,7 @@ def test_flujo_arquitectura_pura_no_genera_codigo(mock_llm, mock_file_system):
         content="Arquitectura propuesta: microservicios con API Gateway..."
     )
 
-    graph = crear_grafo()
+    graph = crear_grafo(checkpointer=InMemorySaver())
     config = {"configurable": {"thread_id": "arquitectura-1"}}
 
     state = {
@@ -215,7 +216,7 @@ def test_flujo_sin_herramientas_evita_bucle(mock_llm, mock_file_system):
         )
     ]
     
-    graph = crear_grafo()
+    graph = crear_grafo(checkpointer=InMemorySaver())
     config = {"configurable": {"thread_id": "3"}}
     
     state = {
@@ -259,7 +260,7 @@ def test_texto_plano_analisis_no_deriva_a_codificador(mock_es_analisis, mock_llm
         content="Reporte detallado del estado del proyecto: ..."
     )
 
-    graph = crear_grafo()
+    graph = crear_grafo(checkpointer=InMemorySaver())
     config = {"configurable": {"thread_id": "texto-plano-analisis"}}
 
     state = {
@@ -302,7 +303,7 @@ def test_texto_plano_creacion_no_deriva_a_codificador(mock_llm, mock_file_system
         )
     ]
 
-    graph = crear_grafo()
+    graph = crear_grafo(checkpointer=InMemorySaver())
     config = {"configurable": {"thread_id": "texto-plano-creacion"}}
 
     state = {
@@ -343,7 +344,7 @@ def test_modo_solo_analisis_fuerza_analisis(mock_llm, mock_file_system):
         content="Arquitectura propuesta para el módulo de pagos..."
     )
 
-    graph = crear_grafo()
+    graph = crear_grafo(checkpointer=InMemorySaver())
     config = {"configurable": {"thread_id": "solo-analisis-1"}}
 
     state = {
