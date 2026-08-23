@@ -94,6 +94,30 @@ PROJECT_INDEX_CACHE_DIR=".project_index"
 
 **Beneficio:** La exploración del Planificador pasa de decenas de `read_file` a 1 llamada `get_project_index`, y el Codificador/Revisor reducen cada lectura completa a un resumen de ~400 tokens, con caché persistente entre tareas.
 
+### Configuraciones de límites de contexto ajustables
+
+Todas las variables de límite de contexto se leen desde el entorno (`.env`) en `app/settings/settings.py` y se pueden ajustar sin tocar código:
+
+| Variable | Default | Descripción | Dónde afecta |
+|---|---|---|---|
+| `TERMINAL_MAX_OUTPUT_LINES` | 200 | Límite de líneas de salida de la terminal | `app/utils/terminal.py` (ShellTool del Revisor) |
+| `TERMINAL_MAX_CHARS_PER_LINE` | 500 | Límite de caracteres por línea de salida | `app/utils/terminal.py` |
+| `PROJECT_INDEX_MAX_DEPTH` | 8 | Profundidad máxima del árbol de directorios indexado | `app/utils/project_index.py` |
+| `PROJECT_INDEX_MAX_FILE_SIZE` | 262144 | Tamaño máximo en bytes de un archivo para ser indexado | `app/utils/project_index.py` |
+| `GIT_DIFF_MAX_FILE_SIZE` | 1048576 | Tamaño máximo en bytes del diff por archivo | `app/mcp/git_utils.py` |
+
+Ejemplo de override en `.env`:
+
+```env
+TERMINAL_MAX_OUTPUT_LINES="300"
+TERMINAL_MAX_CHARS_PER_LINE="600"
+PROJECT_INDEX_MAX_DEPTH="10"
+PROJECT_INDEX_MAX_FILE_SIZE="524288"
+GIT_DIFF_MAX_FILE_SIZE="2097152"
+```
+
+> **Nota:** Los valores se aplican al arrancar el servidor MCP; no requieren reinicio del cliente, solo del proceso.
+
 ---
 
 ## 🤖 Roles y Responsabilidades de los Agentes (`app/agents/`)
