@@ -4,10 +4,39 @@
 
 ## Arquitectura
 
-```
-Planificador → [Pausa 1: aprobar plan] → Codificador → [Pausa 2: aprobar código] → Revisor (QA) → Fin
-     ↑                                                          ↑
-     └── rechazo regresa al Planificador                        └── rechazo regresa al Codificador
+```mermaid
+graph TD
+    classDef agent fill:#1e40af,stroke:#3b82f6,stroke-width:2px,color:#ffffff;
+    classDef tool fill:#0f766e,stroke:#14b8a6,stroke-width:2px,color:#ffffff;
+    classDef hitl fill:#b45309,stroke:#f59e0b,stroke-width:2px,stroke-dasharray: 5 5,color:#ffffff;
+    classDef startend fill:#15803d,stroke:#22c55e,stroke-width:2px,color:#ffffff;
+
+    START([Inicio]) --> Planificador
+
+    subgraph Planificación
+        Planificador[agente_planificador]:::agent -->|"Llama herramientas"| HerramientasPlanificador[nodo_herramientas_planificador]:::tool
+        HerramientasPlanificador -->|"Retorna resultado"| Planificador
+        Planificador -->|"Plan completado"| Pausa1{⏸️ Pausa 1 <br/> HITL: Aprobar Plan}:::hitl
+    end
+
+    Pausa1 -->|"Aprobar (approve=True) <br/> o Auto-apropiación"| Codificador
+    Pausa1 -->|"Rechazar (approve=False)"| Planificador
+
+    subgraph Desarrollo
+        Codificador[agente_codificador]:::agent -->|"Llama herramientas"| HerramientasCodificador[nodo_herramientas_codificador]:::tool
+        HerramientasCodificador -->|"Retorna código"| Codificador
+        Codificador -->|"Código generado"| Pausa2{⏸️ Pausa 2 <br/> HITL: Aprobar Código}:::hitl
+    end
+
+    Pausa2 -->|"Aprobar (approve=True) <br/> o Auto-apropiación"| Revisor
+    Pausa2 -->|"Rechazar (approve=False)"| Codificador
+
+    subgraph Validación y Pruebas
+        Revisor[agente_revisor]:::agent -->|"Ejecuta pruebas/terminal"| HerramientasRevisor[nodo_herramientas_revisor]:::tool
+        HerramientasRevisor -->|"Resultados de test"| Revisor
+        Revisor -->|"Errores detectados / max revisiones < 3"| Codificador
+        Revisor -->|"Pruebas exitosas / Aprobado"| END([Fin / Completado]):::startend
+    end
 ```
 
 - Los rechazos regresan al agente anterior (Pausa 1 → Planificador; Pausa 2 → Codificador); el Revisor reenvía errores al Codificador con máx. 3 revisiones.
