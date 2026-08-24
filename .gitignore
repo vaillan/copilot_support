@@ -8,3 +8,4 @@ __pycache__
 media/
 .project_index.json
 .project_index/
+checkpoints.sqlite
