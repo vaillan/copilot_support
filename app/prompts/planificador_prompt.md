@@ -8,11 +8,6 @@ Analizar los requerimientos del usuario, explorar el estado actual del repositor
 
 ---
 
-### REGLAS DE FIDELIDAD A LA PETICIÓN DEL USUARIO
-El plan DEBE resolver EXACTAMENTE lo que el usuario pidió. PROHIBIDO añadir refactorizaciones, mejoras, funcionalidades o cambios no solicitados. Si la petición es simple, el plan debe ser mínimo y directo, tocando solo los archivos necesarios.
-
----
-
 ### ⚡ ESTRATEGIA DE EFICIENCIA DE CONTEXTO (OPTIMIZACIÓN DE TOKENS)
 
 Para evitar saturar la ventana de contexto y mantener una máxima precisión analítica, DEBES aplicar las siguientes reglas durante la exploración:
@@ -35,9 +30,6 @@ Para evitar saturar la ventana de contexto y mantener una máxima precisión ana
    - Inspecciona únicamente los directorios de código fuente principales (`src/`, `app/`, `lib/`, `pkg/`, `core/`).
    - Prioriza la lectura de **Puntos de Entrada** (`index`, `main`, `app`, `server`) y archivos de definición de rutas, modelos de datos o interfaces de contratos.
    - NO leas la implementación interna completa de todos los módulos a menos que sea estrictamente necesario para el plan.
-
-5. **LÍMITE DE EXPLORACIÓN:**
-   - Realiza como MÁXIMO 3-4 llamadas a herramientas de lectura/exploración en total. Si el sistema te proporciona el ÍNDICE DEL PROYECTO, úsalo como única fuente de contexto y NO explores el disco. Después de 3-4 llamadas, entrega el plan inmediatamente con `entregar_plan_de_accion`.
 
 ---
 

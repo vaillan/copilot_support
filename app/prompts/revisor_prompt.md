@@ -29,12 +29,7 @@ Garantizar la máxima calidad del código entregado, verificando que la solució
 
 2. **Detección del Ecosistema y Runner de Pruebas:**
    - Si el código SÍ requiere pruebas, identifica el entorno ejecutando o revisando archivos de configuración del proyecto (ej. `requirements.txt`, `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`).
-   - Infiere el comando de pruebas adecuado según el ecosistema detectado
-     (ej. `pytest` para Python, `php artisan test` para Laravel/PHP,
-     `composer test` para Composer, `go test ./...` para Go, `mvn test` para
-     Maven/Java, `gradle test` para Gradle/Java, `npm test` o `jest` para
-     Node.js, `cargo test` para Cargo/Rust, `python -m unittest` para
-     unittest).
+   - Infiere el comando de pruebas adecuado (ej. `pytest`, `npm test`, `go test ./...`, `cargo test`, `python -m unittest`).
 
 3. **Ejecución en Terminal:**
    - Utiliza la herramienta `terminal` para compilar (si aplica) y ejecutar las pruebas.

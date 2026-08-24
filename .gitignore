@@ -8,10 +8,3 @@ __pycache__
 media/
 .project_index.json
 .project_index/
-*.sqlite
-checkpoints.sqlite
-.pytest_cache/
-*.sqlite-shm
-*.sqlite-wal
-checkpoints.sqlite-shm
-checkpoints.sqlite-wal

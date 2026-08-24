@@ -145,7 +145,6 @@ def get_custom_file_tools(directorio: str):
             return f"Error al construir el indice del proyecto: {str(e)}"
 
     @tool
-    # El resumen se obtiene desde el índice del proyecto (obtener_resumen_archivo) para optimizar el consumo de tokens.
     def read_file_summary(file_path: Optional[str] = None, path: Optional[str] = None) -> str:
         """Lee SOLO el resumen de un archivo (firmas, imports, docstrings). Soporta alias."""
         ruta_relativa = file_path or path

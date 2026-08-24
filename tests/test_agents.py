@@ -19,56 +19,6 @@ def mock_state():
         "revision_count": 0
     }
 
-def test_agente_planificador_analisis_bucle_forzado(mock_state):
-    """En modo análisis, si el LLM sigue llamando herramientas de lectura tras
-    alcanzar UMBRAL_FORZAR_ENTREGA_ANALISIS, el planificador debe forzar la
-    entrega del análisis y terminar en END (evita el bucle infinito)."""
-    mock_state["instruccion_usuario"] = "realiza un analisis del proyecto"
-    mock_state["solo_analisis"] = True
-    mock_state["loop_counter"] = 10  # igual al nuevo UMBRAL_FORZAR_ENTREGA_ANALISIS (10), que es < MAX_ITERACIONES_PLANIFICADOR (12)
-    mock_state["directorio_proyecto"] = "./"
-
-    with patch('app.agents.agente_planificador.get_planner_llm') as mock_get_llm:
-        mock_llm = MagicMock()
-        mock_get_llm.return_value = mock_llm
-        # El LLM siempre responde con tool_calls de lectura (simula el bucle)
-        tool_call = {
-            "name": "read_file",
-            "args": {"file_path": "app/main.py"},
-            "id": "call_loop"
-        }
-        mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(
-            content="", tool_calls=[tool_call]
-        )
-        # La llamada final SIN herramientas devuelve el análisis en texto
-        mock_llm.invoke.return_value = AIMessage(content="## Análisis final del proyecto")
-
-        result = agente_planificador(mock_state)
-
-    assert isinstance(result, Command)
-    assert result.goto == END
-    update = result.update or {}
-    assert "analisis_final" in update
-    assert "Análisis final" in update["analisis_final"]
-    assert update.get("loop_counter") == 0
-
-
-def test_agente_planificador_limite_iteraciones(mock_state):
-    """Al superar MAX_ITERACIONES_PLANIFICADOR (12), el planificador termina en
-    END con un mensaje de error que muestra el nuevo límite (12)."""
-    mock_state["instruccion_usuario"] = "realiza un analisis del proyecto"
-    mock_state["loop_counter"] = 13  # supera el nuevo límite de 12
-
-    result = agente_planificador(mock_state)
-
-    assert isinstance(result, Command)
-    assert result.goto == END
-    update = result.update or {}
-    assert "límite máximo de iteraciones (12)" in update.get("errores_terminal", "")
-    from app.agents.agente_planificador import MAX_ITERACIONES_PLANIFICADOR
-    assert MAX_ITERACIONES_PLANIFICADOR == 12
-
-
 @patch('app.agents.agente_planificador.get_planner_llm')
 @patch('app.agents.agente_planificador.fileSystem.get_file_content')
 def test_agente_planificador_tool_call(mock_get_file, mock_get_llm, mock_state):
@@ -339,7 +289,7 @@ def test_agente_revisor_comando_duplicado_evita_bucle(mock_get_file, mock_get_ll
 
 def test_herramienta_terminal_aislada():
     from app.agents.agente_revisor import terminal
-    res = terminal.invoke({"comando": "echo hola"})
+    res = terminal.invoke({"commands": "echo hola"})
     assert "$ echo hola" in res
     assert "hola" in res
 

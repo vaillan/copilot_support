@@ -47,26 +47,8 @@ graph TD
     end
 ```
 
-### Modo "Solo Análisis / Reporte / Arquitectura" (sin generación de código)
-
-El Planificador detecta automáticamente cuándo la instrucción del usuario es de **análisis puro** (reportes, arquitectura, documentación, explicaciones) y en ese caso **NO genera ni modifica código**: produce el documento solicitado con el LLM del Planificador y termina el grafo en `END`, sin pasar por el Agente Codificador ni el Revisor.
-
-**Detección (`_es_peticion_analisis` en `app/agents/agente_planificador.py`):**
-- **Frases de inicio** (`FRASES_ANALISIS_INICIO`): "genera un reporte", "genera una arquitectura", "genera un documento", "genera la documentación", "elabora un reporte", "redacta un reporte", "propón una arquitectura", "diseña la arquitectura", "documenta el/la/los/las", etc.
-- **Palabras de análisis** (`PALABRAS_ANALISIS`): "analiza", "explica", "resume", "reporte", "arquitectura", "documentación", "documenta", "elabora", "redacta", etc.
-- **Anulación por creación**: si la instrucción contiene un verbo de creación como orden directa ("implementa", "crea", "escribe", "genera código", "refactoriza"...), se considera una tarea de código y el flujo normal continúa (Pausa 1 → Codificador → Pausa 2 → Revisor).
-
-**Resultado:** El reporte/arquitectura se devuelve en `analisis_final` y `mcp_server.py` lo presenta como "📋 REPORTE DE ANÁLISIS" al finalizar, sin tocar el disco.
-
-**Modo forzado `solo_analisis`:** La herramienta `delegar_tarea_a_equipo_ia` acepta el parámetro opcional `solo_analisis: bool = False`. Cuando es `True`, se fuerza el camino de análisis puro **independientemente de la heurística**: el Planificador genera el reporte/arquitectura y el grafo termina en `END` sin pasar por el Codificador ni el Revisor, incluso si la instrucción contiene verbos de creación.
-
-**Protección contra generación de código no deseada:** Si el Planificador responde con texto plano (sin invocar `entregar_plan_de_accion`) y la instrucción es de análisis puro, el contenido se entrega directamente como `analisis_final` (terminando en `END`). Si la instrucción es de creación, se reintenta pidiendo el plan formal. En ningún caso se fabrica un plan artificial con texto plano hacia el Agente Codificador.
-
-**Cancelación efectiva:** Cada tarea en ejecución se registra en `tareas_activas` (tarea_id → `asyncio.Task`). La herramienta `cancelar_tarea` interrumpe realmente la ejecución en curso cancelando la `asyncio.Task` activa y propagando la cancelación al grafo.
-
 ### Gestión de Estado, Enrutamiento Dinámico y Optimización de Contexto
 - **Estado del Proyecto (`ProjectState`)**: Hereda de `MessagesState` de LangGraph, lo que permite la gestión automática del historial de mensajes (`messages`) entre los agentes y el usuario, además de mantener variables de estado globales como el plan de acción, los errores de terminal, contadores de control (`loop_counter`, `revision_count`) y el **índice del proyecto** (`project_index`).
-- **Reducers `Annotated` para contadores**: `loop_counter` y `revision_count` usan el reducer `_ultimo_valor` (`Annotated[int, _ultimo_valor]`), lo que permite múltiples actualizaciones concurrentes al mismo key dentro de un superstep sin lanzar el error de LangGraph `INVALID_CONCURRENT_GRAPH_UPDATE` ("At key 'loop_counter': Can receive only one value per step"). Esto ocurre cuando `mcp_server.py` reanuda el grafo con `ainvoke(None)` en bucles y varios nodos actualizan los contadores a la vez.
 - **Control de Flujo (`Command`)**: Se utiliza el objeto `Command` de LangGraph para el enrutamiento dinámico. Esto permite a cada agente decidir de manera autónoma cuál es el siguiente nodo a ejecutar (por ejemplo, ir a su nodo de herramientas, avanzar al siguiente agente o terminar el proceso) y actualizar el estado global de forma explícita.
 - **Aristas Explícitas**: El grafo utiliza aristas explícitas para conectar los nodos de herramientas de vuelta a sus agentes correspondientes, asegurando un flujo de ejecución predecible y robusto.
 - **Resumen Automático de Contexto (`app/utils/summarization.py`)**: Para prevenir el desbordamiento de la ventana de contexto de los modelos LLM en conversaciones largas o iterativas, se implementa la función `aplicar_resumen_middleware` utilizando `SummarizationMiddleware` de LangChain. Este componente evalúa el historial de mensajes antes de cada invocación al LLM y, al superar un umbral configurable (`trigger_count=15`), resume automáticamente los mensajes más antiguos conservando los últimos mensajes recientes (`keep_count=8`), asegurando una alta eficiencia de tokens en los agentes `agente_planificador`, `agente_codificador` y `agente_revisor`.
@@ -93,32 +75,6 @@ PROJECT_INDEX_CACHE_DIR=".project_index"
 ```
 
 **Beneficio:** La exploración del Planificador pasa de decenas de `read_file` a 1 llamada `get_project_index`, y el Codificador/Revisor reducen cada lectura completa a un resumen de ~400 tokens, con caché persistente entre tareas.
-
-### Configuraciones de límites de contexto ajustables
-
-Todas las variables de límite de contexto se leen desde el entorno (`.env`) en `app/settings/settings.py` y se pueden ajustar sin tocar código:
-
-| Variable | Default | Descripción | Dónde afecta |
-|---|---|---|---|
-| `TERMINAL_MAX_OUTPUT_LINES` | 200 | Límite de líneas de salida de la terminal | `app/utils/terminal.py` (ShellTool del Revisor) |
-| `TERMINAL_MAX_CHARS_PER_LINE` | 500 | Límite de caracteres por línea de salida | `app/utils/terminal.py` |
-| `PROJECT_INDEX_MAX_DEPTH` | 8 | Profundidad máxima del árbol de directorios indexado | `app/utils/project_index.py` |
-| `PROJECT_INDEX_MAX_FILE_SIZE` | 262144 | Tamaño máximo en bytes de un archivo para ser indexado | `app/utils/project_index.py` |
-| `GIT_DIFF_MAX_FILE_SIZE` | 1048576 | Tamaño máximo en bytes del diff por archivo | `app/mcp/git_utils.py` |
-| `LLM_TIMEOUT` | 60 | Timeout en segundos para las llamadas al LLM (init_chat_model) | `app/models/llm_factory.py` |
-
-Ejemplo de override en `.env`:
-
-```env
-TERMINAL_MAX_OUTPUT_LINES="300"
-TERMINAL_MAX_CHARS_PER_LINE="600"
-PROJECT_INDEX_MAX_DEPTH="10"
-PROJECT_INDEX_MAX_FILE_SIZE="524288"
-GIT_DIFF_MAX_FILE_SIZE="2097152"
-LLM_TIMEOUT="60"
-```
-
-> **Nota:** Los valores se aplican al arrancar el servidor MCP; no requieren reinicio del cliente, solo del proceso.
 
 ---
 
@@ -192,108 +148,7 @@ Implementado utilizando **FastMCP**, el servidor expone capacidades avanzadas pa
 
 ---
 
-#### 2. `consultar_estado_tarea`
-
-Consulta el estado actual de una tarea delegada al equipo de IA. Combina el estado registrado en el `TaskRegistry` con el estado del grafo LangGraph (vía `visualizar_cambios`) y el `git diff`/`git status` en disco.
-
-**Firma:**
-```python
-async def consultar_estado_tarea(
-    tarea_id: str,
-    directorio_proyecto: str = "",
-    ctx: Optional[Context] = None
-) -> str
-```
-
-**Parámetros:**
-
-| Parámetro | Tipo | Requerido | Descripción |
-|-----------|------|-----------|-------------|
-| `tarea_id` | `string` | **Sí** | Identificador de la tarea a consultar (ej. `task_a1b2c3d4`). |
-| `directorio_proyecto` | `string` | No (default: `""`) | Ruta del proyecto. Si se omite, se infiere del estado del grafo. |
-| `ctx` | `Context` | No | Contexto MCP para notificaciones de progreso. |
-
-**Respuesta:** Markdown con el estado registrado en el `TaskRegistry` (`running`, `paused_planning`, `paused_code`, `completed`, `cancelled`, `timeout`, `error`), el directorio, la última actualización y el detalle, seguido del estado del grafo (resumen de cambios, nodo en el que está pausado o finalizado, y cambios en disco).
-
-**Ejemplo de invocación JSON:**
-```json
-{
-  "tool": "consultar_estado_tarea",
-  "arguments": {
-    "tarea_id": "task_a1b2c3d4"
-  }
-}
-```
-
----
-
-#### 3. `listar_tareas`
-
-Lista las tareas registradas en el servidor MCP, con filtro opcional por estado.
-
-**Firma:**
-```python
-async def listar_tareas(
-    estado: str = "",
-    ctx: Optional[Context] = None
-) -> str
-```
-
-**Parámetros:**
-
-| Parámetro | Tipo | Requerido | Descripción |
-|-----------|------|-----------|-------------|
-| `estado` | `string` | No (default: `""`) | Filtro opcional por estado. Valores válidos (definidos en `app/utils/task_registry.py`): `running`, `paused_planning`, `paused_code`, `completed`, `cancelled`, `timeout`, `error`. Vacío = listar todas. |
-| `ctx` | `Context` | No | Contexto MCP para notificaciones de progreso. |
-
-**Respuesta:** Tabla Markdown con el formato `| tarea_id | estado | directorio_proyecto | última actualización |`. Si no hay tareas, devuelve un mensaje informativo.
-
-**Ejemplo de invocación JSON:**
-```json
-{
-  "tool": "listar_tareas",
-  "arguments": {
-    "estado": "paused_planning"
-  }
-}
-```
-
----
-
-#### 4. `cancelar_tarea`
-
-Cancela una tarea en curso registrada en el `TaskRegistry`. Marca la tarea como `cancelled` e interrumpe **realmente** la ejecución en curso cancelando la `asyncio.Task` activa registrada en el dict `tareas_activas` de `mcp_server.py` (cancelación efectiva, **no** `asyncio.shield`), propagando la cancelación al grafo LangGraph.
-
-**Firma:**
-```python
-async def cancelar_tarea(
-    tarea_id: str,
-    ctx: Optional[Context] = None
-) -> str
-```
-
-**Parámetros:**
-
-| Parámetro | Tipo | Requerido | Descripción |
-|-----------|------|-----------|-------------|
-| `tarea_id` | `string` | **Sí** | Identificador de la tarea a cancelar (ej. `task_a1b2c3d4`). |
-| `ctx` | `Context` | No | Contexto MCP para notificaciones de progreso. |
-
-**Respuesta:** Mensaje confirmando que la tarea fue marcada como `cancelled` en el registro y, si había una `asyncio.Task` activa, que su ejecución en curso fue interrumpida. Si la tarea no existe en el registro, devuelve un aviso.
-
-**Ejemplo de invocación JSON:**
-```json
-{
-  "tool": "cancelar_tarea",
-  "arguments": {
-    "tarea_id": "task_a1b2c3d4"
-  }
-}
-```
-
----
-
-#### 5. `visualizar_cambios` (Función Interna - **NO EXPUESTA COMO HERRAMIENTA MCP**)
+#### 2. `visualizar_cambios` (Función Interna - **NO EXPUESTA COMO HERRAMIENTA MCP**)
 
 > ⚠️ **Nota**: Ya no está expuesta como herramienta MCP. Función auxiliar interna para consultar estado de tarea o cambios en disco.
 
@@ -308,22 +163,6 @@ async def cancelar_tarea(
 - **Auto-Aprobación**: Global (`MCP_AUTO_APPROVE="true"`) o por tarea (`auto_approve=True`).
 - **Notificaciones Progreso**: Tiempo real con formato `[XX%]`, compatible `progressToken`, fallback `[XX%]` si no hay token. Timeout configurable (`MCP_TASK_TIMEOUT_SECONDS`, default 300s).
 - **Inspección Cambios**: `git diff`/`git status` automático en pausas y fin. Detecta si Codificador omitió escritura.
-
-### Capa Modular MCP (`app/mcp/`)
-
-Los helpers del servidor MCP que no dependen del grafo LangGraph viven en una capa modular separada bajo `app/mcp/`, lo que permite testearlos de forma directa y unitaria sin arrancar el servidor completo:
-
-- **`app/mcp/progress.py`** — Notificaciones de progreso en tiempo real:
-  - `_log_stderr(msg)`: escribe a `stderr` de forma segura (*fire-and-forget*).
-  - `_safe_await(coro, timeout=1.0)`: await seguro con timeout de 1s que nunca propaga excepciones.
-  - `notificar_progreso(ctx, mensaje, progreso, total)`: usa `ctx.report_progress` con `progressToken` cuando está disponible; si no hay token, hace *fallback* al formato `[XX%]` en `ctx.info`. Captura `anyio.BrokenResourceError` y cualquier otra excepción para nunca bloquear la ejecución principal.
-
-- **`app/mcp/git_utils.py`** — Utilidades de Git:
-  - `obtener_git_diff(directorio)`: ejecuta `git diff` + `git status --short` vía `subprocess` (timeout 5s). Tolerante a fallos: si el directorio no existe, no es un repo git o `git` no está instalado, devuelve `""` sin lanzar excepción.
-
-- **`app/mcp/reporting.py`** — Reporting en Markdown:
-  - `generar_markdown_pausa(...)`: genera el reporte de pausa con **orden estricto**: título → explicación → tabla de pasos → `git diff` → bloque `🛑 ATENCIÓN ASISTENTE DE IA` → `👉 INSTRUCCIONES PARA EL USUARIO HUMANO`.
-  - `visualizar_cambios(...)`: consulta el estado del grafo y los cambios en disco. Usa **import perezoso** de `mcp_server` **dentro de la función** para evitar el import circular con el grafo (`agentes_app`). ⚠️ **NO refactorizar este patrón**: los tests existentes parchean `mcp_server.visualizar_cambios` y `mcp_server.agentes_app`.
 
 ### Transporte del Servidor (stdio / SSE)
 
@@ -380,13 +219,11 @@ El proyecto incluye una suite completa de pruebas unitarias, de integración y E
 
 ### Módulos de Prueba
 - `tests/test_agents.py`: Valida el comportamiento individual de los agentes (planificador, codificador y revisor).
-- `tests/test_analisis.py`: Verifica la detección de peticiones de análisis puro (incluye reportes, arquitectura y documentación) y que el reporte final del MCP incluye `analisis_final`.
 - `tests/test_e2e.py`: Pruebas End-to-End del ciclo completo del grafo bajo escenarios simulados.
 - `tests/test_files.py`: Verifica la utilidad de lectura y manipulación de archivos y system prompts.
-- `tests/test_integration.py`: Comprueba la correcta interacción entre nodos, aristas y herramientas de LangGraph. Incluye pruebas de que una instrucción de solo reporte/arquitectura NO invoca al agente codificador.
+- `tests/test_integration.py`: Comprueba la correcta interacción entre nodos, aristas y herramientas de LangGraph.
 - `tests/test_llm_factory.py`: Valida la inicialización correcta de la factoría de LLMs para múltiples proveedores.
 - `tests/test_mcp_server.py`: Prueba los endpoints y herramientas expuestas por el servidor FastMCP.
-- `tests/test_models.py`: Valida la estructura de `ProjectState` y el reducer `_ultimo_valor` de los contadores `loop_counter`/`revision_count`.
 - `tests/test_tool_nodes.py`: Verifica la correcta ejecución de los nodos de herramientas.
 - `tests/test_summarization.py`: Valida el comportamiento del middleware de resumen automático de contexto (`aplicar_resumen_middleware`), comprobando la preservación del historial por debajo del umbral (`trigger_count`) y el resumen correcto al superarlo.
 
@@ -409,25 +246,18 @@ El script `./run_tests.sh` automatiza la ejecución de toda la suite de pruebas 
 .
 ├── .env                    # Variables de entorno
 ├── .gitignore              # Archivos ignorados por git
+├── checkpoints.sqlite      # Base de datos de persistencia (MemorySaver)
 ├── LICENSE                 # Licencia del proyecto
 ├── mcp_server.py           # Punto de entrada para el servidor FastMCP
 ├── README.md               # Documentación completa del proyecto
 ├── requirements.txt        # Dependencias de Python
 ├── run_tests.sh            # Script automatizado de pruebas y linter
 ├── tech-lead-export.yaml   # Perfil personalizado "Tech Lead" para Zoo Code
-├── test.py                 # Script de depuración manual
-├── test_graph.py           # Script de depuración manual del grafo LangGraph
-├── test_tool.py            # Script de depuración manual de herramientas
 ├── app/                    # Código fuente principal
 │   ├── agents/             # Lógica de agentes especializados
 │   │   ├── agente_codificador.py
 │   │   ├── agente_planificador.py
 │   │   ├── agente_revisor.py
-│   │   └── __init__.py
-│   ├── mcp/                # Capa modular del servidor MCP (helpers puros)
-│   │   ├── git_utils.py    #   obtener_git_diff (subprocess git diff/status)
-│   │   ├── progress.py     #   notificar_progreso, _safe_await, _log_stderr
-│   │   ├── reporting.py    #   generar_markdown_pausa, visualizar_cambios
 │   │   └── __init__.py
 │   ├── models/             # Esquemas de datos y fábrica de LLMs
 │   │   ├── llm_factory.py
@@ -439,38 +269,21 @@ El script `./run_tests.sh` automatiza la ejecución de toda la suite de pruebas 
 │   ├── settings/           # Configuración dinámica con pydantic-settings
 │   │   ├── settings.py
 │   │   └── __init__.py
-│   ├── utils/              # Utilidades auxiliares
-│   │   ├── args_utils.py   #   Parseo seguro de argumentos de tool_calls
-│   │   ├── files.py        #   Herramientas de archivos (File, get_custom_file_tools)
-│   │   ├── project_index.py#   Índice de proyecto con caché incremental (optimización de tokens)
-│   │   ├── prompt_utils.py #   Utilidades de construcción segura de prompts
-│   │   ├── review_utils.py #   Helpers puros de revisión para el Agente Revisor
-│   │   ├── summarization.py#   Utilidad de resumen automático de contexto
-│   │   ├── task_registry.py#   TaskRegistry thread-safe (estados del ciclo de vida)
-│   │   ├── terminal.py     #   Ejecución segura de comandos de terminal
-│   │   └── tool_nodes.py   #   Nodos de herramientas del grafo
+│   └── utils/              # Utilidades auxiliares
+│       ├── files.py
+│       ├── project_index.py # Índice de proyecto con caché incremental (optimización de tokens)
+│       └── summarization.py # Utilidad de resumen automático de contexto
 │   └── main.py             # Orquestador principal del Grafo (StateGraph)
 └── tests/                  # Suite de pruebas automatizadas
     ├── conftest.py         # Configuración y fixtures compartidas de pytest
-    ├── test_agente_codificador.py
     ├── test_agents.py      # Pruebas de agentes
-    ├── test_analisis.py
-    ├── test_args_parsing.py
     ├── test_e2e.py         # Pruebas End-to-End
     ├── test_files.py       # Pruebas de utilidades de archivos
     ├── test_integration.py # Pruebas de integración LangGraph
     ├── test_llm_factory.py # Pruebas de la factoría de LLMs
-    ├── test_mcp_git_utils.py  # Pruebas directas de app/mcp/git_utils.py
-    ├── test_mcp_progress.py   # Pruebas directas de app/mcp/progress.py
-    ├── test_mcp_reporting.py  # Pruebas directas de app/mcp/reporting.py
-    ├── test_mcp_server.py  # Pruebas del servidor MCP (vía fachada)
-    ├── test_models.py
+    ├── test_mcp_server.py  # Pruebas del servidor MCP
     ├── test_project_index.py # Pruebas del índice de proyecto
-    ├── test_prompt_utils.py
-    ├── test_review_utils.py
     ├── test_summarization.py # Pruebas unitarias de resumen de contexto
-    ├── test_task_registry.py
-    ├── test_terminal.py
     └── test_tool_nodes.py  # Pruebas de nodos de herramientas
 ```
 
@@ -533,15 +346,6 @@ PROJECT_INDEX_MAX_TOKENS_PER_FILE="400"
 PROJECT_INDEX_CACHE_DIR=".project_index"
 ```
 
-**Variables de control del servidor MCP:**
-
-| Variable | Default | Valores aceptados | Descripción |
-|----------|---------|-------------------|-------------|
-| `MCP_AUTO_APPROVE` | `"false"` | `"true"`, `"1"`, `"yes"` | Auto-aprueba las pausas Human-in-the-Loop (Pausa 1 y Pausa 2) sin confirmación manual, ejecutando el flujo completo de forma automática. Cualquier otro valor (o ausencia) se interpreta como `false`. |
-| `MCP_TASK_TIMEOUT_SECONDS` | `"300"` | Entero positivo (segundos) | Timeout máximo de ejecución de una tarea delegada. Si una tarea supera este tiempo sin completarse, se cancela automáticamente y se marca con estado **`timeout`** en el `TaskRegistry` (distinto de `cancelled`, que corresponde a cancelación manual vía `cancelar_tarea`). |
-
-> ⚠️ **Nota sobre estados del ciclo de vida**: Las tareas canceladas por **timeout** se registran en el `TaskRegistry` con el estado `timeout`, mientras que las canceladas manualmente con la herramienta `cancelar_tarea` se registran como `cancelled`. Ambos estados son consultables con `consultar_estado_tarea` y filtrables con `listar_tareas`.
-
 ---
 
 ## 🔌 Integración con MCP y Zoo Code
@@ -573,10 +377,7 @@ PROJECT_INDEX_CACHE_DIR=".project_index"
         "MCP_TASK_TIMEOUT_SECONDS": "300"
       },
       "alwaysAllow": [
-        "delegar_tarea_a_equipo_ia",
-        "consultar_estado_tarea",
-        "listar_tareas",
-        "cancelar_tarea"
+        "delegar_tarea_a_equipo_ia"
       ],
       "timeout": 600
     }
@@ -621,10 +422,7 @@ Añade la siguiente configuración al archivo `~/.claude.json` (nivel de usuario
         "MCP_TASK_TIMEOUT_SECONDS": "300"
       },
       "alwaysAllow": [
-        "delegar_tarea_a_equipo_ia",
-        "consultar_estado_tarea",
-        "listar_tareas",
-        "cancelar_tarea"
+        "delegar_tarea_a_equipo_ia"
       ],
       "timeout": 600
     }

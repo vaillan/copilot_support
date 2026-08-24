@@ -4,8 +4,6 @@ import pytest
 import asyncio
 import anyio
 from unittest.mock import patch, MagicMock, AsyncMock
-import mcp_server
-from app.utils.task_registry import task_registry
 from mcp_server import visualizar_cambios, delegar_tarea_a_equipo_ia, obtener_git_diff, notificar_progreso, generar_markdown_pausa, consultar_estado_tarea, listar_tareas, cancelar_tarea
 
 def test_visualizar_cambios_sin_parametros():
@@ -373,6 +371,7 @@ def test_generar_markdown_pausa_con_diff():
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
 def test_consultar_estado_tarea_con_tarea_registrada(mock_aget_state):
+    from app.utils.task_registry import task_registry
     task_registry.clear()
     task_registry.register_task(
         tarea_id="task_consulta",
@@ -401,6 +400,7 @@ def test_consultar_estado_tarea_con_tarea_registrada(mock_aget_state):
 
 @patch("mcp_server.visualizar_cambios", new_callable=AsyncMock)
 def test_consultar_estado_tarea_tarea_inexistente(mock_visualizar):
+    from app.utils.task_registry import task_registry
     task_registry.clear()
     mock_visualizar.return_value = "No se encontraron cambios."
 
@@ -415,6 +415,7 @@ def test_consultar_estado_tarea_tarea_inexistente(mock_visualizar):
 
 
 def test_listar_tareas_sin_tareas():
+    from app.utils.task_registry import task_registry
     task_registry.clear()
 
     mock_ctx = AsyncMock()
@@ -498,9 +499,7 @@ def test_transporte_default_es_stdio():
 
 def test_transporte_sse_cuando_env_var_sse():
     import mcp_server
-    # El .env define FASTMCP_PORT="8080" (P4: antes el typo FASTMCP_TRANSPORT0
-    # impedía que se leyera el transporte SSE y se usaba el default 8000).
-    with patch.dict(os.environ, {"FASTMCP_TRANSPORT": "sse", "FASTMCP_PORT": "8080"}, clear=False):
+    with patch.dict(os.environ, {"FASTMCP_TRANSPORT": "sse"}, clear=False):
         with patch.object(mcp_server.mcp, "run") as mock_run:
             transporte = os.environ.get("FASTMCP_TRANSPORT", "stdio").lower()
             if transporte in ("sse", "streamable-http", "http"):
@@ -514,7 +513,7 @@ def test_transporte_sse_cuando_env_var_sse():
             mock_run.assert_called_once_with(
                 transport="sse",
                 host="127.0.0.1",
-                port=8080,
+                port=8000,
             )
 
 
@@ -550,44 +549,3 @@ def test_herramientas_registradas():
         "listar_tareas",
         "cancelar_tarea",
     }.issubset(nombres)
-
-
-def test_cancelar_tarea_interrumpe_ejecucion_en_curso():
-    """
-    Verifica que cancelar_tarea() interrumpe la asyncio.Task activa registrada
-    en tareas_activas (cancelación efectiva de la ejecución en curso).
-    """
-    import mcp_server
-    from app.utils.task_registry import task_registry
-
-    async def _escenario():
-        # Simular una tarea en curso registrada en tareas_activas
-        tarea_id = "task_cancel_test"
-
-        # Registrar la tarea en el TaskRegistry (requisito de cancelar_tarea)
-        task_registry.register_task(
-            tarea_id=tarea_id,
-            thread_id=tarea_id,
-            directorio_proyecto="./",
-            instruccion="test",
-            estado="running",
-        )
-
-        async def _tarea_larga():
-            try:
-                await asyncio.sleep(60)
-                return "nunca debería completarse"
-            except asyncio.CancelledError:
-                raise
-
-        task_activa = asyncio.create_task(_tarea_larga())
-        mcp_server.tareas_activas[tarea_id] = task_activa
-
-        # Llamar a cancelar_tarea (que ahora espera la cancelación de la Task)
-        resultado = await cancelar_tarea(tarea_id)
-
-        assert "cancelada" in resultado.lower()
-        assert task_activa.cancelled(), "La asyncio.Task activa debe quedar cancelada"
-        assert mcp_server.tareas_activas.get(tarea_id) is None or mcp_server.tareas_activas[tarea_id].done()
-
-    asyncio.run(_escenario())

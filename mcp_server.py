@@ -2,7 +2,6 @@ import os
 import sys
 import subprocess
 import asyncio
-import threading
 import uuid
 import hashlib
 from typing import Optional, Dict, Any, List
@@ -15,6 +14,11 @@ from typing import Optional, Dict, Any, List
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
+
+class MuteStderr:
+    def write(self, x): pass
+    def flush(self): pass
+
 
 os.environ["FASTMCP_LOG_LEVEL"] = "INFO"
 
@@ -29,62 +33,263 @@ from app.settings.settings import Settings
 
 mcp = FastMCP("AIDevTeam")
 
-# FIX (v1.0.3): Limpiar el checkpointer SQLite obsoleto al arrancar el servidor.
-# El archivo 'checkpoints.sqlite' persiste el estado del grafo entre ejecuciones
-# y crece sin límite (puede alcanzar decenas de MB), además de quedar bloqueado
-# en Windows por conexiones sqlite abiertas. Se elimina al arrancar para evitar
-# que el estado de tareas previas interfiera con nuevas ejecuciones.
-try:
-    if os.path.exists("checkpoints.sqlite"):
-        os.remove("checkpoints.sqlite")
-except OSError:
-    # Si el archivo está bloqueado (Windows), se ignora: el checkpointer lo
-    # sobrescribirá al compilar el grafo.
-    pass
-
-# FIX (v1.0.2): El servidor MCP invoca el grafo con métodos async (ainvoke/aget_state),
-# por lo que DEBE usar AsyncSqliteSaver (usar_checkpointer_async=True). Con SqliteSaver
-# síncrono, langgraph-checkpoint-sqlite >= 3.0 lanza "The SqliteSaver does not support
-# async methods" y ninguna tarea delegada puede arrancar.
-#
-# AsyncSqliteSaver requiere un event loop EN EJECUCIÓN en el momento de su creación
-# (asyncio.get_running_loop()). Como FastMCP gestiona su propio loop al arrancar, se
-# compila el grafo en un event loop dedicado que se mantiene vivo en un thread daemon;
-# el checkpointer programa sus operaciones async en ese loop vía run_coroutine_threadsafe
-# cuando se invoca desde el loop de FastMCP.
-_grafo_loop = asyncio.new_event_loop()
-_grafo_thread = threading.Thread(target=_grafo_loop.run_forever, daemon=True)
-_grafo_thread.start()
-
-
-async def _compilar_grafo_async():
-    return crear_grafo(usar_checkpointer_async=True)
-
-
-agentes_app = asyncio.run_coroutine_threadsafe(_compilar_grafo_async(), _grafo_loop).result()
+agentes_app = crear_grafo()
 
 # Mapa de tareas activas: tarea_id -> asyncio.Task en curso (para cancelación).
 tareas_activas: Dict[str, asyncio.Task] = {}
 
-# Helpers extraídos a la capa modular app/mcp (refactor arquitectónico):
-# - _log_stderr, _safe_await, notificar_progreso  -> app.mcp.progress
-# - obtener_git_diff                              -> app.mcp.git_utils
-# - generar_markdown_pausa, visualizar_cambios    -> app.mcp.reporting
-# visualizar_cambios accede al grafo (agentes_app) mediante import perezoso
-# de este módulo dentro de la función para evitar import circular.
-from app.mcp.progress import _log_stderr, _safe_await, notificar_progreso
-from app.mcp.git_utils import obtener_git_diff
-from app.mcp.reporting import generar_markdown_pausa, visualizar_cambios
+
+def _log_stderr(msg: str):
+    """Escribe mensaje a stderr de forma segura (fire-and-forget)."""
+    try:
+        sys.stderr.write(f"{msg}\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
+async def notificar_progreso(ctx: Optional[Context], mensaje: str, progreso: Optional[int] = None, total: int = 100):
+    """
+    Envía mensajes de log y progreso en tiempo real de forma segura y directa.
+    Captura y maneja cualquier excepción para nunca bloquear la ejecución principal.
+    """
+    if ctx is None:
+        return
+
+    try:
+        mensaje_resumido = mensaje.splitlines()[0][:200] if mensaje else ""
+
+        has_progress_token = False
+        try:
+            if (
+                hasattr(ctx, "request_context")
+                and ctx.request_context is not None
+                and hasattr(ctx.request_context, "meta")
+                and ctx.request_context.meta is not None
+                and getattr(ctx.request_context.meta, "progressToken", None) is not None
+            ):
+                has_progress_token = True
+        except Exception:
+            has_progress_token = False
+
+        progreso_val = progreso if progreso is not None else 0
+
+        if progreso is not None and hasattr(ctx, "report_progress"):
+            try:
+                res = ctx.report_progress(progreso_val, total=total, message=mensaje_resumido)
+                if asyncio.iscoroutine(res):
+                    await _safe_await(res, timeout=1.0)
+            except Exception:
+                pass
+
+        if progreso is not None and not has_progress_token:
+            pct = int((progreso_val / total) * 100) if total > 0 else progreso_val
+            mensaje_formateado = f"[{pct}%] {mensaje_resumido}"
+        else:
+            mensaje_formateado = mensaje_resumido
+
+        # Enviar mensaje de log al cliente MCP (Zoo Code).
+        # FastMCP 3.2.4: ctx.info existe y envía 'notifications/message' de nivel INFO.
+        # ctx.log(level, message) es el método genérico equivalente a report_log_message.
+        if hasattr(ctx, "info"):
+            try:
+                res = ctx.info(mensaje_formateado)
+                if asyncio.iscoroutine(res):
+                    await _safe_await(res, timeout=1.0)
+            except Exception:
+                pass
+        elif hasattr(ctx, "log"):
+            try:
+                res = ctx.log(level="info", message=mensaje_formateado)
+                if asyncio.iscoroutine(res):
+                    await _safe_await(res, timeout=1.0)
+            except Exception:
+                pass
+
+        _log_stderr(f"[PROGRESO] {mensaje_formateado}")
+
+    except Exception:
+        pass
+
+
+async def _safe_await(coro, timeout: float = 1.0):
+    """Await seguro con timeout que nunca propaga excepciones."""
+    try:
+        await asyncio.wait_for(coro, timeout=timeout)
+    except Exception:
+        pass
+
+
+def obtener_git_diff(directorio: str) -> str:
+    """Intenta obtener el diff de git o los archivos modificados en el directorio especificado."""
+    if not directorio or not os.path.exists(directorio):
+        return ""
+    try:
+        res = subprocess.run(
+            ["git", "diff"], 
+            cwd=directorio, 
+            capture_output=True, 
+            text=True, 
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+            stdin=subprocess.DEVNULL
+        )
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
+            
+        res_stat = subprocess.run(
+            ["git", "status", "-s"], 
+            cwd=directorio, 
+            capture_output=True, 
+            text=True, 
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+            stdin=subprocess.DEVNULL
+        )
+        if res_stat.returncode == 0 and res_stat.stdout.strip():
+            stdout_clean = res_stat.stdout.strip()
+            return f"Archivos modificados/creados (git status):\n{stdout_clean}"
+    except Exception:
+        pass
+    return ""
+
+
+def generar_markdown_pausa(
+    tarea_id: str,
+    tipo_pausa: str,
+    titulo: str,
+    explicacion: str,
+    pasos: Optional[List[Dict[str, Any]]] = None,
+    diff_git: str = "",
+    directorio_proyecto: str = ""
+) -> str:
+    """
+    Genera un reporte estructurado en Markdown optimizado para Zoo Code, CLI y Cursor.
+    Coloca en la parte superior prominente el título, metadatos, explicación y la tabla
+    de pasos propuestos (y git diff si aplica), garantizando que el usuario visualice
+    claramente el plan de acción antes de los avisos y las instrucciones de aprobación.
+    """
+    lineas = []
+    
+    # 1. Título principal y Metadatos de la Tarea en la parte superior prominente
+    lineas.append(f"### 📌 {titulo}")
+    lineas.append(f"- **ID Tarea:** `{tarea_id}`")
+    if directorio_proyecto:
+        lineas.append(f"- **Directorio:** `{directorio_proyecto}`")
+    lineas.append(f"- **Estado:** Pausado ({tipo_pausa}) - Requiere aprobación humana.\n")
+    
+    # 2. Explicación / Resumen
+    lineas.append("#### 📄 Explicación / Resumen:")
+    lineas.append(f"{explicacion}\n")
+
+    # 3. Plan de Pasos Propuestos (Tabla Markdown)
+    if pasos:
+        lineas.append("#### 📋 Plan de Pasos Propuestos:")
+        lineas.append("| # | Tarea | Archivo | Requiere Test |")
+        lineas.append("|---|-------|---------|---------------|")
+        for idx, p in enumerate(pasos, start=1):
+            t = str(p.get("tarea", "")).replace("|", "\\|")
+            a = str(p.get("archivo", "-")).replace("|", "\\|")
+            rt = "Si" if p.get("requiere_test") else "No"
+            lineas.append(f"| {idx} | {t} | `{a}` | {rt} |")
+        lineas.append("")
+
+    # 4. Git Diff / Cambios en Disco (si existen)
+    if diff_git:
+        lineas.append("#### 🔍 Git Diff / Cambios en Disco:")
+        lineas.append("```diff")
+        lineas.append(diff_git)
+        lineas.append("```\n")
+
+    # 5. Bloque de advertencia para el asistente de IA (desplazado hacia la parte inferior)
+    lineas.append("================================================================================")
+    lineas.append("🛑 ATENCIÓN ASISTENTE DE IA (ZOO CODE / COPILOT / CURSOR):")
+    lineas.append("EL FLUJO ESTÁ PAUSADO ESPERANDO CONFIRMACIÓN DEL USUARIO HUMANO.")
+    lineas.append("**DETÉN LA EJECUCIÓN AUTOMÁTICA DE HERRAMIENTAS DE INMEDIATO.**")
+    lineas.append("NO ejecutes ninguna función ni herramienta por tu cuenta.")
+    lineas.append("Muestra todo el plan de acción y/o los cambios de código anteriores directamente al usuario humano en el chat y **ESPERA** pacientemente a que el usuario escriba su decisión explícita.")
+    lineas.append("================================================================================\n")
+
+    # 6. Instrucciones para el usuario humano (en la parte inferior)
+    lineas.append("--------------------------------------------------------------------------------")
+    lineas.append("👉 **INSTRUCCIONES PARA EL USUARIO HUMANO:**")
+    lineas.append("--------------------------------------------------------------------------------")
+    lineas.append("Por favor, revisa detalladamente el plan o los cambios de código anteriores.")
+    lineas.append("• **PARA APROBAR:** Escribe en el chat que apruebas la tarea (ej. 'Aprobar' o 'Acepto').")
+    lineas.append("• **PARA RECHAZAR O PEDIR CAMBIOS:** Escribe en el chat 'Rechazar' junto con tus observaciones o correcciones.")
+    lineas.append("El asistente de IA debe detenerse y esperar a que tú escribas tu respuesta.")
+    lineas.append("================================================================================")
+
+    return "\n".join(lineas)
+
+
+async def visualizar_cambios(
+    tarea_id: str = "",
+    directorio_proyecto: str = "",
+    ctx: Optional[Context] = None
+) -> str:
+    """
+    Función auxiliar interna para consultar el estado actual de una tarea o los cambios en disco.
+    Nota: Ya no está expuesta como herramienta MCP para los agentes LLM.
+    """
+    # Notificación fire-and-forget
+    asyncio.create_task(notificar_progreso(ctx, f"🔍 Consultando cambios para tarea '{tarea_id}' en '{directorio_proyecto}'...", 10, 100))
+    
+    partes = []
+    
+    dir_a_consultar = directorio_proyecto
+    
+    if tarea_id:
+        config = {"configurable": {"thread_id": tarea_id}}
+        try:
+            estado = await agentes_app.aget_state(config) # type: ignore
+            values = estado.values if hasattr(estado, "values") else {}
+            
+            if not dir_a_consultar:
+                dir_a_consultar = values.get("directorio_proyecto", "")
+                
+            codigo_escrito = values.get("codigo_escrito")
+            if codigo_escrito:
+                msg_resumen = f"📋 RESUMEN DE CAMBIOS (Tarea '{tarea_id}'):\n{codigo_escrito}"
+                partes.append(msg_resumen)
+            else:
+                msg_sin_resumen = f"ℹ️ La tarea '{tarea_id}' aún no ha registrado un resumen de cambios."
+                partes.append(msg_sin_resumen)
+                
+            if estado.next:
+                siguiente_nodo = estado.next[0]
+                msg_estado = f"📌 Estado actual del flujo: Pausado antes de '{siguiente_nodo}'"
+                partes.append(msg_estado)
+            else:
+                partes.append("📌 Estado actual del flujo: Finalizado")
+        except Exception as e:
+            err_msg = str(e)
+            msg_err = f"⚠️ No se pudo obtener el estado de la tarea '{tarea_id}': {err_msg}"
+            partes.append(msg_err)
+
+    if dir_a_consultar:
+        diff_git = obtener_git_diff(dir_a_consultar)
+        if diff_git:
+            msg_diff = f"🔍 CAMBIOS DETALLADOS EN DISCO (Git Diff / Status en '{dir_a_consultar}'):\n{diff_git}"
+            partes.append(msg_diff)
+            
+    if not partes:
+        asyncio.create_task(notificar_progreso(ctx, "⚠️ No se encontraron cambios para los parámetros proporcionados.", 100, 100))
+        return "No se proporcionó un 'tarea_id' válido ni un 'directorio_proyecto' con cambios detectables."
+        
+    asyncio.create_task(notificar_progreso(ctx, "✅ Visualización de cambios completada.", 100, 100))
+    return "\n\n".join(partes)
 
 
 @mcp.tool()
 async def delegar_tarea_a_equipo_ia(
-    instruccion: str,
-    directorio_proyecto: str,
+    instruccion: str, 
+    directorio_proyecto: str, 
     approve: bool = False,
     tarea_id: str = "",
     auto_approve: bool = False,
-    solo_analisis: bool = False,
     ctx: Optional[Context] = None
 ) -> str:
     """
@@ -102,7 +307,6 @@ async def delegar_tarea_a_equipo_ia(
         approve: Booleano para aprobar y continuar si el proceso está pausado esperando revisión humana.
         tarea_id: OBLIGATORIO SI ESTÁS APROBANDO O RECHAZANDO UNA PAUSA. Déjalo vacío para iniciar una tarea nueva.
         auto_approve: Si es True (o la variable MCP_AUTO_APPROVE=true), auto-aprueba todas las pausas (Pausa 1 y Pausa 2) sin requerir confirmación manual.
-        solo_analisis: Si es True, fuerza el modo de ANÁLISIS PURO (reporte/arquitectura/documentación) sin generar ni modificar código: el Planificador produce el documento y el grafo termina en END, sin pasar por el Agente Codificador ni el Revisor, independientemente de la heurística de detección.
     """
     env_val_raw = os.environ.get("MCP_AUTO_APPROVE", "")
     env_val_clean = env_val_raw.strip().lower()
@@ -210,8 +414,7 @@ async def delegar_tarea_a_equipo_ia(
                 "project_index": project_index,
                 "messages": [HumanMessage(content=instruccion)],
                 "revision_count": 0,
-                "loop_counter": 0,
-                "solo_analisis": solo_analisis
+                "loop_counter": 0
             }
             resultado = await agentes_app.ainvoke(estado_inicial, config) # type: ignore
 
@@ -280,56 +483,10 @@ async def delegar_tarea_a_equipo_ia(
 
         # Si no hay 'next', el grafo llegó a END
         values = estado.values if hasattr(estado, "values") else {}
-        codigo_escrito = values.get("codigo_escrito") or (resultado.get("codigo_escrito") if isinstance(resultado, dict) else None)
-        errores_qa = values.get("errores_terminal") or (resultado.get("errores_terminal") if isinstance(resultado, dict) else None)
-        plan_de_accion = values.get("plan_de_accion") or (resultado.get("plan_de_accion") if isinstance(resultado, dict) else None)
+        codigo_escrito = values.get("codigo_escrito") or (resultado.get("codigo_escrito") if isinstance(resultado, dict) else "No se reportó código.")
+        errores_qa = values.get("errores_terminal") or (resultado.get("errores_terminal") if isinstance(resultado, dict) else "Sin errores.")
         
         diff_git = obtener_git_diff(directorio_proyecto)
-        
-        # Si el grafo terminó en un análisis puro (sin programación), el estado
-        # contiene 'analisis_final'. Se extrae del estado o del resultado para
-        # generar un reporte de análisis dedicado en lugar del reporte de tarea
-        # de programación (codigo_escrito/errores_qa).
-        analisis_final = values.get("analisis_final") or (resultado.get("analisis_final") if isinstance(resultado, dict) else None)
-
-        if analisis_final:
-            reporte_final = f"✅ Análisis completado por el equipo LangGraph.\nID de Tarea: {tarea_id}\n\n📋 REPORTE DE ANÁLISIS:\n{analisis_final}"
-            await notificar_progreso(ctx, f"✅ Análisis completado para tarea '{tarea_id}'.", 100, 100)
-            _log_stderr(f"[MCP] Tarea '{tarea_id}' COMPLETADA (análisis)")
-            try:
-                task_registry.update_status(tarea_id, "completed", detalle="Análisis completado")
-            except Exception:
-                pass
-            return reporte_final
-
-        # P2/P7: Detección de terminación ANÓMALA: el grafo llegó a END sin
-        # producir código ni análisis (p. ej. loop_counter agotado en el
-        # Planificador o Codificador, o error interno). NO reportar como éxito.
-        # Nota: se ignora 'plan_de_accion' porque el plan puede existir (PAUSA_1)
-        # pero el Codificador no haber escrito nada (codigo_escrito=None).
-        es_terminacion_anomala = not codigo_escrito and not errores_qa
-        if es_terminacion_anomala:
-            mensajes = values.get("messages", [])
-            ultimo_error = ""
-            for m in reversed(mensajes):
-                contenido = str(getattr(m, "content", ""))
-                if any(kw in contenido for kw in ("Error", "excedido", "límite", "Error:")):
-                    ultimo_error = contenido
-                    break
-            msg_error_final = (
-                f"⚠️ La tarea '{tarea_id}' terminó sin producir código ni análisis.\n"
-                f"Posible causa: el Agente Planificador o Codificador agotó el límite de iteraciones o falló internamente.\n"
-                f"Detalle: {ultimo_error or 'Sin detalle adicional en el historial.'}\n"
-                f"Directorio: {directorio_proyecto}"
-            )
-            await notificar_progreso(ctx, msg_error_final, 100, 100)
-            _log_stderr(f"[MCP] Tarea '{tarea_id}' TERMINÓ SIN ENTREGABLES")
-            try:
-                task_registry.update_status(tarea_id, "error", detalle=msg_error_final)
-            except Exception:
-                pass
-            return msg_error_final
-
         msg_fin = f"✅ Tarea '{tarea_id}' completada exitosamente."
         if diff_git:
             diff_msg = f"\n\n🔍 Cambios en disco finales:\n{diff_git}"
@@ -339,40 +496,34 @@ async def delegar_tarea_a_equipo_ia(
         await notificar_progreso(ctx, msg_fin, 100, 100)
         _log_stderr(f"[MCP] Tarea '{tarea_id}' COMPLETADA")
         try:
-            task_registry.update_status(tarea_id, "completed", detalle=codigo_escrito or "Sin resumen de cambios")
+            task_registry.update_status(tarea_id, "completed", detalle=codigo_escrito)
         except Exception:
             pass
+        # Si el grafo terminó en un análisis puro (sin programación), el estado
+        # contiene 'analisis_final'. Se extrae del estado o del resultado para
+        # generar un reporte de análisis dedicado en lugar del reporte de tarea
+        # de programación (codigo_escrito/errores_qa).
+        analisis_final = values.get("analisis_final") or (resultado.get("analisis_final") if isinstance(resultado, dict) else None)
 
-        reporte_final = (
-            f"✅ Tarea completada exitosamente por el equipo LangGraph.\n"
-            f"ID de Tarea: {tarea_id}\n"
-            f"Resumen de cambios: {codigo_escrito or 'No se reportó código.'}\n"
-            f"Estado final de los tests (QA): {errores_qa or 'Sin errores.'}"
-        )
-        if not diff_git:
-            reporte_final += f"\n\n⚠️ ADVERTENCIA: La tarea finalizó pero git diff no muestra modificaciones en '{directorio_proyecto}'. Comprueba si el Agente Codificador omitió la escritura de archivos."
+        if analisis_final:
+            reporte_final = f"✅ Análisis completado por el equipo LangGraph.\nID de Tarea: {tarea_id}\n\n📋 REPORTE DE ANÁLISIS:\n{analisis_final}"
+        else:
+            reporte_final = (
+                f"✅ Tarea completada exitosamente por el equipo LangGraph.\n"
+                f"ID de Tarea: {tarea_id}\n"
+                f"Resumen de cambios: {codigo_escrito}\n"
+                f"Estado final de los tests (QA): {errores_qa}"
+            )
+            if not diff_git:
+                reporte_final += f"\n\n⚠️ ADVERTENCIA: La tarea finalizó pero git diff no muestra modificaciones en '{directorio_proyecto}'. Comprueba si el Agente Codificador omitió la escritura de archivos."
         return reporte_final
 
-    # Registrar la asyncio.Task activa para permitir cancelación efectiva desde
-    # cancelar_tarea(). P1: NO se usa asyncio.shield: si el timeout expira, la
-    # tarea subyacente se CANCELA realmente para no dejar procesos en background
-    # que bloqueen el event loop del servidor MCP (bug: el cliente cortaba a los
-    # 30 min pero la tarea seguía corriendo y bloqueaba listar_tareas/consultar).
-    tarea_activa = asyncio.create_task(_ejecutar_logica())
-    tareas_activas[tarea_id] = tarea_activa
     try:
-        return await asyncio.wait_for(tarea_activa, timeout=timeout_seconds)
+        return await asyncio.wait_for(_ejecutar_logica(), timeout=timeout_seconds)
     except asyncio.TimeoutError:
         msg_timeout = f"🚨 Timeout: La tarea '{tarea_id}' excedió el límite máximo de ejecución ({timeout_seconds}s)."
         await notificar_progreso(ctx, msg_timeout, 100, 100)
         _log_stderr(f"[MCP] TIMEOUT tarea '{tarea_id}'")
-        # Cancelar realmente la tarea subyacente para liberar el event loop.
-        if not tarea_activa.done():
-            tarea_activa.cancel()
-            try:
-                await asyncio.wait_for(tarea_activa, timeout=5.0)
-            except (asyncio.CancelledError, asyncio.TimeoutError):
-                pass
         try:
             task_registry.update_status(tarea_id, "timeout", detalle=msg_timeout)
         except Exception:
@@ -388,9 +539,6 @@ async def delegar_tarea_a_equipo_ia(
         except Exception:
             pass
         return msg_err
-    finally:
-        # Limpiar la tarea activa del registro de cancelación.
-        tareas_activas.pop(tarea_id, None)
 
 
 @mcp.tool()
@@ -514,14 +662,6 @@ async def cancelar_tarea(
         if task_activa is not None and not task_activa.done():
             try:
                 task_activa.cancel()
-                # Esperar brevemente a que la cancelación se propague al grafo
-                # (el ainvoke en curso debe abortarse con CancelledError).
-                try:
-                    await asyncio.wait_for(task_activa, timeout=5.0)
-                except asyncio.CancelledError:
-                    pass
-                except asyncio.TimeoutError:
-                    pass
                 msg = f"✅ Tarea '{tarea_id}' marcada como cancelada y su ejecución en curso fue interrumpida."
             except Exception:
                 msg = f"✅ Tarea '{tarea_id}' marcada como cancelada (no se pudo interrumpir la ejecución en curso)."

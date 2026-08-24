@@ -25,7 +25,7 @@ settings = Settings()
 # Configuración
 # ---------------------------------------------------------------------------
 
-INDEX_VERSION = 2
+INDEX_VERSION = 1
 INDEX_FILENAME = ".project_index.json"
 
 # Directorios y archivos que nunca deben indexarse (basura / dependencias)
@@ -139,21 +139,7 @@ def _leer_contenido_y_hash(ruta: Path) -> Tuple[str, Dict[str, Any]]:
 
 
 def _es_excluido(nombre: str, es_dir: bool) -> bool:
-    """Determina si un nombre de archivo/directorio debe excluirse del índice.
-
-    Además de las exclusiones fijas (EXCLUDED_DIRS, EXCLUDED_FILES, binarios,
-    lockfiles), respeta los patrones configurables vía la setting
-    ``PROJECT_INDEX_EXCLUDE_PATTERNS`` (lista separada por comas, coincidencia
-    case-insensitive por nombre). La setting se lee en cada llamada (patrón
-    getattr) para permitir ajustes dinámicos sin reiniciar el proceso.
-    """
-    # Exclusiones configurables: patrones definidos por el usuario.
-    patrones_raw = getattr(settings, "PROJECT_INDEX_EXCLUDE_PATTERNS", "")
-    if patrones_raw:
-        patrones = [p.strip().lower() for p in patrones_raw.split(",") if p.strip()]
-        if patrones and nombre.lower() in patrones:
-            return True
-
+    """Determina si un nombre de archivo/directorio debe excluirse del índice."""
     if es_dir:
         return nombre in EXCLUDED_DIRS or nombre.endswith(".egg-info")
     if nombre in EXCLUDED_FILES:
@@ -326,186 +312,6 @@ def _resumir_generico(contenido: str, max_tokens: int) -> Dict[str, Any]:
     return {"resumen": resumen}
 
 
-def _resumir_requisitos(contenido: str, max_tokens: int) -> Dict[str, Any]:
-    """Genera resumen de archivos de dependencias (requirements.txt, pyproject.toml, package.json).
-
-    Extrae las dependencias directas y la estructura de configuración de los
-    ecosistemas más comunes para que los agentes comprendan el stack del
-    proyecto sin leer el archivo completo.
-
-    - requirements.txt: cada línea no vacía ni comentario es una dependencia.
-    - pyproject.toml: claves de primer nivel bajo ``[project]`` y secciones
-      ``[project.optional-dependencies]`` / ``[tool.*]``.
-    - package.json: claves de ``dependencies`` y ``devDependencies``.
-
-    Returns:
-        Dict con 'resumen' (texto con prefijos 'DEPENDENCIAS:'/'CLAVES:') y
-        'dependencias' (lista de dependencias extraídas).
-    """
-    limite_caracteres = max_tokens * 4
-    dependencias: List[str] = []
-    claves: List[str] = []
-    lineas = contenido.splitlines()
-
-    # Detectar el tipo de archivo por su contenido.
-    es_pyproject = any(l.strip().startswith("[project]") for l in lineas)
-    es_package_json = contenido.strip().startswith("{")
-
-    if es_package_json:
-        # package.json: extraer claves de dependencies y devDependencies.
-        for seccion in ("dependencies", "devDependencies"):
-            m = re.search(r'"%s"\s*:\s*\{(.*?)\}' % re.escape(seccion), contenido, re.DOTALL)
-            if m:
-                bloque = m.group(1)
-                for dep in re.finditer(r'"([^"]+)"\s*:\s*"([^"]*)"', bloque):
-                    nombre, version = dep.group(1), dep.group(2)
-                    dependencias.append(f"{nombre}: {version}"[:120])
-    elif es_pyproject:
-        # pyproject.toml: claves de primer nivel bajo [project] y secciones.
-        en_project = False
-        for linea in lineas:
-            linea_strip = linea.strip()
-            if linea_strip.startswith("["):
-                en_project = linea_strip.startswith("[project]")
-                if linea_strip.startswith(("[project.optional-dependencies]", "[tool.")):
-                    claves.append(linea_strip[:120])
-                continue
-            if en_project and linea_strip and not linea_strip.startswith("#"):
-                clave = linea_strip.split("=", 1)[0].strip()
-                if clave and clave not in claves:
-                    claves.append(clave[:120])
-    else:
-        # requirements.txt: cada línea no vacía ni comentario es una dependencia.
-        for linea in lineas:
-            linea_strip = linea.strip()
-            if not linea_strip or linea_strip.startswith("#"):
-                continue
-            dependencias.append(linea_strip[:120])
-
-    resumen_parts: List[str] = []
-    if dependencias:
-        resumen_parts.append("DEPENDENCIAS:\n" + "\n".join(dependencias))
-    if claves:
-        resumen_parts.append("CLAVES:\n" + "\n".join(claves))
-
-    resumen = "\n\n".join(resumen_parts)
-    if len(resumen) > limite_caracteres:
-        resumen = resumen[:limite_caracteres] + "\n...[truncado]"
-
-    return {"resumen": resumen, "dependencias": dependencias, "claves": claves}
-
-
-def _resumir_dockerfile(contenido: str, max_tokens: int) -> Dict[str, Any]:
-    """Genera resumen de un Dockerfile: FROM, instrucciones y variables ENV.
-
-    Extrae las instrucciones más relevantes para entender la imagen y el
-    entorno de ejecución: ``FROM``, ``RUN``, ``CMD``, ``ENTRYPOINT``,
-    ``ENV``, ``EXPOSE`` y ``WORKDIR``.
-
-    Returns:
-        Dict con 'resumen' (prefijos 'FROM:', 'INSTRUCCIONES:' y 'ENV:') y
-        'instrucciones' (lista de instrucciones extraídas).
-    """
-    limite_caracteres = max_tokens * 4
-    froms: List[str] = []
-    instrucciones: List[str] = []
-    envs: List[str] = []
-
-    for linea in contenido.splitlines():
-        linea_strip = linea.strip()
-        if not linea_strip or linea_strip.startswith("#"):
-            continue
-        if linea_strip.upper().startswith("FROM "):
-            froms.append(linea_strip[:120])
-        elif linea_strip.upper().startswith("ENV "):
-            envs.append(linea_strip[:120])
-        elif linea_strip.upper().startswith(("RUN ", "CMD ", "ENTRYPOINT ", "EXPOSE ", "WORKDIR ")):
-            instrucciones.append(linea_strip[:120])
-
-    resumen_parts: List[str] = []
-    if froms:
-        resumen_parts.append("FROM:\n" + "\n".join(froms))
-    if instrucciones:
-        resumen_parts.append("INSTRUCCIONES:\n" + "\n".join(instrucciones))
-    if envs:
-        resumen_parts.append("ENV:\n" + "\n".join(envs))
-
-    resumen = "\n\n".join(resumen_parts)
-    if len(resumen) > limite_caracteres:
-        resumen = resumen[:limite_caracteres] + "\n...[truncado]"
-
-    return {"resumen": resumen, "instrucciones": froms + instrucciones + envs}
-
-
-def _resumir_makefile(contenido: str, max_tokens: int) -> Dict[str, Any]:
-    """Genera resumen de un Makefile: targets y variables.
-
-    Extrae los targets (líneas que terminan en ':' y no empiezan por
-    tab/espacio) y las variables de entorno (líneas ``NOMBRE=valor``).
-
-    Returns:
-        Dict con 'resumen' (prefijos 'TARGETS:' y 'VARIABLES:') y 'targets'
-        (lista de targets extraídos).
-    """
-    limite_caracteres = max_tokens * 4
-    targets: List[str] = []
-    variables: List[str] = []
-
-    for linea in contenido.splitlines():
-        if not linea.strip():
-            continue
-        if linea.startswith((" ", "\t")):
-            continue
-        linea_strip = linea.strip()
-        if linea_strip.startswith("#"):
-            continue
-        if linea_strip.endswith(":"):
-            targets.append(linea_strip[:-1].strip()[:120])
-        elif "=" in linea_strip and not linea_strip.startswith(("=", "?=", ":=", "+=")):
-            nombre = linea_strip.split("=", 1)[0].strip()
-            if nombre and not nombre.startswith(("export ", "unexport ")):
-                variables.append(linea_strip[:120])
-
-    resumen_parts: List[str] = []
-    if targets:
-        resumen_parts.append("TARGETS:\n" + "\n".join(targets))
-    if variables:
-        resumen_parts.append("VARIABLES:\n" + "\n".join(variables))
-
-    resumen = "\n\n".join(resumen_parts)
-    if len(resumen) > limite_caracteres:
-        resumen = resumen[:limite_caracteres] + "\n...[truncado]"
-
-    return {"resumen": resumen, "targets": targets, "variables": variables}
-
-
-def _resumir_gitignore(contenido: str, max_tokens: int) -> Dict[str, Any]:
-    """Genera resumen de un .gitignore: patrones de exclusión.
-
-    Extrae los patrones no vacíos ni comentarios (líneas que empiecen por '#').
-
-    Returns:
-        Dict con 'resumen' (prefijo 'PATRONES:') y 'patrones' (lista de
-        patrones extraídos).
-    """
-    limite_caracteres = max_tokens * 4
-    patrones: List[str] = []
-
-    for linea in contenido.splitlines():
-        linea_strip = linea.strip()
-        if not linea_strip or linea_strip.startswith("#"):
-            continue
-        patrones.append(linea_strip[:100])
-
-    resumen = ""
-    if patrones:
-        resumen = "PATRONES:\n" + "\n".join(patrones)
-    if len(resumen) > limite_caracteres:
-        resumen = resumen[:limite_caracteres] + "\n...[truncado]"
-
-    return {"resumen": resumen, "patrones": patrones}
-
-
 def resumir_archivo(ruta: Path, max_tokens: int = 400, contenido: Optional[str] = None) -> Dict[str, Any]:
     """
     Genera un resumen compacto de un archivo según su extensión.
@@ -518,24 +324,11 @@ def resumir_archivo(ruta: Path, max_tokens: int = 400, contenido: Optional[str] 
             no se vuelve a leer el archivo de disco (evita doble lectura).
     """
     ext = ruta.suffix.lower()
-    nombre = ruta.name.lower()
     if contenido is None:
         try:
             contenido = ruta.read_text(encoding="utf-8", errors="replace")
         except Exception:
             return {"resumen": "[No se pudo leer el archivo]", "error": True}
-
-    # Archivos de dependencias y configuración de ecosistemas: se enrutan por
-    # nombre (case-insensitive) ANTES del fallback genérico para extraer
-    # información de alto valor (dependencias, versiones, scripts, comandos).
-    if nombre in ("requirements.txt", "pyproject.toml", "package.json"):
-        return _resumir_requisitos(contenido, max_tokens)
-    if nombre in ("dockerfile", "containerfile"):
-        return _resumir_dockerfile(contenido, max_tokens)
-    if nombre in ("makefile", "gnumakefile"):
-        return _resumir_makefile(contenido, max_tokens)
-    if nombre == ".gitignore":
-        return _resumir_gitignore(contenido, max_tokens)
 
     if ext == ".py":
         return _resumir_python(contenido, max_tokens)
@@ -602,16 +395,11 @@ def _es_archivo_indexable(ruta: Path) -> bool:
         return False
     if not ruta.is_file():
         return False
-    # Omitir archivos muy grandes (> límite configurable, default 256 KB).
-    # La setting se lee en cada llamada (patrón getattr) para permitir
-    # ajustes dinámicos sin reiniciar el proceso.
-    max_bytes = int(getattr(settings, "PROJECT_INDEX_MAX_FILE_SIZE", 262144))
+    # Omitir archivos muy grandes (> 1 MB)
     try:
-        if ruta.stat().st_size > max_bytes:
+        if ruta.stat().st_size > 1024 * 1024:
             return False
-    except (OSError, PermissionError):
-        # Archivos con permisos raros o inaccesibles: se tratan como no
-        # indexables sin romper el recorrido del árbol.
+    except Exception:
         return False
     return True
 
@@ -633,13 +421,7 @@ def _recorrer_arbol(
 
     resumenes_previos = (indice_existente or {}).get("resumenes", {})
 
-    def _walk(dir_actual: Path, nodo_arbol: Dict[str, Any], profundidad: int = 0) -> None:
-        # Límite de profundidad configurable: no se indexan subdirectorios ni
-        # archivos a una profundidad mayor o igual que PROJECT_INDEX_MAX_DEPTH.
-        # Con valor <= 0 la recursión queda desactivada por completo (nada se indexa).
-        max_profundidad = int(getattr(settings, "PROJECT_INDEX_MAX_DEPTH", 8))
-        if profundidad >= max_profundidad:
-            return
+    def _walk(dir_actual: Path, nodo_arbol: Dict[str, Any]) -> None:
         try:
             entradas = sorted(dir_actual.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower()))
         except Exception:
@@ -653,7 +435,7 @@ def _recorrer_arbol(
             if entrada.is_dir():
                 hijos: Dict[str, Any] = {}
                 nodo_arbol[nombre] = {"tipo": "dir", "hijos": hijos}
-                _walk(entrada, hijos, profundidad + 1)
+                _walk(entrada, hijos)
             elif entrada.is_file() and _es_archivo_indexable(entrada):
                 rel = str(entrada.relative_to(directorio)).replace("\\", "/")
                 previo = resumenes_previos.get(rel)
@@ -703,7 +485,7 @@ def _recorrer_arbol(
                     "tamano": info_hash["tamano"],
                 }
 
-    _walk(directorio, arbol, 0)
+    _walk(directorio, arbol)
 
     return {"arbol": arbol, "resumenes": resumenes}
 
@@ -899,7 +681,7 @@ def formatear_indice_para_prompt(
     lineas.append("📂 ESTRUCTURA DEL PROYECTO (Índice):")
 
     def _dibujar_arbol(nodo: Dict[str, Any], prefijo: str = "", profundidad: int = 0) -> None:
-        if profundidad > settings.PROJECT_INDEX_MAX_DEPTH:
+        if profundidad > 4:
             return
         for nombre, info in sorted(nodo.items()):
             if info.get("tipo") == "dir":

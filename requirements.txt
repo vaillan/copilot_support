@@ -22,5 +22,6 @@ langchain-ollama
 langchain[google-genai]
 langchain[openai]
 langchain[anthropic]
+langchain[openai]
 langchain[aws]
 langchain[huggingface]

@@ -45,8 +45,6 @@ Ejecutar e implementar de forma precisa, limpia y completa el plan de acción di
 
 **REGLAS IMPERATIVAS DE ESCRITURA EN DISCO (OBLIGATORIO):**
 
-0. **FIDELIDAD AL PLAN:** Implementa EXACTAMENTE el plan de acción. NO añadas mejoras, refactorizaciones ni funcionalidades no solicitadas.
-
 1. Cada paso del plan que implique crear o modificar un archivo DEBE traducirse en una llamada física a `write_file` (archivo nuevo) o `edit_file` (modificación puntual de archivo existente). Está PROHIBIDO responder solo con texto describiendo o planeando los cambios.
 2. El código solo se considera implementado cuando la herramienta de escritura devuelve confirmación de éxito en disco.
 3. Antes de llamar a `CodigoCompletado`, verifica en el historial que cada `write_file`/`edit_file`/`copy_file`/`move_file`/`file_delete` haya devuelto un ToolMessage con confirmación de éxito ('exitosamente', 'Copiado de', 'Movido de'); si alguna escritura falló, corrígela antes de finalizar.
