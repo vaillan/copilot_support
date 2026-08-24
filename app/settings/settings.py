@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     LLM_CHECKS_PER_SECOND: float = float(os.getenv("LLM_CHECKS_PER_SECOND", "10.0"))
 
     # ==========================================
+    # Terminal del agente revisor (seguridad)
+    # ==========================================
+    # Timeout en segundos para cada comando ejecutado por la tool terminal().
+    # Configurable vía variable de entorno TERMINAL_TIMEOUT_SECONDS.
+    TERMINAL_TIMEOUT_SECONDS: int = int(os.getenv("TERMINAL_TIMEOUT_SECONDS", "30"))
+
+    # ==========================================
     # Índice de Proyecto (Optimización de Tokens)
     # ==========================================
     PROJECT_INDEX_ENABLED: bool = os.getenv("PROJECT_INDEX_ENABLED", "true").lower() in ("true", "1", "yes")

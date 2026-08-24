@@ -1,4 +1,5 @@
 import sys
+import os
 import subprocess
 from contextlib import redirect_stdout
 from langgraph.graph import END
@@ -14,6 +15,7 @@ from app.models.models import ProjectState
 from langchain_core.runnables import RunnableConfig
 from app.utils.files import File, get_custom_file_tools
 from app.utils.prompt_utils import escapar_llaves
+from app.utils.shell_safety import validar_comando
 from app.settings.settings import Settings
 from functools import lru_cache
 from app.utils.args_utils import _get_args
@@ -21,12 +23,45 @@ from app.utils.args_utils import _get_args
 settings = Settings()
 fileSystem = File(directory="prompts")
 
+# Directorio del proyecto actual, propagado desde state["directorio_proyecto"]
+# vía _get_tools(). Se usa como cwd por defecto en la tool terminal().
+_ACTUAL_DIRECTORIO_PROYECTO: str = os.getcwd()
+
+
+def _detectar_shell() -> str:
+    """Detecta el shell/comando del SO actual para logging y mensajes de error."""
+    if sys.platform == "win32":
+        return "Windows (cmd.exe)"
+    if sys.platform == "darwin":
+        return "macOS (shell POSIX)"
+    return "Linux/Unix (shell POSIX)"
+
+
 @tool
-def terminal(commands: list[str] | str) -> str:
+def terminal(commands: list[str] | str, cwd: str | None = None) -> str:
     """
-    Ejecuta comandos en la terminal de forma totalmente aislada e inofensiva para el servidor MCP.
+    Ejecuta comandos en la terminal del proyecto con confinamiento de directorio.
+
+    Garantías de seguridad: los comandos se ejecutan únicamente dentro del
+    directorio del proyecto (cwd), se filtran patrones peligrosos (borrado
+    destructivo, descarga+ejecución, git destructivo, variables críticas, rutas
+    sensibles, fork bombs, shutdown) antes de ejecutarse, y hay un timeout
+    configurable por comando.
+
+    ADVERTENCIA: NO es un sandbox real del sistema operativo. En entornos de
+    producción o compartidos el uso de esta herramienta debe estar restringido
+    y supervisado, ya que un comando permitido aún puede modificar archivos
+    dentro del proyecto o consumir recursos del host.
+
     Pasa una lista de comandos o una cadena de comando (ej. "pytest" o ["pytest"]).
+    El parámetro opcional `cwd` fuerza un directorio de trabajo concreto; si se
+    omite (None), se usa el directorio del proyecto actual.
     """
+    if cwd is None:
+        cwd = _ACTUAL_DIRECTORIO_PROYECTO
+    if not os.path.isdir(cwd):
+        return f"Error: El directorio de trabajo '{cwd}' no existe o no es accesible. Comandos no ejecutados."
+
     if isinstance(commands, str):
         lista_comandos = [commands]
     elif isinstance(commands, list):
@@ -35,18 +70,24 @@ def terminal(commands: list[str] | str) -> str:
         return "Error: Formato de comandos inválido. Proporciona una cadena o lista de cadenas."
 
     resultados = []
+    shell_detectado = _detectar_shell()
     for cmd in lista_comandos:
         if not isinstance(cmd, str) or not cmd.strip():
+            continue
+        permitido, motivo_bloqueo = validar_comando(cmd, cwd)
+        if not permitido:
+            resultados.append(f"$ {cmd}\n🚨 Comando bloqueado: {motivo_bloqueo}")
             continue
         try:
             res = subprocess.run(
                 cmd,
                 shell=True,
+                cwd=cwd,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=30,
+                timeout=settings.TERMINAL_TIMEOUT_SECONDS,
                 stdin=subprocess.DEVNULL
             )
             stdout = res.stdout.strip() if res.stdout else ""
@@ -60,9 +101,16 @@ def terminal(commands: list[str] | str) -> str:
                 salida.append(f"Comando '{cmd}' ejecutado con código de salida {res.returncode} (sin salida).")
             resultados.append(f"$ {cmd}\nCódigo de salida: {res.returncode}\n" + "\n".join(salida))
         except subprocess.TimeoutExpired:
-            resultados.append(f"$ {cmd}\n🚨 Timeout: El comando excedió el tiempo límite de 30 segundos.")
+            resultados.append(f"$ {cmd}\n🚨 Timeout: El comando excedió el tiempo límite de {settings.TERMINAL_TIMEOUT_SECONDS} segundos.")
         except BaseException as e:
-            resultados.append(f"$ {cmd}\n🚨 Error al ejecutar comando: {str(e)}")
+            mensaje_error = str(e)
+            if "not recognized" in mensaje_error.lower() or "command not found" in mensaje_error.lower() or "is not recognized" in mensaje_error.lower():
+                resultados.append(
+                    f"$ {cmd}\n🚨 Error al ejecutar comando: {mensaje_error}\n"
+                    f"Shell detectado: {shell_detectado}. El comando puede no ser compatible con esta plataforma."
+                )
+            else:
+                resultados.append(f"$ {cmd}\n🚨 Error al ejecutar comando ({shell_detectado}): {mensaje_error}")
 
     return "\n\n---\n\n".join(resultados) if resultados else "No se ejecutaron comandos válidos."
 
@@ -78,6 +126,9 @@ def finalizar_revision(aprobado: bool, requiere_pruebas: bool = True, reporte_er
 
 @lru_cache(maxsize=10)
 def _get_tools(directorio: str):
+    global _ACTUAL_DIRECTORIO_PROYECTO
+    if directorio and os.path.isdir(directorio):
+        _ACTUAL_DIRECTORIO_PROYECTO = directorio
     todas = get_custom_file_tools(directorio)
     herramientas_lectura = [
         t for t in todas
