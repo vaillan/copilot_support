@@ -4,9 +4,11 @@ Este módulo define y compila el grafo de LangGraph conectando los agentes
 (Planificador, Codificador, Revisor) y sus respectivos nodos de herramientas.
 """
 
-from typing import Optional
+import sqlite3
+from pathlib import Path
+from typing import Any, Optional
 from langgraph.graph import StateGraph, START
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 
 from app.models.models import ProjectState
 from app.agents.agente_planificador import agente_planificador
@@ -19,10 +21,23 @@ from app.utils.tool_nodes import (
 )
 
 
+def _crear_checkpointer_sqlite() -> SqliteSaver:
+    """Crea el checkpointer SQLite persistente por defecto.
+
+    Se crea la conexión ``sqlite3`` directamente (en lugar de usar el gestor de
+    contexto ``from_conn_string``) para mantener la conexión abierta durante
+    toda la vida del grafo compilado; la ruta es fija relativa a la raíz del
+    proyecto.
+    """
+    ruta = Path(__file__).resolve().parent.parent / "checkpoints.sqlite"
+    conn = sqlite3.connect(str(ruta), check_same_thread=False)
+    return SqliteSaver(conn)
+
+
 def crear_grafo(
     interrumpir_en_codificador: bool = True,
     interrumpir_en_revisor: bool = True,
-    checkpointer: Optional[MemorySaver] = None,
+    checkpointer: Optional[Any] = None,
 ):
     """
     Construye y compila el flujo de trabajo multi-agente en LangGraph.
@@ -40,7 +55,7 @@ def crear_grafo(
     Args:
         interrumpir_en_codificador: Si es True, pausa la ejecución antes del codificador para revisión humana.
         interrumpir_en_revisor: Si es True, pausa la ejecución antes del revisor para revisión humana.
-        checkpointer: Instancia opcional de persistencia de estado (por defecto usa MemorySaver).
+        checkpointer: Instancia opcional de persistencia de estado (por defecto usa SqliteSaver persistente en checkpoints.sqlite).
 
     Returns:
         CompiledStateGraph: Grafo compilado y listo para ejecución.
@@ -67,7 +82,7 @@ def crear_grafo(
 
     # 5. Checkpointer para persistencia del estado
     if checkpointer is None:
-        checkpointer = MemorySaver()
+        checkpointer = _crear_checkpointer_sqlite()
 
     # 6. Configuración de interrupciones para Human-in-the-loop
     interrupt_before = []

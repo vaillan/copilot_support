@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.checkpoint.memory import MemorySaver
 from app.main import crear_grafo
 
 @pytest.fixture
@@ -41,7 +42,7 @@ def test_flujo_completo_exito(mock_llm, mock_file_system):
         tool_calls=[{"name": "finalizar_revision", "args": {"aprobado": True}, "id": "3"}]
     )
     
-    graph = crear_grafo()
+    graph = crear_grafo(checkpointer=MemorySaver())
     config = {"configurable": {"thread_id": "1"}}
     
     state = {
@@ -98,7 +99,7 @@ def test_flujo_con_errores_y_correccion(mock_llm, mock_file_system):
         )
     ]
     
-    graph = crear_grafo()
+    graph = crear_grafo(checkpointer=MemorySaver())
     config = {"configurable": {"thread_id": "2"}}
     
     state = {
@@ -143,7 +144,7 @@ def test_flujo_sin_herramientas_evita_bucle(mock_llm, mock_file_system):
         )
     ]
     
-    graph = crear_grafo()
+    graph = crear_grafo(checkpointer=MemorySaver())
     config = {"configurable": {"thread_id": "3"}}
     
     state = {
