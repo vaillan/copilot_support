@@ -1,10 +1,11 @@
-"""Pruebas del checkpointer SqliteSaver por defecto y su persistencia.
+"""Pruebas del checkpointer async por defecto y su persistencia.
 
-Valida que ``crear_grafo`` use por defecto un ``SqliteSaver`` persistente en
-``checkpoints.sqlite`` y que tras una invocación real se escriban checkpoints
+Valida que ``crear_grafo`` use por defecto un checkpointer async persistente en
+``checkpoints.sqlite`` y que tras una invocación real (async) se escriban checkpoints
 en la base de datos SQLite.
 """
 
+import asyncio
 import sqlite3
 import uuid
 
@@ -12,7 +13,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 from langchain_core.messages import AIMessage, HumanMessage
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from app.main import crear_grafo
 
@@ -37,9 +38,9 @@ def mock_file_system():
 
 
 def test_checkpointer_por_defecto_es_sqlite():
-    """El checkpointer por defecto de crear_grafo debe ser un SqliteSaver."""
+    """El checkpointer por defecto de crear_grafo debe ser un saver async (BaseCheckpointSaver)."""
     graph = crear_grafo()
-    assert isinstance(graph.checkpointer, SqliteSaver)
+    assert isinstance(graph.checkpointer, BaseCheckpointSaver)
 
 
 def test_persistencia_tras_invocacion(mock_llm, mock_file_system):
@@ -79,10 +80,11 @@ def test_persistencia_tras_invocacion(mock_llm, mock_file_system):
         "errores_terminal": ""
     }
 
-    graph.invoke(state, config)
-    graph.invoke(None, config)  # write_file
-    graph.invoke(None, config)  # CodigoCompletado
-    graph.invoke(None, config)  # revisor -> END
+    # AsyncSqliteSaver no soporta métodos síncronos: se invoca el grafo en modo async.
+    asyncio.run(graph.ainvoke(state, config))
+    asyncio.run(graph.ainvoke(None, config))  # write_file
+    asyncio.run(graph.ainvoke(None, config))  # CodigoCompletado
+    asyncio.run(graph.ainvoke(None, config))  # revisor -> END
 
     conn = sqlite3.connect(RUTA_CHECKPOINTS)
     try:

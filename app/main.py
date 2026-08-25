@@ -4,11 +4,12 @@ Este módulo define y compila el grafo de LangGraph conectando los agentes
 (Planificador, Codificador, Revisor) y sus respectivos nodos de herramientas.
 """
 
-import sqlite3
+import aiosqlite
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Optional
 from langgraph.graph import StateGraph, START
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app.models.models import ProjectState
 from app.agents.agente_planificador import agente_planificador
@@ -21,17 +22,62 @@ from app.utils.tool_nodes import (
 )
 
 
-def _crear_checkpointer_sqlite() -> SqliteSaver:
-    """Crea el checkpointer SQLite persistente por defecto.
+class _CheckpointerDiferido(BaseCheckpointSaver):
+    """Proxy de ``AsyncSqliteSaver`` que difiere su construcción al primer uso async.
 
-    Se crea la conexión ``sqlite3`` directamente (en lugar de usar el gestor de
-    contexto ``from_conn_string``) para mantener la conexión abierta durante
-    toda la vida del grafo compilado; la ruta es fija relativa a la raíz del
-    proyecto.
+    ``AsyncSqliteSaver`` exige un event loop activo en su constructor
+    (``asyncio.get_running_loop()``), pero el grafo se compila al importar
+    ``mcp_server`` (sin loop). Este proxy delega los métodos async y crea el
+    saver real en la primera llamada, ya dentro del loop del servidor MCP.
+    """
+
+    def __init__(self, ruta: Path):
+        super().__init__()
+        self._ruta = ruta
+        self._saver: Optional[AsyncSqliteSaver] = None
+
+    async def _obtener_saver(self) -> AsyncSqliteSaver:
+        if self._saver is None:
+            conn = await aiosqlite.connect(str(self._ruta))
+            self._saver = AsyncSqliteSaver(conn)
+        return self._saver
+
+    async def aget_tuple(self, config):
+        return await (await self._obtener_saver()).aget_tuple(config)
+
+    async def aput(self, config, checkpoint, metadata, new_versions):
+        return await (await self._obtener_saver()).aput(config, checkpoint, metadata, new_versions)
+
+    async def aput_writes(self, config, writes, task_id, task_path=""):
+        return await (await self._obtener_saver()).aput_writes(config, writes, task_id, task_path)
+
+    async def alist(
+        self,
+        config=None,
+        *,
+        filter=None,  # noqa: A002 - firma idéntica a BaseCheckpointSaver.alist
+        before=None,
+        limit=None,
+    ) -> AsyncIterator:
+        saver = await self._obtener_saver()
+        async for tupla in saver.alist(config, filter=filter, before=before, limit=limit):
+            yield tupla
+
+    async def adelete_thread(self, thread_id):
+        await (await self._obtener_saver()).adelete_thread(thread_id)
+
+
+def _crear_checkpointer_sqlite() -> _CheckpointerDiferido:
+    """Crea el checkpointer SQLite persistente por defecto (versión async diferida).
+
+    La ruta es fija relativa a la raíz del proyecto (checkpoints.sqlite).
+
+    Nota: se usa ``AsyncSqliteSaver`` porque el servidor MCP (mcp_server.py)
+    ejecuta el grafo con ``ainvoke``/``aget_state``; el ``SqliteSaver`` síncrono
+    no soporta métodos async y lanza NotImplementedError.
     """
     ruta = Path(__file__).resolve().parent.parent / "checkpoints.sqlite"
-    conn = sqlite3.connect(str(ruta), check_same_thread=False)
-    return SqliteSaver(conn)
+    return _CheckpointerDiferido(ruta)
 
 
 def crear_grafo(
@@ -55,7 +101,7 @@ def crear_grafo(
     Args:
         interrumpir_en_codificador: Si es True, pausa la ejecución antes del codificador para revisión humana.
         interrumpir_en_revisor: Si es True, pausa la ejecución antes del revisor para revisión humana.
-        checkpointer: Instancia opcional de persistencia de estado (por defecto usa SqliteSaver persistente en checkpoints.sqlite).
+        checkpointer: Instancia opcional de persistencia de estado (por defecto usa AsyncSqliteSaver persistente en checkpoints.sqlite).
 
     Returns:
         CompiledStateGraph: Grafo compilado y listo para ejecución.
