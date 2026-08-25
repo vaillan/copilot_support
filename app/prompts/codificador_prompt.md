@@ -24,6 +24,20 @@ Este criterio aplica en TODOS los pasos, desde la contextualización hasta la es
 
 ---
 
+## 💬 POLÍTICA DE COMENTARIOS Y DOCSTRINGS — TEXTO PROFESIONAL MÍNIMO (OBLIGATORIO)
+
+El código debe contener SOLO texto estándar, profesional y mínimo. Aplica estas reglas a TODO el texto que escribas dentro del código (comentarios, docstrings, logs):
+
+1. **Comentarios solo con valor real:** escribe comentarios ÚNICAMENTE cuando aporten valor real, es decir, cuando expliquen el **PORQUÉ** de una decisión no evidente (regla de negocio, optimización, invariante). PROHIBIDO: comentarios que narren lo obvio (ej. «incrementamos i en 1»), un comentario por cada línea, comentarios-historia («aquí agregamos...», «modificado por...»), arte ASCII, emojis en código, firmas de autor o fechas.
+2. **Docstrings concisos (estilo PEP 257):** UNA línea de resumen que indique qué hace la función/clase/módulo. Documenta argumentos, retornos y excepciones SOLO si aportan información no evidente en la firma tipada. Máximo ~3 líneas, salvo complejidad real justificada.
+3. **Prohibido código muerto:** NO comentes código eliminado ni dejes bloques comentados «por si acaso». El código no usado se elimina.
+4. **Logs mínimos:** escribe solo los logs estrictamente necesarios para operación/depuración real, sin verbosidad excesiva ni mensajes redundantes.
+5. **Nombres autoexplicativos:** prefiere nombres descriptivos de variables, funciones y clases como sustituto preferente de comentarios.
+6. **Idioma y tono:** texto coherente con el proyecto (español), tono técnico y profesional, sin relleno.
+7. **Proporción orientativa:** el texto (comentarios + docstrings) NO debe superar aproximadamente el **10-15%** del código escrito.
+
+---
+
 ## ⚡ ESTRATEGIA DE EFICIENCIA DE CONTEXTO (OPTIMIZACIÓN DE TOKENS)
 
 Para evitar saturar la ventana de contexto y mantener máxima precisión, aplica estas reglas durante TODA la implementación. La única excepción es la lectura deliberada de un archivo crítico para el paso actual.
@@ -170,7 +184,7 @@ El orden correcto es: **leer contexto → escribir en disco → verificar → ll
 - **Estándares del lenguaje detectado:** aplica las convenciones del lenguaje del proyecto (PEP 8 para Python, etc.).
 - **Tipado explícito:** usa tipos explícitos en firmas y estructuras de datos.
 - **Manejo de errores:** captura y gestiona excepciones de forma adecuada, sin silenciarlas.
-- **Docstrings:** documenta funciones, clases y módulos con docstrings claros.
+- **Docstrings:** documenta funciones, clases y módulos con docstrings breves y claros, siguiendo la «💬 Política de Comentarios y Docstrings» (docstring de UNA línea de resumen; no documentación exhaustiva).
 - **YAGNI/KISS/DRY:** código mínimo, simple y sin duplicación innecesaria.
 - **Prohibición de refactorizaciones no solicitadas:** no reescribas módulos que funcionan ni renombres estructuras sin necesidad.
 - **Código listo para producción:** sin placeholders, sin `...`, sin `// TODO` ni implementaciones incompletas.
