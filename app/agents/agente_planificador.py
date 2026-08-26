@@ -37,12 +37,13 @@ def _es_peticion_analisis(instruccion: str) -> bool:
     """
     Detecta si la instrucción del usuario expresa intención de ANÁLISIS puro.
 
-    Devuelve True si la instrucción contiene alguna palabra de análisis
-    (PALABRAS_ANALISIS) y NO contiene ninguna palabra de creación/modificación
-    de código (PALABRAS_CREACION). La detección es por subcadena (no
-    tokenización), por lo que "analiza" dentro de "analizador" también se
-    detecta (aceptable). La presencia de cualquier palabra de creación anula
-    la detección de análisis aunque también contenga palabras de análisis.
+    Devuelve True si la instrucción contiene alguna palabra de análisis (PALABRAS_ANALISIS) y NO contiene ninguna palabra de creación/modificación de código (PALABRAS_CREACION). La detección es por subcadena (no tokenización), por lo que 'analiza' dentro de 'analizador' también se detecta (aceptable). La presencia de cualquier palabra de creación anula la detección de análisis aunque también contenga palabras de análisis.
+
+    Args:
+        instruccion: Texto de la instrucción del usuario (str).
+
+    Returns:
+        bool: True si la instrucción expresa análisis puro; False en caso contrario.
     """
     texto = instruccion.lower()
     tiene_analisis = any(p in texto for p in PALABRAS_ANALISIS)
@@ -62,12 +63,34 @@ class PlanDeAccionInput(BaseModel):
 @tool(args_schema=PlanDeAccionInput)
 def entregar_plan_de_accion(explicacion_arquitectura: str, pasos: List[Paso]) -> str:
     """
+    Entrega el plan de acción final y culmina la fase de planificación.
+
     Llama a esta herramienta EXCLUSIVAMENTE cuando hayas terminado de investigar y estés listo para entregar el plan.
+
+    Args:
+        explicacion_arquitectura: Breve explicación del enfoque técnico (str).
+        pasos: Lista de pasos del plan de acción (list[Paso]).
+
+    Reglas de uso:
+        - Invocar UNA SOLA VEZ, al final del análisis, nunca durante la exploración.
+        - Cada paso debe contener exactamente los campos archivo, tarea y requiere_test.
+
+    Returns:
+        str: Mensaje de confirmación de que el plan fue aceptado.
     """
     return "Plan de acción aceptado e iniciando fase de codificación."
 
 @lru_cache(maxsize=10)
 def _get_tools(directorio: str):
+    """
+    Lista (con caché) las herramientas de investigación del directorio dado.
+
+    Args:
+        directorio: Ruta del directorio del proyecto (str).
+
+    Returns:
+        list[Tool]: Herramientas de lectura/archivo más la búsqueda web DuckDuckGo.
+    """
     todas = get_custom_file_tools(directorio)
     herramientas_lectura = [
         t for t in todas
@@ -217,7 +240,14 @@ def agente_planificador(state: ProjectState) -> Command:
 
 def nodo_herramientas_planificador(state: ProjectState, config: RunnableConfig):
     """
-    Ejecuta las herramientas de investigación utilizando ToolNode de LangGraph.
+    Ejecuta las herramientas de investigación mediante ToolNode de LangGraph.
+
+    Args:
+        state: Estado global del proyecto (ProjectState).
+        config: Configuración de ejecución de LangGraph (RunnableConfig).
+
+    Returns:
+        dict: Resultado de la ejecución de las herramientas de investigación.
     """
     directorio = state.get("directorio_proyecto", "./")
     herramientas = _get_tools(directorio)

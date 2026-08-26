@@ -29,7 +29,12 @@ _ACTUAL_DIRECTORIO_PROYECTO: str = os.getcwd()
 
 
 def _detectar_shell() -> str:
-    """Detecta el shell/comando del SO actual para logging y mensajes de error."""
+    """Detecta el shell o comando del sistema operativo actual.
+
+    Returns:
+        str: Nombre descriptivo del shell detectado ("Windows (cmd.exe)",
+            "macOS (shell POSIX)" o "Linux/Unix (shell POSIX)").
+    """
     if sys.platform == "win32":
         return "Windows (cmd.exe)"
     if sys.platform == "darwin":
@@ -39,8 +44,11 @@ def _detectar_shell() -> str:
 
 @tool
 def terminal(commands: list[str] | str, cwd: str | None = None) -> str:
-    """
-    Ejecuta comandos en la terminal del proyecto con confinamiento de directorio.
+    """Ejecuta comandos en la terminal del proyecto con confinamiento de directorio.
+
+    Pasa una lista de comandos o una cadena de comando (ej. "pytest" o ["pytest"]).
+    El parámetro opcional `cwd` fuerza un directorio de trabajo concreto; si se
+    omite (None), se usa el directorio del proyecto actual.
 
     Garantías de seguridad: los comandos se ejecutan únicamente dentro del
     directorio del proyecto (cwd), se filtran patrones peligrosos (borrado
@@ -48,14 +56,19 @@ def terminal(commands: list[str] | str, cwd: str | None = None) -> str:
     sensibles, fork bombs, shutdown) antes de ejecutarse, y hay un timeout
     configurable por comando.
 
-    ADVERTENCIA: NO es un sandbox real del sistema operativo. En entornos de
+    Advertencia: NO es un sandbox real del sistema operativo. En entornos de
     producción o compartidos el uso de esta herramienta debe estar restringido
     y supervisado, ya que un comando permitido aún puede modificar archivos
     dentro del proyecto o consumir recursos del host.
 
-    Pasa una lista de comandos o una cadena de comando (ej. "pytest" o ["pytest"]).
-    El parámetro opcional `cwd` fuerza un directorio de trabajo concreto; si se
-    omite (None), se usa el directorio del proyecto actual.
+    Args:
+        commands (list[str] | str): Lista de comandos o cadena de comando a ejecutar.
+        cwd (str | None): Directorio de trabajo concreto; por defecto None (se usa
+            el directorio del proyecto actual).
+
+    Returns:
+        str: Salida formateada por comando con su código de salida, STDOUT/STDERR
+            o mensajes de error/bloqueo.
     """
     if cwd is None:
         cwd = _ACTUAL_DIRECTORIO_PROYECTO
@@ -116,16 +129,40 @@ def terminal(commands: list[str] | str, cwd: str | None = None) -> str:
 
 @tool
 def finalizar_revision(aprobado: bool, requiere_pruebas: bool = True, reporte_errores: str = "") -> str:
-    """
+    """Finaliza la revisión del código indicando el resultado de la evaluación.
+
     Llama a esta herramienta EXCLUSIVAMENTE cuando hayas terminado de evaluar el código.
-    - Si el código NO requiere pruebas (ej. documentación, HTML estático, o el plan indica que no requiere test), pon requiere_pruebas=False y aprobado=True.
-    - Si el código SÍ requiere pruebas y FALLA, pon requiere_pruebas=True, aprobado=False y detalla los errores en 'reporte_errores'.
-    - Si el código SÍ requiere pruebas y PASA exitosamente, pon requiere_pruebas=True y aprobado=True.
+
+    Args:
+        aprobado (bool): Indica si el código fue aprobado.
+        requiere_pruebas (bool): Indica si el código requiere pruebas; por defecto True.
+        reporte_errores (str): Detalle de los errores encontrados, si los hay;
+            por defecto cadena vacía.
+
+    Reglas de uso:
+        - Si el código NO requiere pruebas (ej. documentación, HTML estático, o el plan indica que no requiere test), pon requiere_pruebas=False y aprobado=True.
+        - Si el código SÍ requiere pruebas y FALLA, pon requiere_pruebas=True, aprobado=False y detalla los errores en 'reporte_errores'.
+        - Si el código SÍ requiere pruebas y PASA exitosamente, pon requiere_pruebas=True y aprobado=True.
+
+    Returns:
+        str: Mensaje de confirmación de que la revisión fue procesada.
     """
     return "Revisión procesada."
 
 @lru_cache(maxsize=10)
 def _get_tools(directorio: str):
+    """Construye y cachea la lista de herramientas de revisión para un directorio.
+
+    Actualiza el directorio del proyecto actual si el directorio es válido y
+    combina las herramientas de terminal y finalización con las de lectura de
+    archivos (read_file, read_file_summary).
+
+    Args:
+        directorio (str): Ruta del directorio del proyecto.
+
+    Returns:
+        list[BaseTool]: Lista de herramientas (terminal, finalizar_revision y las de lectura).
+    """
     global _ACTUAL_DIRECTORIO_PROYECTO
     if directorio and os.path.isdir(directorio):
         _ACTUAL_DIRECTORIO_PROYECTO = directorio
@@ -138,9 +175,16 @@ def _get_tools(directorio: str):
     return herramientas
 
 def agente_revisor(state: ProjectState) -> Command:
-    """
-    El Tester ejecuta el código en la terminal. Si hay errores, 
-    devuelve el flujo al Codificador. Si todo está bien o no requiere pruebas, termina el proceso.
+    """Ejecuta la revisión del código probándolo en la terminal y decide el flujo.
+
+    Args:
+        state (ProjectState): Estado global del proyecto con mensajes, plan de
+            acción, directorio y contadores de iteración/revisión.
+
+    Returns:
+        Command: Comando de LangGraph que actualiza el estado y dirige el flujo
+            a END, "agente_codificador", "nodo_herramientas_revisor" o
+            "agente_revisor" según el resultado de la revisión.
     """
     loop_counter = state.get("loop_counter", 0) + 1
     
@@ -366,9 +410,15 @@ def agente_revisor(state: ProjectState) -> Command:
         )
 
 def nodo_herramientas_revisor(state: ProjectState, config: RunnableConfig):
-    """
-    Ejecuta las herramientas de revisión utilizando ToolNode de LangGraph.
-    Captura de forma segura cualquier BaseException para evitar caídas en el TaskGroup de MCP.
+    """Ejecuta las herramientas de revisión mediante ToolNode de LangGraph.
+
+    Args:
+        state (ProjectState): Estado global del proyecto.
+        config (RunnableConfig): Configuración de ejecución de LangGraph.
+
+    Returns:
+        dict: Resultado de la invocación del ToolNode o, ante una excepción,
+            un dict con un mensaje de error en "messages".
     """
     directorio = state.get("directorio_proyecto", "./")
     herramientas = _get_tools(directorio)

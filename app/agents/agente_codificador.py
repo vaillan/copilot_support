@@ -64,12 +64,26 @@ def _hubo_escritura_exitosa(msgs, respuesta) -> bool:
 
 @lru_cache(maxsize=10)
 def _get_tools(directorio: str):
+    """
+    Lista (con caché) las herramientas de manejo de archivos del directorio dado.
+
+    Args:
+        directorio: Ruta del directorio del proyecto (str).
+
+    Returns:
+        list: Herramientas de archivo configuradas para el directorio.
+    """
     return get_custom_file_tools(directorio)
 
 def agente_codificador(state: ProjectState) -> Command:
     """
-    El Programador lee el plan de acción, escribe los archivos en el disco duro
-    y corrige errores si el Revisor (QA) los encuentra.
+    Ejecuta el agente codificador: lee el plan de acción, escribe los archivos en el disco duro y corrige errores si el Revisor (QA) los encuentra.
+
+    Args:
+        state: Estado global del proyecto (ProjectState).
+
+    Returns:
+        Command: Comando de LangGraph con la actualización de estado y el nodo destino.
     """
     loop_counter = state.get("loop_counter", 0) + 1
     if loop_counter > 15:
@@ -194,12 +208,16 @@ def agente_codificador(state: ProjectState) -> Command:
 
 def nodo_herramientas_codificador(state: ProjectState, config: RunnableConfig):
     """
-    Ejecuta las herramientas de manejo de archivos utilizando ToolNode de LangGraph.
+    Ejecuta las herramientas de manejo de archivos mediante ToolNode de LangGraph.
 
-    Tras la ejecución de las herramientas (que pueden escribir archivos en disco),
-    refresca automáticamente el índice del proyecto si está habilitado
-    (PROJECT_INDEX_ENABLED=true), actualizando la clave 'project_index' del estado
-    para que los agentes posteriores trabajen con un índice coherente.
+    Tras la ejecución de las herramientas (que pueden escribir archivos en disco), refresca automáticamente el índice del proyecto si está habilitado (PROJECT_INDEX_ENABLED=true), actualizando la clave 'project_index' del estado para que los agentes posteriores trabajen con un índice coherente.
+
+    Args:
+        state: Estado global del proyecto (ProjectState).
+        config: Configuración de ejecución de LangGraph (RunnableConfig).
+
+    Returns:
+        dict: Resultado de la ejecución de las herramientas, con 'project_index' actualizado si el refresco fue exitoso.
     """
     directorio = state.get("directorio_proyecto", "./")
     herramientas = _get_tools(directorio)
