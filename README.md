@@ -99,7 +99,11 @@ PROJECT_INDEX_CACHE_DIR=".project_index"
 
 ## Servidor MCP
 
-Única herramienta pública: `delegar_tarea_a_equipo_ia`.
+El servidor expone 4 herramientas para delegar, supervisar y controlar tareas del equipo de agentes.
+
+### `delegar_tarea_a_equipo_ia`
+
+Delega una tarea al equipo de 3 agentes (Planificador → Codificador → Revisor).
 
 | Parámetro | Tipo | Requerido | Descripción |
 |-----------|------|-----------|-------------|
@@ -108,6 +112,31 @@ PROJECT_INDEX_CACHE_DIR=".project_index"
 | `approve` | boolean | No | Aprobar y continuar si pausado (Pausa 1 o 2). |
 | `tarea_id` | string | No* | Obligatorio si `approve=true` o reanudando. |
 | `auto_approve` | boolean | No | Auto-aprueba pausas (o `MCP_AUTO_APPROVE="true"`). |
+
+### `consultar_estado_tarea`
+
+Consulta el estado actual de una tarea registrada.
+
+| Parámetro | Tipo | Requerido | Descripción |
+|-----------|------|-----------|-------------|
+| `tarea_id` | string | Sí | Id de la tarea a consultar. |
+| `directorio_proyecto` | string | No | Ruta del proyecto. |
+
+### `listar_tareas`
+
+Lista las tareas registradas, opcionalmente filtradas por estado.
+
+| Parámetro | Tipo | Requerido | Descripción |
+|-----------|------|-----------|-------------|
+| `estado` | string | No | Filtro opcional: `running`/`paused_planning`/`paused_code`/`completed`/`cancelled`/`timeout`/`error`. |
+
+### `cancelar_tarea`
+
+Cancela una tarea en curso.
+
+| Parámetro | Tipo | Requerido | Descripción |
+|-----------|------|-----------|-------------|
+| `tarea_id` | string | Sí | Id de la tarea en curso a cancelar. |
 
 **Flujo**: tarea nueva → Planificador → **Pausa 1** (plan) → aprobar → Codificador → **Pausa 2** (código) → aprobar → Revisor ejecuta tests → Fin. Los rechazos regresan al agente anterior; los errores del Revisor vuelven al Codificador (máx. 3 revisiones).
 
