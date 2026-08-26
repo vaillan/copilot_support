@@ -30,11 +30,12 @@ El código debe contener SOLO texto estándar, profesional y mínimo. Aplica est
 
 1. **Comentarios solo con valor real:** escribe comentarios ÚNICAMENTE cuando aporten valor real, es decir, cuando expliquen el **PORQUÉ** de una decisión no evidente (regla de negocio, optimización, invariante). PROHIBIDO: comentarios que narren lo obvio (ej. «incrementamos i en 1»), un comentario por cada línea, comentarios-historia («aquí agregamos...», «modificado por...»), arte ASCII, emojis en código, firmas de autor o fechas.
 2. **Docstrings concisos (estilo PEP 257):** UNA línea de resumen que indique qué hace la función/clase/módulo. Documenta argumentos, retornos y excepciones SOLO si aportan información no evidente en la firma tipada. Máximo ~3 líneas, salvo complejidad real justificada.
-3. **Prohibido código muerto:** NO comentes código eliminado ni dejes bloques comentados «por si acaso». El código no usado se elimina.
-4. **Logs mínimos:** escribe solo los logs estrictamente necesarios para operación/depuración real, sin verbosidad excesiva ni mensajes redundantes.
-5. **Nombres autoexplicativos:** prefiere nombres descriptivos de variables, funciones y clases como sustituto preferente de comentarios.
-6. **Idioma y tono:** texto coherente con el proyecto (español), tono técnico y profesional, sin relleno.
-7. **Proporción orientativa:** el texto (comentarios + docstrings) NO debe superar aproximadamente el **10-15%** del código escrito.
+3. **Tipado estático obligatorio (Static Typing / Tipado Gradual):** TODO código escrito DEBE incluir anotaciones de tipo estático: firmas completas de funciones y métodos (parámetros y retorno), atributos de clase y variables cuyo tipo no sea evidente por inferencia trivial. Usa las primitivas idiomáticas del lenguaje (en Python: módulo typing y genéricos modernos como list[str], dict[str, int], Optional[X], Union, Literal, Callable, TypeVar, Protocol). PROHIBIDO entregar funciones sin anotar o con tipos ambiguos; evita Any salvo justificación explícita del PORQUÉ en un comentario. Aplica tipado gradual: las anotaciones se integran sin romper la ejecución dinámica existente, pero el código nuevo NUNCA queda sin tipar. Los docstrings NO deben repetir los tipos ya expresados en la firma.
+4. **Prohibido código muerto:** NO comentes código eliminado ni dejes bloques comentados «por si acaso». El código no usado se elimina.
+5. **Logs mínimos:** escribe solo los logs estrictamente necesarios para operación/depuración real, sin verbosidad excesiva ni mensajes redundantes.
+6. **Nombres autoexplicativos:** prefiere nombres descriptivos de variables, funciones y clases como sustituto preferente de comentarios.
+7. **Idioma y tono:** texto coherente con el proyecto (español), tono técnico y profesional, sin relleno.
+8. **Proporción orientativa:** el texto (comentarios + docstrings) NO debe superar aproximadamente el **10-15%** del código escrito.
 
 ---
 
@@ -182,7 +183,7 @@ El orden correcto es: **leer contexto → escribir en disco → verificar → ll
 ## ✅ CRITERIOS DE CALIDAD DE CÓDIGO (OBLIGATORIOS)
 
 - **Estándares del lenguaje detectado:** aplica las convenciones del lenguaje del proyecto (PEP 8 para Python, etc.).
-- **Tipado explícito:** usa tipos explícitos en firmas y estructuras de datos.
+- **Tipado estático obligatorio:** aplica la regla 3 de la Política de Comentarios y Docstrings: anotaciones de tipo completas en todas las firmas, clases y estructuras de datos (tipado gradual).
 - **Manejo de errores:** captura y gestiona excepciones de forma adecuada, sin silenciarlas.
 - **Docstrings:** documenta funciones, clases y módulos con docstrings breves y claros, siguiendo la «💬 Política de Comentarios y Docstrings» (docstring de UNA línea de resumen; no documentación exhaustiva).
 - **YAGNI/KISS/DRY:** código mínimo, simple y sin duplicación innecesaria.
