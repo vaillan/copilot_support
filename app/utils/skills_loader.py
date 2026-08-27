@@ -43,6 +43,18 @@ class Skill(BaseModel):
     descripcion: str = ""
     contenido: str
     origen: str  # ruta relativa del archivo
+    agentes: tuple[str, ...] = ()  # Tupla vacía = aplica a todos los agentes
+
+
+def _parsear_agentes(valor: object) -> tuple[str, ...]:
+    """Normaliza el campo 'agentes' a una tupla de nombres en minúsculas."""
+    if valor is None:
+        return ()
+    if isinstance(valor, (list, tuple)):
+        items = valor
+    else:
+        items = str(valor).split(",")
+    return tuple(n.strip().lower() for n in items if n and n.strip())
 
 
 def _extraer_frontmatter(texto: str) -> tuple[dict[str, str], str]:
@@ -72,7 +84,13 @@ def _parsear_skill_md(ruta: Path, directorio: Path) -> Optional[Skill]:
     descripcion = metadatos.get("description") or next(
         (l.strip() for l in contenido.splitlines() if l.strip()), ""
     )
-    return Skill(nombre=nombre, descripcion=descripcion, contenido=contenido, origen=str(ruta.relative_to(directorio)))
+    return Skill(
+        nombre=nombre,
+        descripcion=descripcion,
+        contenido=contenido,
+        origen=str(ruta.relative_to(directorio)),
+        agentes=_parsear_agentes(metadatos.get("agentes")),
+    )
 
 
 def _parsear_skill_json(ruta: Path, directorio: Path) -> Optional[Skill]:
@@ -87,6 +105,7 @@ def _parsear_skill_json(ruta: Path, directorio: Path) -> Optional[Skill]:
         descripcion=datos.get("description", ""),
         contenido=contenido,
         origen=str(ruta.relative_to(directorio)),
+        agentes=_parsear_agentes(datos.get("agentes")),
     )
 
 
@@ -97,7 +116,13 @@ def _parsear_skill_yaml(ruta: Path, directorio: Path) -> Optional[Skill]:
     nombre = metadatos.get("name") or ruta.stem
     descripcion = metadatos.get("description", "")
     contenido = metadatos.get("content") or metadatos.get("instructions") or resto
-    return Skill(nombre=nombre, descripcion=descripcion, contenido=contenido, origen=str(ruta.relative_to(directorio)))
+    return Skill(
+        nombre=nombre,
+        descripcion=descripcion,
+        contenido=contenido,
+        origen=str(ruta.relative_to(directorio)),
+        agentes=_parsear_agentes(metadatos.get("agentes")),
+    )
 
 
 def _parsear_skill(ruta: Path, directorio: Path) -> Optional[Skill]:
@@ -151,6 +176,14 @@ def formatear_skills_para_prompt(skills: list[Skill]) -> str:
     return "\n\n".join(bloques)
 
 
-def cargar_skills_para_prompt(directorio: str) -> str:
-    """Retorna la sección de skills formateada o cadena vacía si no hay ninguna."""
-    return formatear_skills_para_prompt(descubrir_skills(directorio))
+def cargar_skills_para_prompt(directorio: str, agente: str = "") -> str:
+    """Retorna la sección de skills formateada o cadena vacía si no hay ninguna.
+
+    Si 'agente' no está vacío, solo se incluyen skills cuyo campo 'agentes' esté
+    vacío (aplica a todos) o contenga el agente indicado.
+    """
+    skills = descubrir_skills(directorio)
+    if agente:
+        agente_norm = agente.strip().lower()
+        skills = [s for s in skills if not s.agentes or agente_norm in s.agentes]
+    return formatear_skills_para_prompt(skills)

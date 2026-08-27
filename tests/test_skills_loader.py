@@ -187,3 +187,40 @@ def test_errores_sintacticos_se_omiten_y_avisan(tmp_path, caplog):
         skills = descubrir_skills(str(tmp_path))
     assert [s.nombre for s in skills] == ["OK"]
     assert any("Skill omitida por error de formato" in r.message for r in caplog.records)
+
+
+def test_filtrado_por_agente_incluye_skill_especifica(tmp_path):
+    _escribir(tmp_path, ".skills/a.md", "---\nagentes: codificador\n---\ncontenido a")
+    resultado = cargar_skills_para_prompt(str(tmp_path), agente="codificador")
+    assert "### Skill: a" in resultado
+
+
+def test_filtrado_excluye_skill_de_otro_agente(tmp_path):
+    _escribir(tmp_path, ".skills/a.md", "---\nagentes: codificador\n---\ncontenido a")
+    resultado = cargar_skills_para_prompt(str(tmp_path), agente="planificador")
+    assert resultado == ""
+
+
+def test_sin_agente_incluye_todas_backward_compatible(tmp_path):
+    _escribir(tmp_path, ".skills/a.md", "---\nagentes: codificador\n---\ncontenido a")
+    resultado = cargar_skills_para_prompt(str(tmp_path))
+    assert "### Skill: a" in resultado
+
+
+def test_skill_sin_agentes_se_incluye_para_cualquier_agente(tmp_path):
+    _escribir(tmp_path, ".skills/b.md", "---\nname: B\n---\ncontenido b")
+    resultado = cargar_skills_para_prompt(str(tmp_path), agente="revisor")
+    assert "### Skill: B" in resultado
+
+
+def test_agentes_lista_separada_por_comas(tmp_path):
+    _escribir(tmp_path, ".skills/c.md", "---\nagentes: codificador, revisor\n---\ncontenido c")
+    assert "### Skill: c" in cargar_skills_para_prompt(str(tmp_path), agente="codificador")
+    assert "### Skill: c" in cargar_skills_para_prompt(str(tmp_path), agente="revisor")
+    assert cargar_skills_para_prompt(str(tmp_path), agente="planificador") == ""
+
+
+def test_agentes_ignora_mayusculas_y_espacios(tmp_path):
+    _escribir(tmp_path, ".skills/d.md", "---\nagentes: Codificador\n---\ncontenido d")
+    resultado = cargar_skills_para_prompt(str(tmp_path), agente="codificador")
+    assert "### Skill: d" in resultado

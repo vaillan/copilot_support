@@ -115,7 +115,7 @@ def agente_codificador(state: ProjectState) -> Command:
             f"{indice_texto}"
         )
 
-    seccion_skills = cargar_skills_para_prompt(directorio)
+    seccion_skills = cargar_skills_para_prompt(directorio, agente="codificador")
     if seccion_skills:
         prompt_sistema += "\n\n" + seccion_skills
 

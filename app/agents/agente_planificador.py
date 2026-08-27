@@ -139,7 +139,7 @@ def agente_planificador(state: ProjectState) -> Command:
                 f"{indice_texto}"
             )
 
-        seccion_skills = cargar_skills_para_prompt(directorio)
+        seccion_skills = cargar_skills_para_prompt(directorio, agente="planificador")
         if seccion_skills:
             prompt_sistema_analisis += "\n\n" + seccion_skills
 
@@ -182,7 +182,7 @@ def agente_planificador(state: ProjectState) -> Command:
             f"{indice_texto}"
         )
 
-    seccion_skills = cargar_skills_para_prompt(directorio)
+    seccion_skills = cargar_skills_para_prompt(directorio, agente="planificador")
     if seccion_skills:
         prompt_sistema += "\n\n" + seccion_skills
 
