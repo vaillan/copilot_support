@@ -56,6 +56,122 @@ graph TD
 
 Soporta Google Gemini, OpenAI, Anthropic, OpenRouter y Ollama/local vía `init_chat_model`. Configuración multi-modelo por agente (`PLANNER_*`, `CODER_*`, `REVIEWER_*`) con fallback a variables globales `LLM_*`.
 
+## Sistema de Skills
+
+El sistema de skills ([`app/utils/skills_loader.py`](app/utils/skills_loader.py)) permite enriquecer los prompts de los tres agentes con instrucciones, convenciones y guías reutilizables. Las skills se descubren automáticamente desde el directorio del proyecto, se parsean y se inyectan dinámicamente en el prompt de cada agente mediante `cargar_skills_para_prompt(directorio)`.
+
+### Cómo funciona
+
+1. Al iniciar cada agente, se invoca `cargar_skills_para_prompt(directorio_proyecto)`.
+2. El cargador recorre los directorios estándar de skills dentro del proyecto y parsea los archivos encontrados.
+3. Las skills se formatean como un bloque Markdown (`=== SKILLS DISPONIBLES ===`) y se inyectan en el prompt del agente.
+4. Si no hay skills, la inyección es una cadena vacía: el flujo no se rompe y el agente trabaja con su prompt base.
+
+Las skills se cargan **por directorio de proyecto** y se inyectan en los **tres agentes** (Planificador, Codificador y Revisor).
+
+### Instalación y directorios esperados
+
+Basta con crear el directorio `.skills/` en la raíz del proyecto y colocar dentro los archivos de skill. El cargador también reconoce los directorios estándar de otros editores y asistentes:
+
+| Directorio | Origen |
+|------------|--------|
+| `.skills/` | Directorio genérico recomendado |
+| `.claude/skills/` | Claude Code |
+| `.zoo/skills/` | Zoo Code |
+| `.cursor/skills/` | Cursor |
+| `.windsurf/skills/` | Windsurf |
+| `.gemini/skills/` | Gemini CLI |
+| `.codex/skills/` | OpenAI Codex |
+| `.github/copilot/skills/` | GitHub Copilot |
+| `.vscode/skills/` | VS Code |
+| `.zed/skills/` | Zed |
+| `.roo/skills/` | Roo Code |
+| `.clinerules/skills/` | Cline |
+| `.aider/skills/` | Aider |
+| `.opencode/skills/` | OpenCode |
+| `.continue/skills/` | Continue |
+| `.kilo/skills/` | Kilo Code |
+| `.codeium/skills/` | Codeium |
+| `.tabnine/skills/` | Tabnine |
+| `.warp/skills/` | Warp |
+
+### Formatos de skills
+
+Se soportan tres formatos de archivo: `.md`, `.json` y `.yaml`/`.yml`.
+
+| Formato | Claves | Notas |
+|---------|--------|-------|
+| Markdown (`.md`) | `name`, `description` (frontmatter YAML opcional) | Si no hay `name`, se usa el nombre del archivo; si no hay `description`, se usa la primera línea no vacía. |
+| JSON (`.json`) | `name`, `description`, `content` (o `instructions`) | `content`/`instructions` es obligatorio. |
+| YAML (`.yaml`/`.yml`) | `name`, `description`, `content` (o `instructions`) | `content`/`instructions` es obligatorio. |
+
+**Markdown con frontmatter:**
+
+```markdown
+---
+name: estilo-codigo-python
+description: Convenciones de estilo para el código Python del proyecto.
+---
+
+Sigue PEP 8, usa type hints en todas las firmas y docstrings de una línea.
+```
+
+**JSON:**
+
+```json
+{
+  "name": "convenciones-arquitectura",
+  "description": "Reglas de arquitectura para el Planificador.",
+  "content": "Prioriza módulos pequeños, inyección de dependencias y YAGNI/KISS."
+}
+```
+
+**YAML:**
+
+```yaml
+name: checklist-qa
+description: Checklist de verificación para el Revisor.
+content: |
+  - Ejecutar las pruebas unitarias antes de aprobar.
+  - Verificar que no haya código muerto ni placeholders.
+```
+
+### Ejemplos de configuración y carga por agente
+
+Las skills se colocan en `.skills/` y se inyectan automáticamente en el prompt del agente correspondiente.
+
+**Skill para el Planificador** (`.skills/arquitectura.md`):
+
+```markdown
+---
+name: convenciones-arquitectura
+description: Convenciones de diseño para el Planificador.
+---
+
+Diseña planes con pasos pequeños y verificables. Respeta YAGNI/KISS y
+evita refactorizaciones no solicitadas.
+```
+
+**Skill para el Codificador** (`.skills/estilo-codigo.json`):
+
+```json
+{
+  "name": "estilo-codigo-python",
+  "description": "Estilo de código para el Codificador.",
+  "content": "Usa type hints en todas las firmas, docstrings de una línea y nombres autoexplicativos."
+}
+```
+
+**Skill para el Revisor** (`.skills/checklist-qa.yaml`):
+
+```yaml
+name: checklist-qa
+description: Checklist de QA para el Revisor.
+content: |
+  - Ejecutar las pruebas antes de aprobar.
+  - Rechazar si hay placeholders, TODO o código muerto.
+```
+
 ## Instalación
 
 Requisitos: Python 3.10+
