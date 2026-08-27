@@ -9,3 +9,25 @@ media/
 .project_index.json
 .project_index/
 checkpoints.sqlite*
+
+# Carpetas de skills locales de agentes IA (no versionar)
+.skills/
+.claude/skills/
+.zoo/skills/
+.cursor/skills/
+.windsurf/skills/
+.gemini/skills/
+.codex/skills/
+.github/copilot/skills/
+.vscode/skills/
+.zed/skills/
+.roo/skills/
+.clinerules/skills/
+.aider/skills/
+.opencode/skills/
+.continue/skills/
+.kilo/skills/
+.codeium/skills/
+.tabnine/skills/
+.warp/skills/
+**/.skills/
