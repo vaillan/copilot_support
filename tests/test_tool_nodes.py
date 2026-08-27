@@ -116,3 +116,48 @@ def test_nodo_herramientas_revisor(mock_tool_node, mock_state):
     mock_instance.invoke.assert_called_once_with(mock_state, config=config)
     
     assert result == {"messages": ["resultado_revisor"]}
+
+
+# ---------------------------------------------------------------------------
+# Agnosticidad: tool terminal del revisor (shell por defecto del SO)
+# ---------------------------------------------------------------------------
+@patch('app.agents.agente_revisor.ToolNode')
+def test_nodo_herramientas_revisor_incluye_terminal(mock_tool_node, mock_state):
+    """El nodo del revisor expone la tool 'terminal' y excluye 'finalizar_revision'."""
+    mock_instance = MagicMock()
+    mock_tool_node.return_value = mock_instance
+    mock_instance.invoke.return_value = {"messages": ["resultado_revisor"]}
+
+    config = {"configurable": {"thread_id": "1"}}
+    nodo_herramientas_revisor(mock_state, config)
+
+    herramientas_pasadas = mock_tool_node.call_args[0][0]
+    nombres_herramientas = [t.name for t in herramientas_pasadas]
+    assert "terminal" in nombres_herramientas
+    assert "finalizar_revision" not in nombres_herramientas
+
+
+@patch('app.agents.agente_revisor.subprocess.run')
+def test_terminal_ejecuta_agnostico_shell(mock_run, tmp_path):
+    """La tool terminal ejecuta con shell=True (shell por defecto del SO) y cwd."""
+    from app.agents.agente_revisor import terminal
+
+    mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
+
+    resultado = terminal.func(["echo hola"], cwd=str(tmp_path))
+
+    mock_run.assert_called_once()
+    assert mock_run.call_args.kwargs["shell"] is True
+    assert mock_run.call_args.kwargs["cwd"] == str(tmp_path)
+    assert "ok" in resultado
+
+
+@patch('app.agents.agente_revisor.subprocess.run')
+def test_terminal_bloquea_sin_ejecutar(mock_run, tmp_path):
+    """Un comando destructivo se bloquea sin invocar subprocess.run."""
+    from app.agents.agente_revisor import terminal
+
+    resultado = terminal.func(['rm -rf /'], cwd=str(tmp_path))
+
+    mock_run.assert_not_called()
+    assert "Comando bloqueado" in resultado

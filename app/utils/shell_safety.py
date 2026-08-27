@@ -48,6 +48,11 @@ PATRONES_BLOQUEADOS: List[_PatronBloqueado] = [
         re.compile(r"\b(?:rm|unlink|del|erase)\s+[^;|&\n]*\s+[A-Za-z]:\\\\(?:$|\s|/)"),
         "borrado destructivo de rutas Windows fuera del proyecto (unidad del sistema)",
     ),
+    # PowerShell: Remove-Item -Recurse -Force (equivalente a rm -rf en Windows)
+    (
+        re.compile(r"\bRemove-Item\b[^;\n]*?-Recurse", re.IGNORECASE),
+        "borrado destructivo con Remove-Item -Recurse (PowerShell)",
+    ),
     # ------------------------------------------------------------------
     # 2. Descarga y ejecución de código remoto (curl|wget -> sh/bash)
     # ------------------------------------------------------------------
