@@ -11,6 +11,7 @@ from app.models.models import ProjectState
 from app.models.llm_factory import get_coder_llm
 from app.utils.summarization import aplicar_resumen_middleware
 from app.utils.prompt_utils import escapar_llaves
+from app.utils.skills_loader import cargar_skills_para_prompt
 from functools import lru_cache
 from app.utils.args_utils import _get_args
 
@@ -113,7 +114,11 @@ def agente_codificador(state: ProjectState) -> Command:
             "\n\n=== ÍNDICE DEL PROYECTO (proporcionado, usa read_file_summary para detalles) ===\n"
             f"{indice_texto}"
         )
-    
+
+    seccion_skills = cargar_skills_para_prompt(directorio)
+    if seccion_skills:
+        prompt_sistema += "\n\n" + seccion_skills
+
     if errores:
         prompt_sistema += (
             f"\n\n ATENCIÓN: Tu código anterior falló las pruebas (Intento de revisión #{revision_count}). "
