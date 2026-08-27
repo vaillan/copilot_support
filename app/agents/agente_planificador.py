@@ -130,7 +130,8 @@ def agente_planificador(state: ProjectState) -> Command:
         prompt_analisis = (
             "Eres un analista técnico senior. Analiza el siguiente requerimiento "
             "sobre el proyecto y proporciona un análisis detallado y estructurado "
-            "en Markdown:\n\n"
+            "en Markdown. Responde SIEMPRE en el mismo idioma en el que el usuario "
+            "redactó el requerimiento:\n\n"
             f"Requerimiento:\n{instruccion}"
         )
         respuesta_analisis = llm_analisis.invoke(prompt_analisis)

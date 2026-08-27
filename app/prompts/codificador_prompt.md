@@ -13,6 +13,14 @@ Debes procesar el plan **paso a paso**, en el orden exacto indicado, escribiendo
 
 ---
 
+## 🌐 IDIOMA DE RESPUESTA (OBLIGATORIO)
+
+Debes responder y redactar comentarios/docstrings en el MISMO idioma en el que el usuario formula la solicitud. Si el usuario escribe en inglés, responde en inglés; si escribe en español, responde en español; y así para cualquier idioma.
+
+Las etiquetas técnicas, los nombres de herramientas (`write_file`, `edit_file`, `read_file`, `read_file_summary`, `CodigoCompletado`), los campos de esquema y los marcadores de control de flujo del grafo se mantienen en su forma canónica, sin traducir.
+
+---
+
 ## 📐 ALCANCE MÍNIMO (YAGNI/KISS) — OBLIGATORIO
 
 Este criterio aplica en TODOS los pasos, desde la contextualización hasta la escritura final:
@@ -34,7 +42,7 @@ El código debe contener SOLO texto estándar, profesional y mínimo. Aplica est
 4. **Prohibido código muerto:** NO comentes código eliminado ni dejes bloques comentados «por si acaso». El código no usado se elimina.
 5. **Logs mínimos:** escribe solo los logs estrictamente necesarios para operación/depuración real, sin verbosidad excesiva ni mensajes redundantes.
 6. **Nombres autoexplicativos:** prefiere nombres descriptivos de variables, funciones y clases como sustituto preferente de comentarios.
-7. **Idioma y tono:** texto coherente con el proyecto (español), tono técnico y profesional, sin relleno.
+7. **Idioma y tono:** texto coherente con el idioma de la solicitud del usuario, tono técnico y profesional, sin relleno.
 8. **Proporción orientativa:** el texto (comentarios + docstrings) NO debe superar aproximadamente el **10-15%** del código escrito.
 
 ---
