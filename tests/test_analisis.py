@@ -40,3 +40,47 @@ def test_reporte_final_incluye_analisis(mock_ainvoke, mock_aget_state):
 
     assert "✅ Análisis completado por el equipo LangGraph" in resultado
     assert "Análisis detallado del módulo X" in resultado
+
+
+@patch("app.agents.agente_planificador.get_planner_llm")
+def test_agente_planificador_camino_analisis_con_indice(mock_get_planner_llm):
+    """Verifica que el camino alternativo inyecta el índice del proyecto y devuelve Command a END."""
+    from app.agents.agente_planificador import agente_planificador
+    from langgraph.graph import END
+    from langchain_core.messages import AIMessage
+
+    mock_llm = MagicMock()
+    mock_llm.invoke.return_value = AIMessage(content="### Resumen Ejecutivo\nDiagnóstico completado.\n- [ ] TODO: revisar")
+    mock_get_planner_llm.return_value = mock_llm
+
+    state = {
+        "instruccion_usuario": "analiza la arquitectura del sistema",
+        "directorio_proyecto": "./test_dir",
+        "project_index": {
+            "arbol": {
+                "main.py": {"tipo": "archivo", "lineas": 10},
+                "app": {
+                    "tipo": "directorio",
+                    "hijos": {
+                        "service.py": {"tipo": "archivo", "lineas": 20}
+                    }
+                }
+            },
+            "resumenes": {
+                "main.py": {"resumen": "def main(): ...", "simbolos": ["main"]}
+            }
+        },
+        "messages": [],
+        "loop_counter": 0
+    }
+
+    cmd = agente_planificador(state)
+    assert cmd.goto == END
+    assert "analisis_final" in cmd.update
+    assert "- [ ] TODO: revisar" in cmd.update["analisis_final"]
+    assert mock_llm.invoke.called
+    # Verificar que el prompt invocado contenía el contexto del índice
+    prompt_invocado = mock_llm.invoke.call_args[0][0]
+    prompt_texto = str(prompt_invocado)
+    assert "ÍNDICE DEL PROYECTO" in prompt_texto
+    assert "test_dir" in prompt_texto

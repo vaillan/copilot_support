@@ -126,15 +126,29 @@ def agente_planificador(state: ProjectState) -> Command:
     # sin pasar por el codificador ni el revisor.
     instruccion = state.get("instruccion_usuario", "")
     if _es_peticion_analisis(instruccion):
+        directorio = state.get("directorio_proyecto", "./")
+        prompt_sistema_analisis = fileSystem.get_file_content(file_name="analisis_prompt.md")
+
+        project_index = state.get("project_index")
+        if project_index and isinstance(project_index, dict):
+            from app.utils.project_index import formatear_indice_para_prompt
+            indice_texto = escapar_llaves(formatear_indice_para_prompt(project_index))
+            prompt_sistema_analisis += (
+                "\n\n=== ÍNDICE DEL PROYECTO (proporcionado para análisis contextual) ===\n"
+                f"{indice_texto}"
+            )
+
+        prompt_template_analisis = ChatPromptTemplate.from_messages([
+            ("system", prompt_sistema_analisis),
+            ("human", "Requerimiento a analizar:\n{instruccion}")
+        ])
+
         llm_analisis = get_planner_llm(temperature=0.0)
-        prompt_analisis = (
-            "Eres un analista técnico senior. Analiza el siguiente requerimiento "
-            "sobre el proyecto y proporciona un análisis detallado y estructurado "
-            "en Markdown. Responde SIEMPRE en el mismo idioma en el que el usuario "
-            "redactó el requerimiento:\n\n"
-            f"Requerimiento:\n{instruccion}"
-        )
-        respuesta_analisis = llm_analisis.invoke(prompt_analisis)
+        prompt_invocado = prompt_template_analisis.invoke({
+            "directorio": directorio,
+            "instruccion": instruccion,
+        })
+        respuesta_analisis = llm_analisis.invoke(prompt_invocado)
         analisis_texto = str(respuesta_analisis.content)
         return Command(
             update={
