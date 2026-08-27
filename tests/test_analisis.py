@@ -1,8 +1,55 @@
 import asyncio
+from pathlib import Path
 from unittest.mock import patch, MagicMock, AsyncMock
 
+from langchain_core.prompts import ChatPromptTemplate
+
 from app.agents.agente_planificador import _es_peticion_analisis
+from app.utils.files import File
 from mcp_server import delegar_tarea_a_equipo_ia
+
+
+def _cargar_prompt_analisis() -> str:
+    """Carga el contenido real del prompt de análisis desde el repositorio."""
+    ruta = Path(__file__).resolve().parent.parent / "app" / "prompts" / "analisis_prompt.md"
+    return ruta.read_text(encoding="utf-8")
+
+
+def test_analisis_prompt_incluye_yagni():
+    """Verifica que el prompt contiene la directiva de alcance mínimo YAGNI/KISS."""
+    prompt = _cargar_prompt_analisis()
+    assert "ALCANCE MÍNIMO (YAGNI/KISS)" in prompt
+    assert "sobre-ingeniería" in prompt
+
+
+def test_analisis_prompt_incluye_concision():
+    """Verifica que las secciones 2 y 3 del reporte exigen concisión (3-4 viñetas)."""
+    prompt = _cargar_prompt_analisis()
+    assert "3-4" in prompt
+    assert "concis" in prompt
+
+
+def test_analisis_prompt_referencia_indice():
+    """Verifica que el prompt referencia el índice del proyecto como fuente de evidencia."""
+    prompt = _cargar_prompt_analisis()
+    assert "ÍNDICE DEL PROYECTO" in prompt
+
+
+def test_analisis_prompt_placeholder_directorio():
+    """Verifica que el placeholder {directorio} aparece exactamente dos veces (línea 2 y línea 7 del prompt)."""
+    prompt = _cargar_prompt_analisis()
+    assert prompt.count("{directorio}") == 2
+
+
+def test_analisis_prompt_interpola_sin_errores():
+    """Verifica que el prompt se interpola sin errores por ChatPromptTemplate."""
+    prompt = _cargar_prompt_analisis()
+    plantilla = ChatPromptTemplate.from_messages([
+        ("system", prompt),
+        ("human", "Requerimiento a analizar:\n{instruccion}"),
+    ])
+    resultado = plantilla.invoke({"directorio": "./test_dir", "instruccion": "analiza el módulo"})
+    assert "./test_dir" in str(resultado)
 
 
 def test_es_peticion_analisis_detecta_analisis():
