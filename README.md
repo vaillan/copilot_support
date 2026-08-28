@@ -101,9 +101,9 @@ Se soportan tres formatos de archivo: `.md`, `.json` y `.yaml`/`.yml`.
 
 | Formato | Claves | Notas |
 |---------|--------|-------|
-| Markdown (`.md`) | `name`, `description` (frontmatter YAML opcional) | Si no hay `name`, se usa el nombre del archivo; si no hay `description`, se usa la primera línea no vacía. |
-| JSON (`.json`) | `name`, `description`, `content` (o `instructions`) | `content`/`instructions` es obligatorio. |
-| YAML (`.yaml`/`.yml`) | `name`, `description`, `content` (o `instructions`) | `content`/`instructions` es obligatorio. |
+| Markdown (`.md`) | `name`, `description`, `agentes` (frontmatter YAML opcional) | Si no hay `name`, se usa el nombre del archivo; si no hay `description`, se usa la primera línea no vacía. `agentes` opcional: si se omite aplica a todos los agentes. |
+| JSON (`.json`) | `name`, `description`, `agentes`, `content` (o `instructions`) | `content`/`instructions` es obligatorio. `agentes` opcional: si se omite aplica a todos los agentes. |
+| YAML (`.yaml`/`.yml`) | `name`, `description`, `agentes`, `content` (o `instructions`) | `content`/`instructions` es obligatorio. `agentes` opcional: si se omite aplica a todos los agentes. |
 
 **Markdown con frontmatter:**
 
@@ -136,6 +136,44 @@ content: |
   - Verificar que no haya código muerto ni placeholders.
 ```
 
+### Filtrado por agente/modelo
+
+El campo opcional `agentes` indexa el nombre del agente/modelo destino al que se inyecta la skill. Acepta una cadena separada por comas (p. ej. `planificador, revisor`) o una lista. Los valores válidos son `planificador`, `codificador` y `revisor`, y se comparan sin distinguir mayúsculas/minúsculas (case-insensitive). Si se omite o se deja vacío, la skill se inyecta en los tres agentes.
+
+**Markdown frontmatter:**
+
+```markdown
+---
+name: estilo-codigo-python
+description: Convenciones de estilo para el código Python del proyecto.
+agentes: codificador
+---
+
+Sigue PEP 8, usa type hints en todas las firmas y docstrings de una línea.
+```
+
+**JSON:**
+
+```json
+{
+  "name": "convenciones-arquitectura",
+  "description": "Reglas de arquitectura para el Planificador y el Revisor.",
+  "agentes": ["planificador", "revisor"],
+  "content": "Prioriza módulos pequeños, inyección de dependencias y YAGNI/KISS."
+}
+```
+
+**YAML:**
+
+```yaml
+name: checklist-qa
+description: Checklist de verificación para el Revisor.
+agentes: revisor
+content: |
+  - Ejecutar las pruebas unitarias antes de aprobar.
+  - Verificar que no haya código muerto ni placeholders.
+```
+
 ### Ejemplos de configuración y carga por agente
 
 Las skills se colocan en `.skills/` y se inyectan automáticamente en el prompt del agente correspondiente.
@@ -158,6 +196,7 @@ evita refactorizaciones no solicitadas.
 {
   "name": "estilo-codigo-python",
   "description": "Estilo de código para el Codificador.",
+  "agentes": ["codificador"],
   "content": "Usa type hints en todas las firmas, docstrings de una línea y nombres autoexplicativos."
 }
 ```
@@ -167,6 +206,7 @@ evita refactorizaciones no solicitadas.
 ```yaml
 name: checklist-qa
 description: Checklist de QA para el Revisor.
+agentes: revisor
 content: |
   - Ejecutar las pruebas antes de aprobar.
   - Rechazar si hay placeholders, TODO o código muerto.
