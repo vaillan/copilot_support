@@ -54,15 +54,16 @@ def test_delegar_tarea_pausa_2_muestra_cambios(mock_ainvoke, mock_aget_state):
         ctx=mock_ctx
     ))
 
+    # La instruccion "Crear helpers" NO es un rechazo explícito,
+    # por lo que el servidor debe re-pausar con feedback del usuario
     assert "ATENCIÓN ASISTENTE DE IA" in resultado
-    assert "Revisión de Código Desarrollado (Pausa 2)" in resultado
     assert "Creado archivo app/utils/helpers.py con funciones aux." in resultado
     assert "INSTRUCCIONES PARA EL USUARIO HUMANO" in resultado
+    assert "Revisión de Código (Feedback del Usuario Recibido)" in resultado
+    assert "NO aprobó ni rechazó explícitamente" in resultado
     
-    # Verificar que mock_ctx.info recibió la notificación resumida de pausa 2
-    info_calls = [call.args[0] for call in mock_ctx.info.call_args_list]
-    notificacion_resumida = any("PAUSA 2" in call for call in info_calls)
-    assert notificacion_resumida, "El mensaje enviado a notificar_progreso (ctx.info) en PAUSA 2 debe incluir el resumen conciso."
+    # Verificar que la función retorna el markdown de re-pausa (no procesa como rechazo)
+    assert "Estado: Pausado (PAUSA_2)" in resultado
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
 @patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)

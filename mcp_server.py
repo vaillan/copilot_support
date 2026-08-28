@@ -4,6 +4,7 @@ import subprocess
 import asyncio
 import uuid
 import hashlib
+import re
 from typing import Optional, Dict, Any, List
 
 # Asegurar que el directorio del script esté en sys.path.
@@ -154,6 +155,38 @@ def obtener_git_diff(directorio: str) -> str:
     except Exception:
         pass
     return ""
+
+
+def _detectar_intencion_rechazo(texto_usuario: str) -> bool:
+    """
+    Detecta si el usuario esta expresando un RECHAZO EXPLICITO del plan/codigo.
+    
+    Retorna True si es un rechazo claro (el usuario NO quiere continuar con lo propuesto).
+    Retorna False si es feedback constructivo (el usuario SI quiere continuar pero con cambios).
+    """
+    texto = texto_usuario.strip().lower()
+    
+    # Patrones de RECHAZO EXPLICITO (el usuario NO quiere el plan actual)
+    patrones_rechazo = [
+        r'\brechaz\w*\b',          # rechazo, rechazar, rechazado
+        r'\bno\s+aprueb\w*\b',    # no apruebo, no aprobado
+        r'\bno\s+acept\w*\b',     # no acepto, no aceptado
+        r'\bcancel\w*\b',         # cancelar, cancela, cancelado
+        r'\bdescart\w*\b',        # descartar, descarta, descartado
+        r'\bno\s+me\s+gusta\b',   # no me gusta
+        r'\bno\s+es\s+lo\s+que\b',  # no es lo que queria
+        r'\bno\s+quiero\b',       # no quiero
+        r'\bno\s+funcion\w*\b',   # no funciona
+        r'\beliminar\w*\b',       # eliminar, eliminado
+        r'\bborrar\w*\b',         # borrar, borrado
+        r'\breset\w*\b',          # reset, resetear
+    ]
+    
+    for patron in patrones_rechazo:
+        if re.search(patron, texto):
+            return True
+    
+    return False
 
 
 def generar_markdown_pausa(
@@ -369,29 +402,73 @@ async def delegar_tarea_a_equipo_ia(
                 await notificar_progreso(ctx, msg_feedback, 30, 100)
                 # RECHAZO DEL USUARIO: Regresamos con feedback y REINICIAMOS CONTADORES
                 if siguiente_nodo == "agente_revisor":
-                    msg_rechazo_cod = f"El usuario rechazó el código con este feedback: {instruccion}"
-                    msg_rechazo_human = f"Rechazo de código: {instruccion}"
-                    comando = Command(
-                        goto="agente_codificador",
-                        update={
-                            "errores_terminal": msg_rechazo_cod,
-                            "messages": [HumanMessage(content=msg_rechazo_human)],
-                            "loop_counter": 0,
-                            "revision_count": 0
-                        }
-                    )
-                    resultado = await agentes_app.ainvoke(comando, config) # type: ignore
+                    es_rechazo_rev = _detectar_intencion_rechazo(instruccion)
+                    
+                    if es_rechazo_rev:
+                        # RECHAZO EXPLICITO: Regresamos al codificador
+                        msg_rechazo_cod = f"El usuario rechazó el código con este feedback: {instruccion}"
+                        msg_rechazo_human = f"Rechazo de código: {instruccion}"
+                        comando = Command(
+                            goto="agente_codificador",
+                            update={
+                                "errores_terminal": msg_rechazo_cod,
+                                "messages": [HumanMessage(content=msg_rechazo_human)],
+                                "loop_counter": 0,
+                                "revision_count": 0
+                            }
+                        )
+                        resultado = await agentes_app.ainvoke(comando, config) # type: ignore
+                    else:
+                        # FEEDBACK CONSTRUCTIVO: Retornamos la pausa de revisión con instrucciones claras
+                        codigo_escrito = estado_actual.values.get("codigo_escrito", "No se registró un resumen de cambios.")
+                        diff_git = obtener_git_diff(directorio_proyecto)
+                        markdown_feedback_rev = generar_markdown_pausa(
+                            tarea_id=tarea_id,
+                            tipo_pausa="PAUSA_2",
+                            titulo="Revisión de Código (Feedback del Usuario Recibido)",
+                            explicacion=f"{codigo_escrito}\n\n---\n⚠️ **Nota:** El usuario escribió feedback pero NO aprobó ni rechazó explícitamente.\nPor favor, revisa los cambios anteriores y escribe **'Aprobar'** para continuar o **'Rechazar'** junto con tus observaciones.",
+                            diff_git=diff_git,
+                            directorio_proyecto=directorio_proyecto
+                        )
+                        await notificar_progreso(ctx, "↩️ Feedback recibido. Re-pausando Pausa 2 con instrucciones claras para el usuario.", 65, 100)
+                        _log_stderr(f"[MCP] PAUSA 2 (feedback re-pausa) - tarea '{tarea_id}'")
+                        return markdown_feedback_rev
                     
                 elif siguiente_nodo == "agente_codificador":
-                    msg_rechazo_plan = f"El usuario rechazó el plan de acción: {instruccion}"
-                    comando = Command(
-                        goto="agente_planificador",
-                        update={
-                            "messages": [HumanMessage(content=msg_rechazo_plan)],
-                            "loop_counter": 0 
-                        }
-                    )
-                    resultado = await agentes_app.ainvoke(comando, config) # type: ignore
+                    es_rechazo = _detectar_intencion_rechazo(instruccion)
+                    
+                    if es_rechazo:
+                        # RECHAZO EXPLICITO: Regresamos al planificador
+                        msg_rechazo_plan = f"El usuario rechazó el plan de acción: {instruccion}"
+                        comando = Command(
+                            goto="agente_planificador",
+                            update={
+                                "messages": [HumanMessage(content=msg_rechazo_plan)],
+                                "loop_counter": 0
+                            }
+                        )
+                        resultado = await agentes_app.ainvoke(comando, config) # type: ignore
+                    else:
+                        # FEEDBACK CONSTRUCTIVO: Retornamos el plan de nuevo con instrucciones claras
+                        plan = estado.values.get("plan_de_accion", {})
+                        if isinstance(plan, dict):
+                            explicacion = plan.get("explicacion_arquitectura", "Plan de acción propuesto.")
+                            pasos_plan = plan.get("pasos", [])
+                        else:
+                            explicacion = str(plan)
+                            pasos_plan = []
+                        
+                        markdown_feedback = generar_markdown_pausa(
+                            tarea_id=tarea_id,
+                            tipo_pausa="PAUSA_1",
+                            titulo="Plan de Acción (Feedback del Usuario Recibido)",
+                            explicacion=f"{explicacion}\n\n---\n⚠️ **Nota:** El usuario escribió feedback pero NO aprobó ni rechazó explícitamente.\nPor favor, revisa el plan anterior y escribe **'Aprobar'** para continuar o **'Rechazar'** junto con tus observaciones.",
+                            pasos=pasos_plan,
+                            directorio_proyecto=directorio_proyecto
+                        )
+                        await notificar_progreso(ctx, "↩️ Feedback recibido. Re-pausando con instrucciones claras para el usuario.", 35, 100)
+                        _log_stderr(f"[MCP] PAUSA 1 (feedback re-pausa) - tarea '{tarea_id}'")
+                        return markdown_feedback
                 else:
                     resultado = await agentes_app.ainvoke(None, config) # type: ignore
         else:
