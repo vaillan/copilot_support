@@ -4,10 +4,15 @@ import shutil
 from typing import Optional
 from langchain_core.tools import tool
 from app.utils.project_index import (
+    actualizar_indice_incremental,
+    cargar_indice,
     construir_indice,
     obtener_resumen_archivo,
     formatear_indice_para_prompt,
 )
+from app.settings.settings import Settings
+
+settings = Settings()
 
 
 class File:
@@ -144,7 +149,16 @@ def get_custom_file_tools(directorio: str):
     def get_project_index() -> str:
         """Devuelve el indice actual del proyecto: estructura y resumenes de archivos."""
         try:
-            indice = construir_indice(directorio)
+            if not settings.PROJECT_INDEX_ENABLED:
+                indice_cacheado = cargar_indice(directorio)
+                if indice_cacheado:
+                    return formatear_indice_para_prompt(indice_cacheado)
+                return "Índice del proyecto deshabilitado (PROJECT_INDEX_ENABLED=False)."
+            indice_previo = cargar_indice(directorio)
+            if indice_previo:
+                indice = actualizar_indice_incremental(directorio, indice_previo)
+            else:
+                indice = construir_indice(directorio)
             return formatear_indice_para_prompt(indice)
         except Exception as e:
             return f"Error al construir el indice del proyecto: {str(e)}"

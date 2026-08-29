@@ -1,6 +1,7 @@
 import sys
 import os
 import subprocess
+import json
 from contextlib import redirect_stdout
 from langgraph.graph import END
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
@@ -256,8 +257,14 @@ def agente_revisor(state: ProjectState) -> Command:
     # Inyectar el índice del proyecto si está disponible en el estado (optimización de tokens)
     project_index = state.get("project_index")
     if project_index and isinstance(project_index, dict):
-        from app.utils.project_index import formatear_indice_para_prompt
-        indice_texto = escapar_llaves(formatear_indice_para_prompt(project_index))
+        from app.utils.project_index import extraer_archivos_relevantes, formatear_indice_para_prompt
+        plan_estado = state.get("plan_de_accion")
+        texto_fuentes = "\n".join(filter(None, [
+            json.dumps(plan_estado, ensure_ascii=False, default=str) if plan_estado else "",
+            str(state.get("analisis_final") or ""),
+        ]))
+        archivos_relevantes = extraer_archivos_relevantes(texto_fuentes, project_index)
+        indice_texto = escapar_llaves(formatear_indice_para_prompt(project_index, archivos_relevantes=archivos_relevantes))
         prompt_sistema += (
             "\n\n=== ÍNDICE DEL PROYECTO (proporcionado, usa read_file_summary para inspección) ===\n"
             f"{indice_texto}"

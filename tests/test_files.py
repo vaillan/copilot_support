@@ -337,3 +337,100 @@ def test_resolver_ruta_lanza_valueerror(tmp_path):
     with pytest.raises(ValueError, match="escapa del directorio"):
         _resolver_ruta(str(tmp_path), "../fuera.txt")
     assert _resolver_ruta(str(tmp_path), str(tmp_path / "a.txt")) == (tmp_path / "a.txt").resolve()
+
+
+def _indice_falso(tmp_path) -> dict:
+    """Índice de prueba con un archivo resumido."""
+    return {
+        "version": 1,
+        "directorio": str(tmp_path.resolve()),
+        "arbol": {},
+        "resumenes": {"a.py": {"resumen": "def a(): ..."}},
+    }
+
+
+def _indice_actualizado(tmp_path) -> dict:
+    """Índice de prueba tras una actualización incremental."""
+    indice = _indice_falso(tmp_path)
+    indice["resumenes"] = {"b.py": {"resumen": "def b(): ..."}}
+    return indice
+
+
+@patch("app.utils.files.construir_indice")
+@patch("app.utils.files.actualizar_indice_incremental")
+@patch("app.utils.files.cargar_indice")
+def test_get_project_index_usa_incremental_con_cache(mock_cargar, mock_actualizar, mock_construir, tmp_path):
+    """
+    Con un índice cacheado válido, get_project_index actualiza de forma
+    incremental y nunca reconstruye el índice completo.
+    """
+    indice_falso = _indice_falso(tmp_path)
+    indice_actualizado = _indice_actualizado(tmp_path)
+    mock_cargar.return_value = indice_falso
+    mock_actualizar.return_value = indice_actualizado
+
+    tools = {t.name: t for t in get_custom_file_tools(str(tmp_path))}
+    res = tools["get_project_index"].invoke({})
+
+    mock_construir.assert_not_called()
+    mock_actualizar.assert_called_once_with(str(tmp_path), indice_falso)
+    assert "ESTRUCTURA DEL PROYECTO" in res
+    assert "### b.py" in res
+
+
+@patch("app.utils.files.construir_indice")
+@patch("app.utils.files.actualizar_indice_incremental")
+@patch("app.utils.files.cargar_indice")
+def test_get_project_index_fallback_construir_sin_cache(mock_cargar, mock_actualizar, mock_construir, tmp_path):
+    """
+    Sin índice cacheado, get_project_index reconstruye el índice completo
+    desde cero y no ejecuta la actualización incremental.
+    """
+    indice_falso = _indice_falso(tmp_path)
+    mock_cargar.return_value = None
+    mock_construir.return_value = indice_falso
+
+    tools = {t.name: t for t in get_custom_file_tools(str(tmp_path))}
+    res = tools["get_project_index"].invoke({})
+
+    mock_construir.assert_called_once_with(str(tmp_path))
+    mock_actualizar.assert_not_called()
+    assert "### a.py" in res
+
+
+@patch("app.utils.files.construir_indice")
+@patch("app.utils.files.actualizar_indice_incremental")
+@patch("app.utils.files.cargar_indice")
+@patch("app.utils.files.settings", PROJECT_INDEX_ENABLED=False)
+def test_get_project_index_deshabilitado(mock_settings, mock_cargar, mock_actualizar, mock_construir, tmp_path):
+    """
+    Con el flag PROJECT_INDEX_ENABLED deshabilitado y cache válido,
+    get_project_index devuelve el índice cacheado sin construir nada.
+    """
+    mock_cargar.return_value = _indice_falso(tmp_path)
+
+    tools = {t.name: t for t in get_custom_file_tools(str(tmp_path))}
+    res = tools["get_project_index"].invoke({})
+
+    mock_construir.assert_not_called()
+    mock_actualizar.assert_not_called()
+    assert "### a.py" in res
+
+
+@patch("app.utils.files.construir_indice")
+@patch("app.utils.files.actualizar_indice_incremental")
+@patch("app.utils.files.cargar_indice")
+@patch("app.utils.files.settings", PROJECT_INDEX_ENABLED=False)
+def test_get_project_index_deshabilitado_sin_cache(mock_settings, mock_cargar, mock_actualizar, mock_construir, tmp_path):
+    """
+    Con el flag deshabilitado y sin cache, get_project_index indica que el
+    índice está deshabilitado y no intenta construir ni actualizar nada.
+    """
+    mock_cargar.return_value = None
+
+    tools = {t.name: t for t in get_custom_file_tools(str(tmp_path))}
+    res = tools["get_project_index"].invoke({})
+
+    assert "deshabilitado" in res
+    mock_construir.assert_not_called()
+    mock_actualizar.assert_not_called()

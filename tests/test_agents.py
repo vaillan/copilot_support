@@ -305,3 +305,111 @@ def test_get_tools_agente_codificador():
     assert "copy_file" in tool_names
     assert "move_file" in tool_names
     assert "list_directory" in tool_names
+
+
+indice_test = {
+    "arbol": {},
+    "resumenes": {
+        "app/utils/files.py": {"resumen": "RESUMEN_FILES"},
+        "README.md": {"resumen": "RESUMEN_README"},
+    },
+}
+
+
+@patch('app.agents.agente_codificador.get_coder_llm')
+@patch('app.agents.agente_codificador.fileSystem.get_file_content')
+def test_agente_codificador_prompt_filtrado(mock_get_file, mock_get_llm, mock_state):
+    """
+    El codificador inyecta en el prompt solo los resúmenes de los archivos
+    referenciados en el plan de acción.
+    """
+    mock_llm = MagicMock()
+    mock_get_llm.return_value = mock_llm
+    mock_get_file.return_value = "system prompt"
+
+    mock_state["project_index"] = indice_test
+    mock_state["plan_de_accion"] = {
+        "pasos": [{"archivo": "app/utils/files.py", "tarea": "cambiar la tool", "requiere_test": True}]
+    }
+
+    tool_call = {"name": "write_file", "args": {"file_path": "a.py", "text": "x"}, "id": "w1"}
+    capturado = {}
+
+    def _capturar(prompt, *args, **kwargs):
+        capturado["prompt"] = str(prompt)
+        return AIMessage(content="", tool_calls=[tool_call])
+
+    mock_llm.bind_tools.return_value.invoke.side_effect = _capturar
+
+    result = agente_codificador(mock_state)
+
+    prompt = capturado["prompt"]
+    assert "ÍNDICE DEL PROYECTO" in prompt
+    assert "RESUMEN_FILES" in prompt
+    assert "RESUMEN_README" not in prompt
+    assert result.goto == "nodo_herramientas_codificador"
+
+
+@patch('app.agents.agente_codificador.get_coder_llm')
+@patch('app.agents.agente_codificador.fileSystem.get_file_content')
+def test_agente_codificador_prompt_fallback(mock_get_file, mock_get_llm, mock_state):
+    """
+    Sin coincidencias de archivos relevantes, el codificador inyecta
+    el índice completo como fallback.
+    """
+    mock_llm = MagicMock()
+    mock_get_llm.return_value = mock_llm
+    mock_get_file.return_value = "system prompt"
+
+    mock_state["project_index"] = indice_test
+    mock_state["plan_de_accion"] = {
+        "pasos": [{"archivo": "no_existe.py", "tarea": "x", "requiere_test": True}]
+    }
+
+    tool_call = {"name": "write_file", "args": {"file_path": "a.py", "text": "x"}, "id": "w2"}
+    capturado = {}
+
+    def _capturar(prompt, *args, **kwargs):
+        capturado["prompt"] = str(prompt)
+        return AIMessage(content="", tool_calls=[tool_call])
+
+    mock_llm.bind_tools.return_value.invoke.side_effect = _capturar
+
+    agente_codificador(mock_state)
+
+    prompt = capturado["prompt"]
+    assert "RESUMEN_README" in prompt
+    assert "RESUMEN_FILES" in prompt
+
+
+@patch('app.agents.agente_revisor.get_reviewer_llm')
+@patch('app.agents.agente_revisor.fileSystem.get_file_content')
+def test_agente_revisor_prompt_filtrado(mock_get_file, mock_get_llm, mock_state):
+    """
+    El revisor inyecta en el prompt solo los resúmenes de los archivos
+    relevantes del plan de acción antes de emitir su veredicto.
+    """
+    mock_llm = MagicMock()
+    mock_get_llm.return_value = mock_llm
+    mock_get_file.return_value = "system prompt"
+
+    mock_state["project_index"] = indice_test
+    mock_state["plan_de_accion"] = {
+        "pasos": [{"archivo": "app/utils/files.py", "tarea": "cambiar la tool", "requiere_test": True}]
+    }
+
+    tool_call = {"name": "finalizar_revision", "args": {"aprobado": True}, "id": "r1"}
+    capturado = {}
+
+    def _capturar(prompt, *args, **kwargs):
+        capturado["prompt"] = str(prompt)
+        return AIMessage(content="", tool_calls=[tool_call])
+
+    mock_llm.bind_tools.return_value.invoke.side_effect = _capturar
+
+    result = agente_revisor(mock_state)
+
+    prompt = capturado["prompt"]
+    assert "RESUMEN_FILES" in prompt
+    assert "RESUMEN_README" not in prompt
+    assert result.goto == END

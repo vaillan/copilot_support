@@ -11,6 +11,7 @@ from app.utils.project_index import (
     obtener_resumen_archivo,
     resumir_archivo,
     formatear_indice_para_prompt,
+    extraer_archivos_relevantes,
     _hash_archivo,
     INDEX_FILENAME,
 )

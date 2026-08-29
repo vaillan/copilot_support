@@ -656,6 +656,23 @@ def obtener_resumen_archivo(
     return resumen
 
 
+def extraer_archivos_relevantes(texto: str, indice: Optional[Dict[str, Any]]) -> List[str]:
+    """Devuelve las rutas de indice['resumenes'] mencionadas en el texto (o [] si no hay coincidencias)."""
+    if not texto or not isinstance(indice, dict):
+        return []
+    resumenes = indice.get("resumenes")
+    if not isinstance(resumenes, dict) or not resumenes:
+        return []
+    texto = texto.replace("\\", "/")
+    resultado: List[str] = []
+    for rel in resumenes.keys():
+        # Bordes con lookbehind/lookahead: evita prefijos (src/...) y permite sufijos (:123, paréntesis)
+        patron = r"(?<![\w./\-])" + re.escape(rel) + r"(?![\w])"
+        if re.search(patron, texto):
+            resultado.append(rel)
+    return resultado
+
+
 def formatear_indice_para_prompt(
     indice: Dict[str, Any],
     max_archivos: int = 25,
