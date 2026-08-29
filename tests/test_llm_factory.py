@@ -22,7 +22,7 @@ class TestLLMFactory(unittest.TestCase):
             model_provider="google_genai",
             temperature=0.0,
             api_key="test_key",
-            max_retries=5,
+            max_retries=3,
             timeout=10000
         )
 
@@ -41,7 +41,7 @@ class TestLLMFactory(unittest.TestCase):
             model_provider="openai",
             temperature=0.5,
             api_key="openai_key",
-            max_retries=5,
+            max_retries=3,
             timeout=10000
         )
 
