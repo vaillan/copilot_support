@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, mock_open
-from app.utils.files import File, get_custom_file_tools
+from app.utils.files import File, get_custom_file_tools, _resolver_ruta
 
 def test_file_get_content_cache():
     """
@@ -275,3 +275,65 @@ def test_read_file_truncado_por_max_lines(tmp_path):
     res_sin_truncar = read_tool.invoke({"file_path": "largo.txt", "max_lines": 100})
     assert "linea_10" in res_sin_truncar
     assert "truncado" not in res_sin_truncar
+
+
+def test_confinamiento_ruta_relativa_normal(tmp_path):
+    """
+    Prueba que write_file con una ruta relativa dentro del directorio base
+    (con subdirectorios) escribe correctamente en disco.
+    """
+    tools = {t.name: t for t in get_custom_file_tools(str(tmp_path))}
+    res = tools["write_file"].invoke({"path": "sub/dir/archivo.txt", "content": "ok"})
+    assert "exitosamente" in res
+    assert (tmp_path / "sub" / "dir" / "archivo.txt").exists()
+    assert (tmp_path / "sub" / "dir" / "archivo.txt").read_text(encoding="utf-8") == "ok"
+
+
+def test_confinamiento_ruta_relativa_escape_bloqueada(tmp_path):
+    """
+    Prueba que una ruta relativa con '..' que escapa del directorio base es
+    rechazada por write_file y read_file sin lanzar excepción (protege el ToolNode).
+    """
+    tools = {t.name: t for t in get_custom_file_tools(str(tmp_path))}
+    res_write = tools["write_file"].invoke({"path": "../fuera.txt", "content": "x"})
+    assert "Error" in res_write
+    assert "escapa del directorio" in res_write
+    assert not (tmp_path.parent / "fuera.txt").exists()
+
+    res_read = tools["read_file"].invoke({"file_path": "../fuera.txt"})
+    assert "Error" in res_read
+    assert "escapa del directorio" in res_read
+
+
+def test_confinamiento_ruta_absoluta_dentro_ok(tmp_path):
+    """
+    Prueba que una ruta absoluta que resuelve dentro del directorio base es aceptada.
+    """
+    tools = {t.name: t for t in get_custom_file_tools(str(tmp_path))}
+    ruta_abs = str(tmp_path / "abs.txt")
+    res = tools["write_file"].invoke({"path": ruta_abs, "content": "ok"})
+    assert "exitosamente" in res
+    assert (tmp_path / "abs.txt").read_text(encoding="utf-8") == "ok"
+
+
+def test_confinamiento_ruta_absoluta_fuera_bloqueada(tmp_path):
+    """
+    Prueba que una ruta absoluta fuera del directorio base es rechazada
+    y no se crea ningún archivo en el directorio objetivo.
+    """
+    tools = {t.name: t for t in get_custom_file_tools(str(tmp_path))}
+    ruta_fuera = tmp_path.parent / "fuera_abs.txt"
+    res = tools["write_file"].invoke({"path": str(ruta_fuera), "content": "x"})
+    assert "Error" in res
+    assert "escapa del directorio" in res
+    assert not ruta_fuera.exists()
+
+
+def test_resolver_ruta_lanza_valueerror(tmp_path):
+    """
+    Prueba unitaria de _resolver_ruta: lanza ValueError al escapar del base
+    y resuelve correctamente una ruta absoluta interna.
+    """
+    with pytest.raises(ValueError, match="escapa del directorio"):
+        _resolver_ruta(str(tmp_path), "../fuera.txt")
+    assert _resolver_ruta(str(tmp_path), str(tmp_path / "a.txt")) == (tmp_path / "a.txt").resolve()

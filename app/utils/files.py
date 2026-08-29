@@ -31,12 +31,17 @@ class File:
 
 
 def _resolver_ruta(directorio_base: str, ruta_archivo: str) -> Path:
-    """Resuelve la ruta del archivo soportando rutas relativas y absolutas."""
+    """Resuelve la ruta contra el directorio base y rechaza rutas que escapen de él."""
     base = Path(directorio_base).resolve() if directorio_base else Path.cwd()
     target = Path(ruta_archivo)
-    if target.is_absolute():
-        return target
-    return (base / target).resolve()
+    ruta_resuelta = target.resolve() if target.is_absolute() else (base / target).resolve()
+    try:
+        ruta_resuelta.relative_to(base)
+    except ValueError:
+        raise ValueError(
+            f"Error: la ruta '{ruta_archivo}' escapa del directorio del proyecto ('{base}')."
+        )
+    return ruta_resuelta
 
 
 def get_custom_file_tools(directorio: str):
