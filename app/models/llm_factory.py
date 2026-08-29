@@ -47,7 +47,7 @@ def _create_llm(provider: str, model_name: str, api_key: str, temperature: float
                 "model_provider": mapped_provider,
                 "temperature": temperature,
                 "api_key": api_key,
-                "max_retries": 5,
+                "max_retries": 3,
                 "timeout": 10000
             }
             if rate_limiter:
