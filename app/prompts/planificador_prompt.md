@@ -116,6 +116,7 @@ Durante la exploración dispones de estas herramientas de lectura e investigaci�
   - Parámetros: `file_path` (obligatorio; ruta relativa).
 - `busqueda_web_duckduckgo`: Busca en internet documentación técnica actualizada, tutoriales o foros.
   - Parámetros: `query` (cadena de búsqueda). Último recurso del presupuesto: máximo 1 a 2 llamadas.
+  - **Disponibilidad condicional:** esta herramienta SOLO está vinculada si el sistema la activó (`ENABLE_WEB_SEARCH=true`). Si NO aparece en tu lista de herramientas disponibles, NO intentes invocarla: resuelve la incertidumbre técnica con la evidencia del repositorio o aplica convenciones estándar.
 - `entregar_plan_de_accion`: Entrega el plan técnico estructurado final y culmina la fase de diseño del agente.
   - Parámetros: `explicacion_arquitectura` (cadena) y `pasos` (lista). Ver el contrato completo en «CONTRATO DE SALIDA».
 
