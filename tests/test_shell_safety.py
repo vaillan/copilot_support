@@ -246,7 +246,7 @@ def test_comando_vacio():
 # ---------------------------------------------------------------------------
 def test_cwd_inexistente_no_ejecuta():
     """La tool terminal() debe rechazar la ejecución si el cwd no existe."""
-    from app.agents.agente_revisor import terminal
+    from app.utils.terminal_tool import terminal
     resultado = terminal.func("pytest", cwd="/ruta/que/no/existe_12345")
     assert "no existe" in resultado
 
@@ -273,7 +273,7 @@ def test_timeout_configurable_desde_env(monkeypatch):
 # ---------------------------------------------------------------------------
 # Integración de la tool terminal() con mocks
 # ---------------------------------------------------------------------------
-@patch("app.agents.agente_revisor.subprocess.run")
+@patch("app.utils.terminal_tool.subprocess.run")
 def test_terminal_ejecuta_comando_permitido(mock_run, tmp_path):
     mock_res = MagicMock()
     mock_res.returncode = 0
@@ -281,7 +281,7 @@ def test_terminal_ejecuta_comando_permitido(mock_run, tmp_path):
     mock_res.stderr = ""
     mock_run.return_value = mock_res
 
-    from app.agents.agente_revisor import terminal
+    from app.utils.terminal_tool import terminal
     resultado = terminal.func(["echo hola mundo"], cwd=str(tmp_path))
 
     assert "hola mundo" in resultado
@@ -291,9 +291,9 @@ def test_terminal_ejecuta_comando_permitido(mock_run, tmp_path):
     assert mock_run.call_args.kwargs["cwd"] == str(tmp_path)
 
 
-@patch("app.agents.agente_revisor.subprocess.run")
+@patch("app.utils.terminal_tool.subprocess.run")
 def test_terminal_bloquea_comando_peligroso(mock_run, tmp_path):
-    from app.agents.agente_revisor import terminal
+    from app.utils.terminal_tool import terminal
     resultado = terminal.func(["rm -rf /"], cwd=str(tmp_path))
 
     assert "Comando bloqueado" in resultado
@@ -301,10 +301,10 @@ def test_terminal_bloquea_comando_peligroso(mock_run, tmp_path):
     mock_run.assert_not_called()
 
 
-@patch("app.agents.agente_revisor.subprocess.run")
+@patch("app.utils.terminal_tool.subprocess.run")
 def test_terminal_timeout(mock_run, tmp_path):
     import subprocess as _subprocess
-    from app.agents.agente_revisor import terminal
+    from app.utils.terminal_tool import terminal
 
     # Simular TimeoutExpired en la llamada real (el primer intento)
     def _lanzar_timeout(*args, **kwargs):
@@ -318,16 +318,16 @@ def test_terminal_timeout(mock_run, tmp_path):
 
 def test_terminal_cwd_por_defecto_usando_directorio_variable(monkeypatch, tmp_path):
     """Si no se pasa cwd, la tool usa el directorio global del proyecto."""
-    import app.agents.agente_revisor as agente_revisor
-    agente_revisor._ACTUAL_DIRECTORIO_PROYECTO = str(tmp_path)
+    from app.utils.terminal_tool import configurar_directorio
+    configurar_directorio(str(tmp_path))
 
     mock_res = MagicMock()
     mock_res.returncode = 0
     mock_res.stdout = "ok"
     mock_res.stderr = ""
 
-    with patch("app.agents.agente_revisor.subprocess.run", return_value=mock_res) as mock_run:
-        from app.agents.agente_revisor import terminal
+    with patch("app.utils.terminal_tool.subprocess.run", return_value=mock_res) as mock_run:
+        from app.utils.terminal_tool import terminal
         resultado = terminal.func("ls", cwd=None)
 
     assert "ok" in resultado

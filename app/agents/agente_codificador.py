@@ -13,6 +13,8 @@ from app.models.llm_factory import get_coder_llm
 from app.utils.summarization import aplicar_resumen_middleware
 from app.utils.prompt_utils import escapar_llaves
 from app.utils.skills_loader import cargar_skills_para_prompt
+from app.settings.settings import Settings
+from app.utils.terminal_tool import configurar_directorio, terminal
 from functools import lru_cache
 from app.utils.args_utils import _get_args
 
@@ -69,13 +71,24 @@ def _get_tools(directorio: str):
     """
     Lista (con caché) las herramientas de manejo de archivos del directorio dado.
 
+    Incluye la tool `terminal` (compartida con el revisor) cuando
+    CODIFICADOR_TERMINAL_ENABLED está activo (default), para que el codificador
+    pueda ejecutar los tests (p. ej. pytest) y auto-validarlos ANTES de entregar
+    el código. Esto elimina la causa del bucle QA-rechaza → codificador por
+    tests sin validar.
+
     Args:
         directorio: Ruta del directorio del proyecto (str).
 
     Returns:
-        list: Herramientas de archivo configuradas para el directorio.
+        list: Herramientas de archivo configuradas para el directorio y,
+            opcionalmente, la tool de terminal.
     """
-    return get_custom_file_tools(directorio)
+    herramientas = list(get_custom_file_tools(directorio))
+    if Settings().CODIFICADOR_TERMINAL_ENABLED:
+        configurar_directorio(directorio)
+        herramientas.append(terminal)
+    return herramientas
 
 def agente_codificador(state: ProjectState) -> Command:
     """
@@ -195,7 +208,10 @@ def agente_codificador(state: ProjectState) -> Command:
                         "codigo_escrito": resumen,
                         "errores_terminal": "",
                         "messages": [respuesta] + tool_messages,
-                        "loop_counter": 0
+                        "loop_counter": 0,
+                        # El codificador terminó su trabajo: se limpia el motivo de
+                        # pausa para no contaminar la próxima pausa canónica.
+                        "pausa_motivo": None
                     },
                     goto="agente_revisor"
                 )

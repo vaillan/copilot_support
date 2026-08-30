@@ -139,10 +139,10 @@ def test_nodo_herramientas_revisor_incluye_terminal(mock_tool_node, mock_state):
     assert "finalizar_revision" not in nombres_herramientas
 
 
-@patch('app.agents.agente_revisor.subprocess.run')
+@patch('app.utils.terminal_tool.subprocess.run')
 def test_terminal_ejecuta_agnostico_shell(mock_run, tmp_path):
     """La tool terminal ejecuta con shell=True (shell por defecto del SO) y cwd."""
-    from app.agents.agente_revisor import terminal
+    from app.utils.terminal_tool import terminal
 
     mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
 
@@ -154,10 +154,10 @@ def test_terminal_ejecuta_agnostico_shell(mock_run, tmp_path):
     assert "ok" in resultado
 
 
-@patch('app.agents.agente_revisor.subprocess.run')
+@patch('app.utils.terminal_tool.subprocess.run')
 def test_terminal_bloquea_sin_ejecutar(mock_run, tmp_path):
     """Un comando destructivo se bloquea sin invocar subprocess.run."""
-    from app.agents.agente_revisor import terminal
+    from app.utils.terminal_tool import terminal
 
     resultado = terminal.func(['rm -rf /'], cwd=str(tmp_path))
 

@@ -113,6 +113,9 @@ Durante la implementación dispones de estas herramientas de archivos. Antes de 
   - Parámetros: `source_path` (o `source`) y `destination_path` (o `destination` o `dest`).
 - `move_file`: Mueve un archivo a otra ubicación.
   - Parámetros: `source_path` (o `source`) y `destination_path` (o `destination` o `dest`).
+- `terminal`: Ejecuta comandos en la terminal del proyecto (confinado al directorio del proyecto, con filtrado de comandos peligrosos y timeout por comando).
+  - Parámetros: `commands` (cadena o lista de cadenas, ej. `"pytest tests/test_x.py -q"` o `["python -m py_compile app/modulo.py"]`) y `cwd` (opcional).
+  - **Uso principal:** auto-validar tu trabajo (compilar, ejecutar tests, linters) ANTES de entregar con `CodigoCompletado`.
 
 ---
 
@@ -125,6 +128,7 @@ Durante la implementación dispones de estas herramientas de archivos. Antes de 
 5. **Prohibición de escritura en archivos sensibles:** NUNCA escribas en lockfiles, `.env`, `node_modules`, `.venv`, `dist`, `build`, `__pycache__` ni archivos de dependencias.
 6. **Pruebas:** si el paso indica `requiere_test: true`, además de escribir el código debes crear o actualizar las pruebas correspondientes en `tests/`.
 7. **Estrategia ante fallos de herramienta:** si `edit_file` devuelve un error (ej. `'No se encontró el texto a reemplazar'` o `'fuera de rango'`), NO lo ignores ni lo reintentes a ciegas: **relee el archivo** con `read_file` (o `read_file_summary`) para verificar el contenido real y ajusta `old_text`/`line_start`/`line_end` a la versión exacta presente en disco. Si el archivo no existe, créalo con `write_file`. Nunca asumas el contenido de un archivo sin haberlo leído.
+8. **Auto-validación con `terminal` (OBLIGATORIA antes de entregar):** si el plan tiene pasos con `requiere_test: true` (o corriges errores de QA), DEBES ejecutar los tests con la tool `terminal` (ej. `terminal(commands: "pytest tests/ -x -q")`) y confirmar que PASAN antes de invocar `CodigoCompletado`. NUNCA entregues tests que no hayas ejecutado: un test fallido provoca el rechazo del QA y un ciclo de re-trabajo. Si un test falla, corrige la causa raíz y vuelve a ejecutarlo.
 
 ---
 
@@ -156,6 +160,7 @@ Si tu prompt de sistema incluye la sección «ATENCIÓN: Tu código anterior fal
 2. Analiza la **causa raíz** (sintaxis, lógica, tipos, importaciones faltantes, excepciones no capturadas) antes de escribir la corrección.
 3. No hagas cambios superficiales; resuelve el problema de fondo asegurando que todas las dependencias y caminos de ejecución funcionen correctamente.
 4. Aplica el mismo bucle de trabajo por paso: contextualiza, corrige en disco, verifica y vuelve a entregar con `CodigoCompletado`.
+5. **Valida la corrección con `terminal`:** ejecuta los tests que fallaron (ej. `terminal(commands: "pytest tests/test_x.py -q")`) y confirma que pasan ANTES de volver a entregar. No repitas el mismo comando si ya lo ejecutaste con éxito; avanza a `CodigoCompletado`.
 
 ---
 
