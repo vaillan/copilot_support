@@ -4,8 +4,8 @@ Capa de validación de seguridad para la herramienta `terminal()` del agente rev
 Proporciona una lista negra de patrones regex que bloquean comandos destructivos
 o peligrosos en entornos compartidos y de producción, además de detección de
 intentos de escape del directorio del proyecto. La función principal es
-`validar_comando(cmd, cwd, idioma="es")`, que devuelve si el comando está permitido
-y el motivo de bloqueo en caso contrario.
+`validar_comando(cmd, cwd)`, que devuelve si el comando está permitido y el motivo
+de bloqueo en caso contrario.
 
 ADVERTENCIA: esta capa NO es un sandbox del sistema operativo. Es una mitigación
 por capas (patrones regex + confinamiento de directorio) que reduce el riesgo,
@@ -16,9 +16,7 @@ import os
 import re
 from typing import List, Tuple
 
-from app.utils.i18n import obtener_mensaje
-
-# Tipo de los patrones bloqueados: (regex compilada, clave i18n del motivo de bloqueo)
+# Tipo de los patrones bloqueados: (regex compilada, motivo de bloqueo en español)
 _PatronBloqueado = Tuple[re.Pattern, str]
 
 PATRONES_BLOQUEADOS: List[_PatronBloqueado] = [
@@ -30,11 +28,11 @@ PATRONES_BLOQUEADOS: List[_PatronBloqueado] = [
             r"\brm\s+(?:-[a-zA-Z]*[rR][a-zA-Z]*[fF][a-zA-Z]*|-[a-zA-Z]*[fF][a-zA-Z]*[rR][a-zA-Z]*)\s+"
             r"(?:/|/\*|\*|~|\.)", re.IGNORECASE
         ),
-        "shell.borrado_rm_rf",
+        "borrado destructivo con 'rm -rf' sobre rutas raíz o del sistema",
     ),
     (
         re.compile(r"\b(?:rd|rmdir)\s+[/-][sS]\s+[/-][qQ]\b"),
-        "shell.borrado_rd_s_q",
+        "borrado destructivo de árboles de directorios con rd/rmdir /s /q",
     ),
     # Permite espacios entre flags: "del /f /s /q", "del /f/s/q", "del /q /f /s"
     (
@@ -44,16 +42,16 @@ PATRONES_BLOQUEADOS: List[_PatronBloqueado] = [
             r"|[fF][sS][qQ])\b",
             re.IGNORECASE
         ),
-        "shell.borrado_del_f_s_q",
+        "borrado destructivo de archivos con del /f /s /q",
     ),
     (
         re.compile(r"\b(?:rm|unlink|del|erase)\s+[^;|&\n]*\s+[A-Za-z]:\\\\(?:$|\s|/)"),
-        "shell.borrado_rutas_windows",
+        "borrado destructivo de rutas Windows fuera del proyecto (unidad del sistema)",
     ),
     # PowerShell: Remove-Item -Recurse -Force (equivalente a rm -rf en Windows)
     (
         re.compile(r"\bRemove-Item\b[^;\n]*?-Recurse", re.IGNORECASE),
-        "shell.borrado_remove_item",
+        "borrado destructivo con Remove-Item -Recurse (PowerShell)",
     ),
     # ------------------------------------------------------------------
     # 2. Descarga y ejecución de código remoto (curl|wget -> sh/bash)
@@ -65,7 +63,7 @@ PATRONES_BLOQUEADOS: List[_PatronBloqueado] = [
             r"\b(?:curl|wget)\b[^|&;\n]*\|\s*(?:sudo\s+)?(?:(?:ba)?sh|zsh|fish|cmd|pwsh)\b",
             re.IGNORECASE
         ),
-        "shell.descarga_ejecucion_remota",
+        "descarga y ejecución de código remoto (curl/wget redirigido a shell)",
     ),
     # IEX/IWR: basta con detectar el comando seguido de contenido de descarga
     # remota; no se ancla a fin de línea ni se exige paréntesis de cierre.
@@ -74,26 +72,26 @@ PATRONES_BLOQUEADOS: List[_PatronBloqueado] = [
             r"\b(?:iex|iwr|invoke-expression|invoke-webrequest)\b[^;\n]*?(?:https?://|DownloadString|DownloadFile|Download)",
             re.IGNORECASE
         ),
-        "shell.descarga_powershell",
+        "descarga y ejecución en PowerShell (iex/iwr)",
     ),
     # ------------------------------------------------------------------
     # 3. Manipulación destructiva de git
     # ------------------------------------------------------------------
     (
         re.compile(r"\bgit\s+push\b[^;\n]*(?:--force|-f)\b"),
-        "shell.git_push_force",
+        "forzado de push remoto en git (--force)",
     ),
     (
         re.compile(r"\bgit\s+reset\s+--hard\b"),
-        "shell.git_reset_hard",
+        "reset destructivo del árbol de trabajo en git (--hard)",
     ),
     (
         re.compile(r"\bgit\s+clean\s+[^\n;]*(?:-f|x|d)+(?:\s|$)"),
-        "shell.git_clean_fdx",
+        "limpieza forzada de archivos no rastreados con git clean -fdx",
     ),
     (
         re.compile(r"\bgit\s+(?:checkout|restore)\s+--hard\b"),
-        "shell.git_checkout_hard",
+        "restauración destructiva forzada con git checkout/restore --hard",
     ),
     # ------------------------------------------------------------------
     # 4. Modificación de variables críticas del entorno
@@ -102,7 +100,7 @@ PATRONES_BLOQUEADOS: List[_PatronBloqueado] = [
         re.compile(
             r"\b(?:export|set|setx|unset|env)\s+(?:PATH|LD_PRELOAD|LD_LIBRARY_PATH|PYTHONPATH|SHELL|PWD|HOME)\b"
         ),
-        "shell.variables_criticas",
+        "modificación de variables críticas del entorno (PATH/LD_PRELOAD/PYTHONPATH...)",
     ),
     # ------------------------------------------------------------------
     # 5. Acceso a rutas sensibles o credenciales
@@ -111,46 +109,46 @@ PATRONES_BLOQUEADOS: List[_PatronBloqueado] = [
     # no existe límite de palabra. Ej.: "cat /etc/shadow" debe matchear.
     (
         re.compile(r"(?:/etc/shadow|/etc/gshadow|/etc/passwd|/etc/sudoers)\b"),
-        "shell.archivos_sensibles",
+        "acceso a archivos sensibles de sistema (/etc/shadow, /etc/passwd, ...)",
     ),
     (
         re.compile(r"(?:~|/home/[\w.\-]+)/\.ssh\b|\.ssh[/\\]?(?:id_rsa|id_dsa|config|authorized_keys)\b"),
-        "shell.credenciales_ssh",
+        "acceso a credenciales de SSH (~/.ssh)",
     ),
     (
         re.compile(r"(?:\.aws|\.azure|\.google)[/\\]|\.pem\b|\.key\b|id_rsa\b|passwd\s+\S+"),
-        "shell.credenciales_nube",
+        "acceso a credenciales de nube o claves privadas",
     ),
     (
         re.compile(r"\b(?:api[_-]?key|secret|credentials|credential|password)\b[^\n=]*=", re.IGNORECASE),
-        "shell.credenciales_api",
+        "lectura o modificación de credenciales (api_key, secret, password)",
     ),
     (
         re.compile(r"\b(?:cat|type|tail|head|more|less|grep)[^\n|&;]*\.env\b"),
-        "shell.lectura_env",
+        "lectura de archivos .env con credenciales",
     ),
     # ------------------------------------------------------------------
     # 6. Fork bombs (denegación de servicio)
     # ------------------------------------------------------------------
     (
         re.compile(r":\s*\(\s*\)\s*\{|:\s*\|\s*:|\bwhile\s*\(\s*1\s*\)\s*\{|b\(\s*\)\s*\{\s*b\|b"),
-        "shell.fork_bomb",
+        "bomba de procesos (fork bomb)",
     ),
     # ------------------------------------------------------------------
     # 7. Apagado / reinicio del sistema
     # ------------------------------------------------------------------
     (
         re.compile(r"\b(?:shutdown|reboot|poweroff|halt)\b"),
-        "shell.apagado_sistema",
+        "apagado, reinicio o suspensión del sistema",
     ),
     (
         re.compile(r"\binit\s+(?:0|6)\b|\btelinit\s+(?:0|6)\b"),
-        "shell.init_nivel",
+        "cambio de nivel de ejecución del sistema (init 0/6)",
     ),
 ]
 
 
-def _detectar_escape(cmd: str, cwd: str, idioma: str = "es") -> str:
+def _detectar_escape(cmd: str, cwd: str) -> str:
     """Detecta intentos de escapar del directorio del proyecto.
 
     Retorna un motivo de bloqueo si el comando intenta acceder a rutas absolutas
@@ -160,19 +158,18 @@ def _detectar_escape(cmd: str, cwd: str, idioma: str = "es") -> str:
     Args:
         cmd: Comando a analizar.
         cwd: Directorio de trabajo (debe existir y ser un directorio).
-        idioma: Idioma de los mensajes de retorno ("es" o "en").
 
     Returns:
-        Un motivo de bloqueo en el idioma solicitado, o "" si no se detectó escape.
+        Un motivo de bloqueo en español, o "" si no se detectó escape.
     """
     # Traversal excesivo: dos o más niveles de subida (o uso de retroceso en Windows)
     if re.search(r"(?:\.\.\s*/){2,}|\.\.\s*\\\\", cmd):
-        return obtener_mensaje("shell.escape_traversal", idioma)
+        return "Comando bloqueado: intento de escape del directorio del proyecto con '..' (traversal)."
 
     try:
         cwd_real = os.path.normcase(os.path.abspath(cwd))
     except Exception:
-        return obtener_mensaje("shell.cwd_invalido", idioma)
+        return "Comando bloqueado: el directorio de trabajo del proyecto no es válido."
 
     # Rutas absolutas o unidades Windows que apuntan fuera del proyecto
     for token in cmd.split():
@@ -195,11 +192,14 @@ def _detectar_escape(cmd: str, cwd: str, idioma: str = "es") -> str:
         except (OSError, ValueError):
             continue
         if ruta_abs != cwd_real and not ruta_abs.startswith(cwd_real + os.sep):
-            return obtener_mensaje("shell.ruta_fuera_proyecto", idioma, token=token)
+            return (
+                f"Comando bloqueado: la ruta absoluta '{token}' está fuera del "
+                "directorio del proyecto."
+            )
     return ""
 
 
-def validar_comando(cmd: str, cwd: str, idioma: str = "es") -> Tuple[bool, str]:
+def validar_comando(cmd: str, cwd: str) -> Tuple[bool, str]:
     """Valida si un comando puede ejecutarse de forma segura.
 
     Aplica la lista negra de patrones peligrosos y la detección de intentos de
@@ -209,20 +209,19 @@ def validar_comando(cmd: str, cwd: str, idioma: str = "es") -> Tuple[bool, str]:
     Args:
         cmd: Comando (o línea de shell) a validar.
         cwd: Directorio de trabajo del proyecto (debe existir).
-        idioma: Idioma de los mensajes de retorno ("es" o "en").
 
     Returns:
         (True, "") si el comando puede ejecutarse, o (False, motivo) si debe
-        bloquearse, con el motivo en el idioma solicitado.
+        bloquearse, con el motivo en español.
     """
     if not cmd or not cmd.strip():
-        return (False, obtener_mensaje("shell.comando_vacio", idioma))
+        return (False, "Comando vacío.")
 
-    for patron, clave in PATRONES_BLOQUEADOS:
+    for patron, motivo in PATRONES_BLOQUEADOS:
         if patron.search(cmd):
-            return (False, obtener_mensaje("shell.comando_bloqueado", idioma, motivo=obtener_mensaje(clave, idioma)))
+            return (False, f"Comando bloqueado: {motivo}.")
 
-    motivo_escape = _detectar_escape(cmd, cwd, idioma)
+    motivo_escape = _detectar_escape(cmd, cwd)
     if motivo_escape:
         return (False, motivo_escape)
 

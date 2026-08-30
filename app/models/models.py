@@ -19,4 +19,3 @@ class ProjectState(MessagesState):
     loop_counter: int
     project_index: Optional[Dict[str, Any]] = None
     analisis_final: Optional[str] = None
-    progreso_plan: Optional[Dict[str, Any]] = None

@@ -27,7 +27,6 @@ from fastmcp import FastMCP, Context
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from app.main import crear_grafo
-from app.utils.i18n import detectar_idioma, normalizar_idioma, obtener_mensaje
 from app.utils.project_index import construir_indice
 from app.utils.task_registry import task_registry
 from app.settings.settings import Settings
@@ -122,7 +121,7 @@ async def _safe_await(coro, timeout: float = 1.0):
         pass
 
 
-def obtener_git_diff(directorio: str, idioma: str = "es") -> str:
+def obtener_git_diff(directorio: str) -> str:
     """Intenta obtener el diff de git o los archivos modificados en el directorio especificado."""
     if not directorio or not os.path.exists(directorio):
         return ""
@@ -152,7 +151,7 @@ def obtener_git_diff(directorio: str, idioma: str = "es") -> str:
         )
         if res_stat.returncode == 0 and res_stat.stdout.strip():
             stdout_clean = res_stat.stdout.strip()
-            return obtener_mensaje("git.archivos_modificados", idioma, status=stdout_clean)
+            return f"Archivos modificados/creados (git status):\n{stdout_clean}"
     except Exception:
         pass
     return ""
@@ -197,8 +196,7 @@ def generar_markdown_pausa(
     explicacion: str,
     pasos: Optional[List[Dict[str, Any]]] = None,
     diff_git: str = "",
-    directorio_proyecto: str = "",
-    idioma: str = "es"
+    directorio_proyecto: str = ""
 ) -> str:
     """
     Genera un reporte estructurado en Markdown optimizado para Zoo Code, CLI y Cursor.
@@ -210,44 +208,51 @@ def generar_markdown_pausa(
     
     # 1. Título principal y Metadatos de la Tarea en la parte superior prominente
     lineas.append(f"### 📌 {titulo}")
-    lineas.append(obtener_mensaje("pausa.id_tarea", idioma, tarea_id=tarea_id))
+    lineas.append(f"- **ID Tarea:** `{tarea_id}`")
     if directorio_proyecto:
-        lineas.append(obtener_mensaje("pausa.directorio", idioma, directorio=directorio_proyecto))
-    lineas.append(obtener_mensaje("pausa.estado_pausado", idioma, tipo_pausa=tipo_pausa) + "\n")
+        lineas.append(f"- **Directorio:** `{directorio_proyecto}`")
+    lineas.append(f"- **Estado:** Pausado ({tipo_pausa}) - Requiere aprobación humana.\n")
     
     # 2. Explicación / Resumen
-    lineas.append(obtener_mensaje("pausa.explicacion_titulo", idioma))
+    lineas.append("#### 📄 Explicación / Resumen:")
     lineas.append(f"{explicacion}\n")
 
     # 3. Plan de Pasos Propuestos (Tabla Markdown)
     if pasos:
-        lineas.append(obtener_mensaje("pausa.plan_titulo", idioma))
-        lineas.append(obtener_mensaje("pausa.tabla_encabezado", idioma))
+        lineas.append("#### 📋 Plan de Pasos Propuestos:")
+        lineas.append("| # | Tarea | Archivo | Requiere Test |")
         lineas.append("|---|-------|---------|---------------|")
         for idx, p in enumerate(pasos, start=1):
             t = str(p.get("tarea", "")).replace("|", "\\|")
             a = str(p.get("archivo", "-")).replace("|", "\\|")
-            rt = obtener_mensaje("pausa.si", idioma) if p.get("requiere_test") else obtener_mensaje("pausa.no", idioma)
+            rt = "Si" if p.get("requiere_test") else "No"
             lineas.append(f"| {idx} | {t} | `{a}` | {rt} |")
         lineas.append("")
 
     # 4. Git Diff / Cambios en Disco (si existen)
     if diff_git:
-        lineas.append(obtener_mensaje("pausa.diff_titulo", idioma))
+        lineas.append("#### 🔍 Git Diff / Cambios en Disco:")
         lineas.append("```diff")
         lineas.append(diff_git)
         lineas.append("```\n")
 
     # 5. Bloque de advertencia para el asistente de IA (desplazado hacia la parte inferior)
     lineas.append("================================================================================")
-    lineas.append(obtener_mensaje("pausa.aviso_ia", idioma))
+    lineas.append("🛑 ATENCIÓN ASISTENTE DE IA (ZOO CODE / COPILOT / CURSOR):")
+    lineas.append("EL FLUJO ESTÁ PAUSADO ESPERANDO CONFIRMACIÓN DEL USUARIO HUMANO.")
+    lineas.append("**DETÉN LA EJECUCIÓN AUTOMÁTICA DE HERRAMIENTAS DE INMEDIATO.**")
+    lineas.append("NO ejecutes ninguna función ni herramienta por tu cuenta.")
+    lineas.append("Muestra todo el plan de acción y/o los cambios de código anteriores directamente al usuario humano en el chat y **ESPERA** pacientemente a que el usuario escriba su decisión explícita.")
     lineas.append("================================================================================\n")
 
     # 6. Instrucciones para el usuario humano (en la parte inferior)
     lineas.append("--------------------------------------------------------------------------------")
-    lineas.append(obtener_mensaje("pausa.instrucciones_titulo", idioma))
+    lineas.append("👉 **INSTRUCCIONES PARA EL USUARIO HUMANO:**")
     lineas.append("--------------------------------------------------------------------------------")
-    lineas.append(obtener_mensaje("pausa.instrucciones_cuerpo", idioma))
+    lineas.append("Por favor, revisa detalladamente el plan o los cambios de código anteriores.")
+    lineas.append("• **PARA APROBAR:** Escribe en el chat que apruebas la tarea (ej. 'Aprobar' o 'Acepto').")
+    lineas.append("• **PARA RECHAZAR O PEDIR CAMBIOS:** Escribe en el chat 'Rechazar' junto con tus observaciones o correcciones.")
+    lineas.append("El asistente de IA debe detenerse y esperar a que tú escribas tu respuesta.")
     lineas.append("================================================================================")
 
     return "\n".join(lineas)
@@ -256,15 +261,14 @@ def generar_markdown_pausa(
 async def visualizar_cambios(
     tarea_id: str = "",
     directorio_proyecto: str = "",
-    ctx: Optional[Context] = None,
-    idioma: str = "es"
+    ctx: Optional[Context] = None
 ) -> str:
     """
     Función auxiliar interna para consultar el estado actual de una tarea o los cambios en disco.
     Nota: Ya no está expuesta como herramienta MCP para los agentes LLM.
     """
     # Notificación fire-and-forget
-    asyncio.create_task(notificar_progreso(ctx, obtener_mensaje("flujo.consultando_cambios", idioma, tarea_id=tarea_id, directorio=directorio_proyecto), 10, 100))
+    asyncio.create_task(notificar_progreso(ctx, f"🔍 Consultando cambios para tarea '{tarea_id}' en '{directorio_proyecto}'...", 10, 100))
     
     partes = []
     
@@ -281,34 +285,34 @@ async def visualizar_cambios(
                 
             codigo_escrito = values.get("codigo_escrito")
             if codigo_escrito:
-                msg_resumen = obtener_mensaje("flujo.resumen_cambios", idioma, tarea_id=tarea_id, resumen=codigo_escrito)
+                msg_resumen = f"📋 RESUMEN DE CAMBIOS (Tarea '{tarea_id}'):\n{codigo_escrito}"
                 partes.append(msg_resumen)
             else:
-                msg_sin_resumen = obtener_mensaje("flujo.tarea_sin_resumen", idioma, tarea_id=tarea_id)
+                msg_sin_resumen = f"ℹ️ La tarea '{tarea_id}' aún no ha registrado un resumen de cambios."
                 partes.append(msg_sin_resumen)
                 
             if estado.next:
                 siguiente_nodo = estado.next[0]
-                msg_estado = obtener_mensaje("flujo.estado_pausado_nodo", idioma, nodo=siguiente_nodo)
+                msg_estado = f"📌 Estado actual del flujo: Pausado antes de '{siguiente_nodo}'"
                 partes.append(msg_estado)
             else:
-                partes.append(obtener_mensaje("flujo.estado_finalizado", idioma))
+                partes.append("📌 Estado actual del flujo: Finalizado")
         except Exception as e:
             err_msg = str(e)
-            msg_err = obtener_mensaje("flujo.error_estado", idioma, tarea_id=tarea_id, error=err_msg)
+            msg_err = f"⚠️ No se pudo obtener el estado de la tarea '{tarea_id}': {err_msg}"
             partes.append(msg_err)
 
     if dir_a_consultar:
-        diff_git = obtener_git_diff(dir_a_consultar, idioma)
+        diff_git = obtener_git_diff(dir_a_consultar)
         if diff_git:
-            msg_diff = obtener_mensaje("flujo.cambios_disco", idioma, directorio=dir_a_consultar, diff=diff_git)
+            msg_diff = f"🔍 CAMBIOS DETALLADOS EN DISCO (Git Diff / Status en '{dir_a_consultar}'):\n{diff_git}"
             partes.append(msg_diff)
             
     if not partes:
-        asyncio.create_task(notificar_progreso(ctx, obtener_mensaje("flujo.sin_cambios_params", idioma), 100, 100))
-        return obtener_mensaje("flujo.sin_parametros_validos", idioma)
+        asyncio.create_task(notificar_progreso(ctx, "⚠️ No se encontraron cambios para los parámetros proporcionados.", 100, 100))
+        return "No se proporcionó un 'tarea_id' válido ni un 'directorio_proyecto' con cambios detectables."
         
-    asyncio.create_task(notificar_progreso(ctx, obtener_mensaje("flujo.visualizacion_completada", idioma), 100, 100))
+    asyncio.create_task(notificar_progreso(ctx, "✅ Visualización de cambios completada.", 100, 100))
     return "\n\n".join(partes)
 
 
@@ -342,16 +346,10 @@ async def delegar_tarea_a_equipo_ia(
     env_auto_approve = env_val_clean in ("true", "1", "yes")
     effective_auto_approve = auto_approve or env_auto_approve
 
-    # Resolver idioma de la instrucción (fallback: instrucción registrada, luego "es").
-    texto_idioma: str = instruccion.strip() if isinstance(instruccion, str) else ""
-    if not texto_idioma and tarea_id:
-        texto_idioma = str((task_registry.get_task(tarea_id) or {}).get("instruccion", "") or "")
-    idioma: str = detectar_idioma(texto_idioma) if texto_idioma else "es"
-
     # Si es una tarea nueva, generamos un ID único. Si estamos resumiendo, usamos el que nos pasa el LLM.
     if not tarea_id:
         if approve:
-            return obtener_mensaje("flujo.aprobar_sin_id", idioma)
+            return "Error: No puedes aprobar una tarea sin proporcionar el 'tarea_id' de la sesión pausada."
         uuid_hex = uuid.uuid4().hex[:8]
         tarea_id = f"task_{uuid_hex}"
         
@@ -371,7 +369,7 @@ async def delegar_tarea_a_equipo_ia(
         pass
 
     # Notificación inicial
-    await notificar_progreso(ctx, obtener_mensaje("flujo.iniciando", idioma, tarea_id=tarea_id), 10, 100)
+    await notificar_progreso(ctx, f"🚀 Iniciando procesamiento para tarea '{tarea_id}'...", 10, 100)
     _log_stderr(f"[MCP] Iniciando tarea '{tarea_id}' con auto_approve={effective_auto_approve}")
 
     timeout_seconds = int(os.environ.get("MCP_TASK_TIMEOUT_SECONDS", "300"))
@@ -383,7 +381,7 @@ async def delegar_tarea_a_equipo_ia(
         if is_paused:
             siguiente_nodo = estado_actual.next[0]
             if approve or effective_auto_approve:
-                msg_reanudando = obtener_mensaje("flujo.reanudando", idioma, tarea_id=tarea_id, nodo=siguiente_nodo)
+                msg_reanudando = f"▶️ Reanudando tarea '{tarea_id}' (Aprobación confirmada para nodo '{siguiente_nodo}')..."
                 await notificar_progreso(ctx, msg_reanudando, 50, 100)
                 _log_stderr(f"[MCP] Reanudando tarea '{tarea_id}' en nodo '{siguiente_nodo}'")
                 # Reanudamos la ejecución
@@ -394,13 +392,13 @@ async def delegar_tarea_a_equipo_ia(
                 tool_loop_count = 0
                 while estado_post.next and estado_post.next[0] == siguiente_nodo and tool_loop_count < 20:
                     tool_step = tool_loop_count + 1
-                    msg_tool = obtener_mensaje("flujo.procesando_herramientas", idioma, nodo=siguiente_nodo, paso=tool_step)
+                    msg_tool = f"⚙️ Procesando herramientas en nodo '{siguiente_nodo}' ({tool_step})...."
                     await notificar_progreso(ctx, msg_tool, 60, 100)
                     resultado = await agentes_app.ainvoke(None, config) # type: ignore
                     estado_post = await agentes_app.aget_state(config) # type: ignore
                     tool_loop_count += 1
             else:
-                msg_feedback = obtener_mensaje("flujo.procesando_feedback", idioma, nodo=siguiente_nodo)
+                msg_feedback = f"↩️ Procesando rechazo/feedback del usuario para nodo '{siguiente_nodo}'..."
                 await notificar_progreso(ctx, msg_feedback, 30, 100)
                 # RECHAZO DEL USUARIO: Regresamos con feedback y REINICIAMOS CONTADORES
                 if siguiente_nodo == "agente_revisor":
@@ -422,18 +420,17 @@ async def delegar_tarea_a_equipo_ia(
                         resultado = await agentes_app.ainvoke(comando, config) # type: ignore
                     else:
                         # FEEDBACK CONSTRUCTIVO: Retornamos la pausa de revisión con instrucciones claras
-                        codigo_escrito = estado_actual.values.get("codigo_escrito", obtener_mensaje("flujo.sin_resumen", idioma))
-                        diff_git = obtener_git_diff(directorio_proyecto, idioma)
+                        codigo_escrito = estado_actual.values.get("codigo_escrito", "No se registró un resumen de cambios.")
+                        diff_git = obtener_git_diff(directorio_proyecto)
                         markdown_feedback_rev = generar_markdown_pausa(
                             tarea_id=tarea_id,
                             tipo_pausa="PAUSA_2",
-                            titulo=obtener_mensaje("flujo.titulo_feedback_codigo", idioma),
-                            explicacion=f"{codigo_escrito}\n\n---\n{obtener_mensaje('flujo.nota_feedback_codigo', idioma)}",
+                            titulo="Revisión de Código (Feedback del Usuario Recibido)",
+                            explicacion=f"{codigo_escrito}\n\n---\n⚠️ **Nota:** El usuario escribió feedback pero NO aprobó ni rechazó explícitamente.\nPor favor, revisa los cambios anteriores y escribe **'Aprobar'** para continuar o **'Rechazar'** junto con tus observaciones.",
                             diff_git=diff_git,
-                            directorio_proyecto=directorio_proyecto,
-                            idioma=idioma
+                            directorio_proyecto=directorio_proyecto
                         )
-                        await notificar_progreso(ctx, obtener_mensaje("flujo.feedback_pausa2_log", idioma), 65, 100)
+                        await notificar_progreso(ctx, "↩️ Feedback recibido. Re-pausando Pausa 2 con instrucciones claras para el usuario.", 65, 100)
                         _log_stderr(f"[MCP] PAUSA 2 (feedback re-pausa) - tarea '{tarea_id}'")
                         return markdown_feedback_rev
                     
@@ -455,7 +452,7 @@ async def delegar_tarea_a_equipo_ia(
                         # FEEDBACK CONSTRUCTIVO: Retornamos el plan de nuevo con instrucciones claras
                         plan = estado.values.get("plan_de_accion", {})
                         if isinstance(plan, dict):
-                            explicacion = plan.get("explicacion_arquitectura", obtener_mensaje("flujo.plan_default_feedback", idioma))
+                            explicacion = plan.get("explicacion_arquitectura", "Plan de acción propuesto.")
                             pasos_plan = plan.get("pasos", [])
                         else:
                             explicacion = str(plan)
@@ -464,20 +461,19 @@ async def delegar_tarea_a_equipo_ia(
                         markdown_feedback = generar_markdown_pausa(
                             tarea_id=tarea_id,
                             tipo_pausa="PAUSA_1",
-                            titulo=obtener_mensaje("flujo.titulo_feedback_plan", idioma),
-                            explicacion=f"{explicacion}\n\n---\n{obtener_mensaje('flujo.nota_feedback_plan', idioma)}",
+                            titulo="Plan de Acción (Feedback del Usuario Recibido)",
+                            explicacion=f"{explicacion}\n\n---\n⚠️ **Nota:** El usuario escribió feedback pero NO aprobó ni rechazó explícitamente.\nPor favor, revisa el plan anterior y escribe **'Aprobar'** para continuar o **'Rechazar'** junto con tus observaciones.",
                             pasos=pasos_plan,
-                            directorio_proyecto=directorio_proyecto,
-                            idioma=idioma
+                            directorio_proyecto=directorio_proyecto
                         )
-                        await notificar_progreso(ctx, obtener_mensaje("flujo.feedback_pausa1_log", idioma), 35, 100)
+                        await notificar_progreso(ctx, "↩️ Feedback recibido. Re-pausando con instrucciones claras para el usuario.", 35, 100)
                         _log_stderr(f"[MCP] PAUSA 1 (feedback re-pausa) - tarea '{tarea_id}'")
                         return markdown_feedback
                 else:
                     resultado = await agentes_app.ainvoke(None, config) # type: ignore
         else:
             instruccion_corta = instruccion[:50]
-            msg_planificador = obtener_mensaje("flujo.iniciando_planificador", idioma, instruccion=instruccion_corta)
+            msg_planificador = f"🏗️ Iniciando Agente Planificador (Arquitecto) para '{instruccion_corta}...'..."
             await notificar_progreso(ctx, msg_planificador, 20, 100)
             _log_stderr(f"[MCP] Nueva tarea '{tarea_id}': iniciando Planificador")
             # Construir el índice del proyecto para optimizar tokens (si está habilitado)
@@ -485,7 +481,7 @@ async def delegar_tarea_a_equipo_ia(
             try:
                 settings_mcp = Settings()
                 if getattr(settings_mcp, "PROJECT_INDEX_ENABLED", True):
-                    project_index = construir_indice(directorio_proyecto, idioma=idioma)
+                    project_index = construir_indice(directorio_proyecto)
             except Exception:
                 project_index = None
 
@@ -506,7 +502,7 @@ async def delegar_tarea_a_equipo_ia(
         max_auto_loops = 50
         while estado.next and effective_auto_approve and auto_loop_count < max_auto_loops:
             siguiente_nodo = estado.next[0]
-            msg_auto = obtener_mensaje("flujo.auto_aprobacion", idioma, nodo=siguiente_nodo, tarea_id=tarea_id)
+            msg_auto = f"⚡ Auto-aprobación activa: reanudando automáticamente en nodo '{siguiente_nodo}' (tarea '{tarea_id}')..."
             await notificar_progreso(ctx, msg_auto, 50, 100)
             _log_stderr(f"[MCP] Auto-aprobación: avanzando a '{siguiente_nodo}' (loop {auto_loop_count})")
             resultado = await agentes_app.ainvoke(None, config) # type: ignore
@@ -519,7 +515,7 @@ async def delegar_tarea_a_equipo_ia(
             if siguiente_nodo == "agente_codificador":
                 plan = estado.values.get("plan_de_accion", {})
                 if isinstance(plan, dict):
-                    explicacion = plan.get("explicacion_arquitectura", obtener_mensaje("flujo.plan_default", idioma))
+                    explicacion = plan.get("explicacion_arquitectura", "Plan de acción propuesto por el equipo de IA.")
                     pasos = plan.get("pasos", [])
                 else:
                     explicacion = str(plan)
@@ -528,13 +524,12 @@ async def delegar_tarea_a_equipo_ia(
                 markdown_pausa = generar_markdown_pausa(
                     tarea_id=tarea_id,
                     tipo_pausa="PAUSA_1",
-                    titulo=obtener_mensaje("flujo.titulo_pausa1", idioma),
+                    titulo="Formulario de Aprobación de Plan de Acción",
                     explicacion=explicacion,
                     pasos=pasos,
-                    directorio_proyecto=directorio_proyecto,
-                    idioma=idioma
+                    directorio_proyecto=directorio_proyecto
                 )
-                msg_pausa1 = obtener_mensaje("flujo.pausa1_msg", idioma, tarea_id=tarea_id, markdown=markdown_pausa)
+                msg_pausa1 = f"⏸️ PAUSA 1: Plan de acción listo. Esperando revisión del usuario (tarea '{tarea_id}').\n\n{markdown_pausa}"
                 await notificar_progreso(ctx, msg_pausa1, 40, 100)
                 _log_stderr(f"[MCP] PAUSA 1 - tarea '{tarea_id}' esperando aprobación de plan")
                 try:
@@ -544,18 +539,17 @@ async def delegar_tarea_a_equipo_ia(
                 return markdown_pausa
                 
             elif siguiente_nodo == "agente_revisor":
-                codigo_escrito = estado.values.get("codigo_escrito", obtener_mensaje("flujo.sin_resumen", idioma))
-                diff_git = obtener_git_diff(directorio_proyecto, idioma)
+                codigo_escrito = estado.values.get("codigo_escrito", "No se registró un resumen de cambios.")
+                diff_git = obtener_git_diff(directorio_proyecto)
                 markdown_pausa = generar_markdown_pausa(
                     tarea_id=tarea_id,
                     tipo_pausa="PAUSA_2",
-                    titulo=obtener_mensaje("flujo.titulo_pausa2", idioma),
+                    titulo="Revisión de Código Desarrollado (Pausa 2)",
                     explicacion=codigo_escrito,
                     diff_git=diff_git,
-                    directorio_proyecto=directorio_proyecto,
-                    idioma=idioma
+                    directorio_proyecto=directorio_proyecto
                 )
-                msg_cambios = obtener_mensaje("flujo.pausa2_msg", idioma, tarea_id=tarea_id, markdown=markdown_pausa)
+                msg_cambios = f"⏸️ PAUSA 2: Código escrito. Esperando aprobación antes de pruebas QA (tarea '{tarea_id}').\n\n{markdown_pausa}"
                 await notificar_progreso(ctx, msg_cambios, 70, 100)
                 _log_stderr(f"[MCP] PAUSA 2 - tarea '{tarea_id}' esperando aprobación de código")
                 try:
@@ -566,16 +560,16 @@ async def delegar_tarea_a_equipo_ia(
 
         # Si no hay 'next', el grafo llegó a END
         values = estado.values if hasattr(estado, "values") else {}
-        codigo_escrito = values.get("codigo_escrito") or (resultado.get("codigo_escrito") if isinstance(resultado, dict) else obtener_mensaje("flujo.sin_codigo", idioma))
-        errores_qa = values.get("errores_terminal") or (resultado.get("errores_terminal") if isinstance(resultado, dict) else obtener_mensaje("flujo.sin_errores", idioma))
+        codigo_escrito = values.get("codigo_escrito") or (resultado.get("codigo_escrito") if isinstance(resultado, dict) else "No se reportó código.")
+        errores_qa = values.get("errores_terminal") or (resultado.get("errores_terminal") if isinstance(resultado, dict) else "Sin errores.")
         
-        diff_git = obtener_git_diff(directorio_proyecto, idioma)
-        msg_fin = obtener_mensaje("flujo.completada", idioma, tarea_id=tarea_id)
+        diff_git = obtener_git_diff(directorio_proyecto)
+        msg_fin = f"✅ Tarea '{tarea_id}' completada exitosamente."
         if diff_git:
-            diff_msg = obtener_mensaje("flujo.cambios_finales", idioma, diff=diff_git)
+            diff_msg = f"\n\n🔍 Cambios en disco finales:\n{diff_git}"
             msg_fin += diff_msg
         else:
-            msg_fin += obtener_mensaje("flujo.advertencia_sin_cambios", idioma)
+            msg_fin += "\n\n⚠️ ADVERTENCIA: No se detectaron cambios ni modificaciones en los archivos del disco (git diff / status está vacío)."
         await notificar_progreso(ctx, msg_fin, 100, 100)
         _log_stderr(f"[MCP] Tarea '{tarea_id}' COMPLETADA")
         try:
@@ -589,27 +583,32 @@ async def delegar_tarea_a_equipo_ia(
         analisis_final = values.get("analisis_final") or (resultado.get("analisis_final") if isinstance(resultado, dict) else None)
 
         if analisis_final:
-            reporte_final = obtener_mensaje("flujo.analisis_completado", idioma, tarea_id=tarea_id, analisis=analisis_final)
+            reporte_final = f"✅ Análisis completado por el equipo LangGraph.\nID de Tarea: {tarea_id}\n\n📋 REPORTE DE ANÁLISIS:\n{analisis_final}"
         else:
-            reporte_final = obtener_mensaje("flujo.reporte_final", idioma, tarea_id=tarea_id, resumen=codigo_escrito, errores=errores_qa)
+            reporte_final = (
+                f"✅ Tarea completada exitosamente por el equipo LangGraph.\n"
+                f"ID de Tarea: {tarea_id}\n"
+                f"Resumen de cambios: {codigo_escrito}\n"
+                f"Estado final de los tests (QA): {errores_qa}"
+            )
             if not diff_git:
-                reporte_final += obtener_mensaje("flujo.advertencia_diff_vacio", idioma, directorio=directorio_proyecto)
+                reporte_final += f"\n\n⚠️ ADVERTENCIA: La tarea finalizó pero git diff no muestra modificaciones en '{directorio_proyecto}'. Comprueba si el Agente Codificador omitió la escritura de archivos."
         return reporte_final
 
     try:
         return await asyncio.wait_for(_ejecutar_logica(), timeout=timeout_seconds)
     except asyncio.TimeoutError:
-        msg_timeout = obtener_mensaje("flujo.timeout", idioma, tarea_id=tarea_id, segundos=timeout_seconds)
+        msg_timeout = f"🚨 Timeout: La tarea '{tarea_id}' excedió el límite máximo de ejecución ({timeout_seconds}s)."
         await notificar_progreso(ctx, msg_timeout, 100, 100)
         _log_stderr(f"[MCP] TIMEOUT tarea '{tarea_id}'")
         try:
             task_registry.update_status(tarea_id, "timeout", detalle=msg_timeout)
         except Exception:
             pass
-        return f"{msg_timeout}{obtener_mensaje('flujo.timeout_consejo', idioma, tarea_id=tarea_id)}"
+        return f"{msg_timeout} Por favor, reintenta dividiendo la instrucción en pasos más específicos o verifica el estado de la tarea con tarea_id='{tarea_id}'."
     except BaseException as e:
         err_msg = str(e)
-        msg_err = obtener_mensaje("flujo.error_interno", idioma, tarea_id=tarea_id, error=err_msg)
+        msg_err = f"🚨 El equipo de agentes falló con un error interno en tarea '{tarea_id}': {err_msg}"
         _log_stderr(f"[MCP] ERROR tarea '{tarea_id}': {err_msg}")
         await notificar_progreso(ctx, msg_err, 100, 100)
         try:
@@ -623,7 +622,6 @@ async def delegar_tarea_a_equipo_ia(
 async def consultar_estado_tarea(
     tarea_id: str,
     directorio_proyecto: str = "",
-    idioma: str = "",
     ctx: Optional[Context] = None
 ) -> str:
     """
@@ -636,17 +634,10 @@ async def consultar_estado_tarea(
     Args:
         tarea_id: Identificador de la tarea a consultar.
         directorio_proyecto: Ruta del proyecto (opcional, se infiere del grafo si se omite).
-        idioma: Idioma de la respuesta ("es" o "en"); vacío resuelve por la instrucción registrada.
         ctx: Contexto MCP para notificaciones de progreso.
     """
     try:
-        if idioma:
-            idioma_resuelto: str = normalizar_idioma(idioma)
-        else:
-            instruccion_registrada = str((task_registry.get_task(tarea_id) or {}).get("instruccion", "") or "")
-            idioma_resuelto = detectar_idioma(instruccion_registrada) if instruccion_registrada else "en"
-
-        await notificar_progreso(ctx, obtener_mensaje("estado.consultando", idioma_resuelto, tarea_id=tarea_id), 10, 100)
+        await notificar_progreso(ctx, f"🔍 Consultando estado de la tarea '{tarea_id}'...", 10, 100)
 
         partes = []
 
@@ -654,33 +645,32 @@ async def consultar_estado_tarea(
         tarea = task_registry.get_task(tarea_id)
         if tarea is not None:
             estado_registrado = tarea.get("estado", "desconocido")
-            partes.append(obtener_mensaje("estado.registrado_titulo", idioma_resuelto, tarea_id=tarea_id))
-            partes.append(obtener_mensaje("estado.campo_estado", idioma_resuelto, estado=estado_registrado))
-            partes.append(obtener_mensaje("estado.campo_directorio", idioma_resuelto, directorio=tarea.get('directorio_proyecto', '')))
-            partes.append(obtener_mensaje("estado.campo_actualizacion", idioma_resuelto, timestamp=tarea.get('timestamp_actualizacion', '')))
+            partes.append(f"### 📌 Estado registrado de la tarea '{tarea_id}'")
+            partes.append(f"- **Estado:** `{estado_registrado}`")
+            partes.append(f"- **Directorio:** `{tarea.get('directorio_proyecto', '')}`")
+            partes.append(f"- **Última actualización:** `{tarea.get('timestamp_actualizacion', '')}`")
             if tarea.get("detalle"):
-                partes.append(obtener_mensaje("estado.campo_detalle", idioma_resuelto, detalle=tarea.get('detalle')))
+                partes.append(f"- **Detalle:** {tarea.get('detalle')}")
             partes.append("")
         else:
-            partes.append(obtener_mensaje("estado.no_registrada", idioma_resuelto, tarea_id=tarea_id))
+            partes.append(f"ℹ️ La tarea '{tarea_id}' no está registrada en el TaskRegistry (puede que aún no se haya iniciado o que haya sido eliminada).")
 
         # 2. Estado del grafo y cambios en disco (reutiliza visualizar_cambios)
         try:
-            estado_grafo = await visualizar_cambios(tarea_id=tarea_id, directorio_proyecto=directorio_proyecto, ctx=ctx, idioma=idioma_resuelto)
+            estado_grafo = await visualizar_cambios(tarea_id=tarea_id, directorio_proyecto=directorio_proyecto, ctx=ctx)
             partes.append(estado_grafo)
         except Exception as e:
-            partes.append(obtener_mensaje("estado.error_grafo", idioma_resuelto, error=e))
+            partes.append(f"⚠️ No se pudo obtener el estado del grafo: {e}")
 
-        await notificar_progreso(ctx, obtener_mensaje("estado.consulta_completada", idioma_resuelto), 100, 100)
+        await notificar_progreso(ctx, "✅ Consulta de estado completada.", 100, 100)
         return "\n\n".join(partes)
     except Exception as e:
-        return obtener_mensaje("estado.error_consulta", idioma_resuelto, tarea_id=tarea_id, error=e)
+        return f"⚠️ Error al consultar el estado de la tarea '{tarea_id}': {e}"
 
 
 @mcp.tool()
 async def listar_tareas(
     estado: str = "",
-    idioma: str = "",
     ctx: Optional[Context] = None
 ) -> str:
     """
@@ -688,23 +678,20 @@ async def listar_tareas(
 
     Args:
         estado: Filtro opcional por estado (running, paused_planning, paused_code, completed, cancelled, timeout, error).
-        idioma: Idioma de la respuesta ("es" o "en"); vacío resuelve "en".
         ctx: Contexto MCP para notificaciones de progreso.
     """
     try:
-        idioma = normalizar_idioma(idioma)
-        await notificar_progreso(ctx, obtener_mensaje("listar.listando", idioma), 10, 100)
+        await notificar_progreso(ctx, "📋 Listando tareas registradas...", 10, 100)
 
         tareas = task_registry.list_tasks(estado=estado)
 
         if not tareas:
-            filtro = obtener_mensaje("listar.filtro_estado", idioma, estado=estado) if estado else ""
-            msg = obtener_mensaje("listar.vacio", idioma, filtro=filtro)
+            msg = "ℹ️ No hay tareas registradas" + (f" con estado '{estado}'" if estado else "") + "."
             await notificar_progreso(ctx, msg, 100, 100)
             return msg
 
-        lineas = [obtener_mensaje("listar.titulo", idioma)]
-        lineas.append(obtener_mensaje("listar.encabezado_tabla", idioma))
+        lineas = ["### 📋 Tareas Registradas"]
+        lineas.append("| tarea_id | estado | directorio_proyecto | última actualización |")
         lineas.append("|---|---|---|---|")
         for t in tareas:
             tid = str(t.get("tarea_id", "")).replace("|", "\\|")
@@ -714,16 +701,15 @@ async def listar_tareas(
             lineas.append(f"| `{tid}` | `{est}` | `{dirp}` | `{ts}` |")
         lineas.append("")
 
-        await notificar_progreso(ctx, obtener_mensaje("listar.encontradas", idioma, cantidad=len(tareas)), 100, 100)
+        await notificar_progreso(ctx, f"✅ Se encontraron {len(tareas)} tareas.", 100, 100)
         return "\n".join(lineas)
     except Exception as e:
-        return obtener_mensaje("listar.error", idioma, error=e)
+        return f"⚠️ Error al listar las tareas: {e}"
 
 
 @mcp.tool()
 async def cancelar_tarea(
     tarea_id: str,
-    idioma: str = "",
     ctx: Optional[Context] = None
 ) -> str:
     """
@@ -734,42 +720,35 @@ async def cancelar_tarea(
 
     Args:
         tarea_id: Identificador de la tarea a cancelar.
-        idioma: Idioma de la respuesta ("es" o "en"); vacío resuelve por la instrucción registrada.
         ctx: Contexto MCP para notificaciones de progreso.
     """
     try:
-        if idioma:
-            idioma_resuelto: str = normalizar_idioma(idioma)
-        else:
-            instruccion_registrada = str((task_registry.get_task(tarea_id) or {}).get("instruccion", "") or "")
-            idioma_resuelto = detectar_idioma(instruccion_registrada) if instruccion_registrada else "en"
-
-        await notificar_progreso(ctx, obtener_mensaje("cancelar.intentando", idioma_resuelto, tarea_id=tarea_id), 10, 100)
+        await notificar_progreso(ctx, f"🛑 Intentando cancelar la tarea '{tarea_id}'...", 10, 100)
 
         tarea = task_registry.get_task(tarea_id)
         if tarea is None:
-            msg = obtener_mensaje("cancelar.no_encontrada", idioma_resuelto, tarea_id=tarea_id)
+            msg = f"⚠️ No se encontró la tarea '{tarea_id}' en el registro. No se puede cancelar."
             await notificar_progreso(ctx, msg, 100, 100)
             return msg
 
         # Marcar como cancelada en el registro
-        task_registry.update_status(tarea_id, "cancelled", detalle=obtener_mensaje("cancelar.detalle", idioma_resuelto))
+        task_registry.update_status(tarea_id, "cancelled", detalle="Cancelada por el usuario")
 
         # Intentar cancelar la asyncio.Task activa si existe
         task_activa = tareas_activas.get(tarea_id)
         if task_activa is not None and not task_activa.done():
             try:
                 task_activa.cancel()
-                msg = obtener_mensaje("cancelar.interrumpida", idioma_resuelto, tarea_id=tarea_id)
+                msg = f"✅ Tarea '{tarea_id}' marcada como cancelada y su ejecución en curso fue interrumpida."
             except Exception:
-                msg = obtener_mensaje("cancelar.cancelada_sin_interrumpir", idioma_resuelto, tarea_id=tarea_id)
+                msg = f"✅ Tarea '{tarea_id}' marcada como cancelada (no se pudo interrumpir la ejecución en curso)."
         else:
-            msg = obtener_mensaje("cancelar.cancelada", idioma_resuelto, tarea_id=tarea_id)
+            msg = f"✅ Tarea '{tarea_id}' marcada como cancelada en el registro."
 
         await notificar_progreso(ctx, msg, 100, 100)
         return msg
     except Exception as e:
-        return obtener_mensaje("cancelar.error", idioma_resuelto, tarea_id=tarea_id, error=e)
+        return f"⚠️ Error al cancelar la tarea '{tarea_id}': {e}"
 
 
 if __name__ == "__main__":
