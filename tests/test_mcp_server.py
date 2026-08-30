@@ -124,7 +124,7 @@ def test_delegar_tarea_aprobacion_y_completado(mock_ainvoke, mock_aget_state):
         ctx=mock_ctx
     ))
 
-    assert "✅ Tarea completada exitosamente" in resultado
+    assert "Task completed successfully" in resultado
     assert "Se implementaron las funciones requeridas." in resultado
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
@@ -366,6 +366,57 @@ def test_generar_markdown_pausa_con_diff():
     assert pos_diff < pos_ia
 
 
+def test_generar_markdown_pausa_idioma_en() -> None:
+    salida = generar_markdown_pausa(
+        tarea_id="task_test",
+        tipo_pausa="PAUSA_1",
+        titulo="Action Plan Approval Form",
+        explicacion="test plan",
+        pasos=[{"tarea": "Step 1", "archivo": "a.py", "requiere_test": True}],
+        diff_git="",
+        directorio_proyecto="",
+        idioma="en",
+    )
+    assert "APPROVE" in salida
+    assert "REJECT" in salida
+    assert "APROBAR" not in salida
+    assert "RECHAZAR" not in salida
+
+
+def test_generar_markdown_pausa_idioma_por_defecto_es() -> None:
+    salida = generar_markdown_pausa(
+        tarea_id="task_test",
+        tipo_pausa="PAUSA_1",
+        titulo="Action Plan Approval Form",
+        explicacion="test plan",
+        pasos=[{"tarea": "Step 1", "archivo": "a.py", "requiere_test": True}],
+        diff_git="",
+        directorio_proyecto="",
+    )
+    assert "APROBAR" in salida
+    assert "RECHAZAR" in salida
+    assert "Tarea" in salida
+    assert "Archivo" in salida
+    assert "Requiere Test" in salida
+
+
+def test_generar_markdown_pausa_idioma_en_tabla() -> None:
+    salida = generar_markdown_pausa(
+        tarea_id="task_test",
+        tipo_pausa="PAUSA_1",
+        titulo="Action Plan Approval Form",
+        explicacion="test plan",
+        pasos=[{"tarea": "Step 1", "archivo": "a.py", "requiere_test": True}],
+        diff_git="",
+        directorio_proyecto="",
+        idioma="en",
+    )
+    assert "Task" in salida
+    assert "File" in salida
+    assert "Requires Test" in salida
+    assert "Yes" in salida
+
+
 # =============================================================================
 # Pruebas para las nuevas herramientas de gestión de tareas
 # =============================================================================
@@ -393,9 +444,9 @@ def test_consultar_estado_tarea_con_tarea_registrada(mock_aget_state):
         ctx=mock_ctx,
     ))
 
-    assert "Estado registrado de la tarea 'task_consulta'" in resultado
+    assert "Registered status of task 'task_consulta'" in resultado
     assert "paused_planning" in resultado
-    assert "Pausado antes de 'agente_codificador'" in resultado
+    assert "Paused before 'agente_codificador'" in resultado
     task_registry.clear()
 
 
@@ -411,7 +462,7 @@ def test_consultar_estado_tarea_tarea_inexistente(mock_visualizar):
         ctx=mock_ctx,
     ))
 
-    assert "no está registrada en el TaskRegistry" in resultado
+    assert "is not registered in the TaskRegistry" in resultado
     task_registry.clear()
 
 
@@ -422,7 +473,7 @@ def test_listar_tareas_sin_tareas():
     mock_ctx = AsyncMock()
     resultado = asyncio.run(listar_tareas(ctx=mock_ctx))
 
-    assert "No hay tareas registradas" in resultado
+    assert "There are no registered tasks" in resultado
     task_registry.clear()
 
 
@@ -435,7 +486,7 @@ def test_listar_tareas_con_tareas():
     mock_ctx = AsyncMock()
     resultado = asyncio.run(listar_tareas(ctx=mock_ctx))
 
-    assert "### 📋 Tareas Registradas" in resultado
+    assert "### 📋 Registered Tasks" in resultado
     assert "task_1" in resultado
     assert "task_2" in resultado
     task_registry.clear()
@@ -463,7 +514,7 @@ def test_cancelar_tarea_marca_cancelled():
     mock_ctx = AsyncMock()
     resultado = asyncio.run(cancelar_tarea(tarea_id="task_cancel", ctx=mock_ctx))
 
-    assert "marcada como cancelada" in resultado
+    assert "marked as cancelled" in resultado
     tarea = task_registry.get_task("task_cancel")
     assert tarea["estado"] == "cancelled"
     task_registry.clear()
@@ -476,7 +527,7 @@ def test_cancelar_tarea_inexistente_devuelve_error():
     mock_ctx = AsyncMock()
     resultado = asyncio.run(cancelar_tarea(tarea_id="task_no_existe", ctx=mock_ctx))
 
-    assert "No se encontró la tarea" in resultado
+    assert "was not found in the registry" in resultado
     task_registry.clear()
 
 
@@ -550,3 +601,4 @@ def test_herramientas_registradas():
         "listar_tareas",
         "cancelar_tarea",
     }.issubset(nombres)
+

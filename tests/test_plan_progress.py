@@ -193,3 +193,36 @@ def test_construir_plan_pruebas_con_pasos_mezclados() -> None:
 
     assert "PASO_DICT" in salida
     assert "paso suelto" not in salida
+
+
+def test_construir_ledger_idioma_en() -> None:
+    ledger = construir_ledger({"pasos_completados": [1, 2], "paso_actual": 3, "total_pasos": 5}, idioma="en")
+
+    assert ledger == "Completed steps: 1, 2 · Current step: 3 of 5 · Pending: 4, 5"
+    assert "Completed steps" in ledger
+    assert "Pasos completos" not in ledger
+
+
+def test_construir_ledger_default_es() -> None:
+    ledger = construir_ledger({"pasos_completados": [1], "paso_actual": 2, "total_pasos": 3})
+
+    assert ledger == "Pasos completos: 1 · Paso actual: 2 de 3 · Pendientes: 3"
+
+
+def test_construir_ledger_en_todos_completos() -> None:
+    ledger = construir_ledger({"pasos_completados": [1, 2, 3], "paso_actual": 4, "total_pasos": 3}, idioma="en")
+
+    assert "none" in ledger
+    assert "All steps completed" in ledger
+
+
+def test_construir_contexto_compacto_idioma_en() -> None:
+    texto = construir_contexto_compacto(
+        PLAN_MARKDOWN,
+        {"pasos_completados": [1], "paso_actual": 2, "total_pasos": 3},
+        idioma="en",
+    )
+
+    assert texto is not None
+    assert "Current step: 2 of 3" in texto
+    assert "Paso actual" not in texto
