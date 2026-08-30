@@ -108,12 +108,12 @@ Durante la exploración dispones de estas herramientas de lectura e investigaci�
 - `list_directory`: Explorar la estructura de carpetas y archivos del directorio raíz.
   - Parámetros: `dir_path` (opcional; si se omite, se usa el directorio raíz del proyecto).
 - `read_file`: Leer el contenido completo de un archivo concreto (configuración o código); limita su uso a archivos críticos.
-  - Parámetros: `file_path` (obligatorio; ruta relativa) y `max_lines` (opcional; por defecto 200).
+  - Parámetros: `file_path` (o alias `path`; obligatorio; ruta relativa) y `max_lines` (opcional; por defecto 200).
 - `get_project_index`: Devuelve el índice actual del proyecto: estructura y resúmenes de archivos (control de tokens).
   - Parámetros: ninguno.
   - **Regla condicional:** úsala SOLO si el prompt no incluye la sección de índice inyectada por el sistema.
 - `read_file_summary`: Lee SOLO el resumen de un archivo (firmas, imports, docstrings) sin leer su contenido completo. Preferida antes que `read_file` para contextualizar.
-  - Parámetros: `file_path` (obligatorio; ruta relativa).
+  - Parámetros: `file_path` (o alias `path`; obligatorio; ruta relativa).
 - `busqueda_web_duckduckgo`: Busca en internet documentación técnica actualizada, tutoriales o foros.
   - Parámetros: `query` (cadena de búsqueda). Último recurso del presupuesto: máximo 1 a 2 llamadas.
 - `entregar_plan_de_accion`: Entrega el plan técnico estructurado final y culmina la fase de diseño del agente.

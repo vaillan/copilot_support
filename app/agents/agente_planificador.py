@@ -61,6 +61,9 @@ class PlanDeAccionInput(BaseModel):
     explicacion_arquitectura: str = Field(description="Breve explicación del enfoque técnico")
     pasos: List[Paso]
 
+class BusquedaWebInput(BaseModel):
+    query: str = Field(description="Cadena de búsqueda en internet")
+
 @tool(args_schema=PlanDeAccionInput)
 def entregar_plan_de_accion(explicacion_arquitectura: str, pasos: List[Paso]) -> str:
     """
@@ -102,6 +105,7 @@ def _get_tools(directorio: str):
     tool_busqueda = Tool(
         name="busqueda_web_duckduckgo",
         description="Busca en internet documentación técnica actualizada, tutoriales o foros.",
+        args_schema=BusquedaWebInput,
         func=searx.run
     )
     herramientas = herramientas_lectura + [tool_busqueda]
