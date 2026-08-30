@@ -200,17 +200,17 @@ El primer argumento de `entregar_plan_de_accion` debe ser una cadena de texto co
 
 ## 📄 EJEMPLO DE INVOCACIÓN CORRECTA (FEW-SHOT)
 
-Requerimiento ficticio: *«Añadir una función que valide emails en un script CLI existente»*.
+Requerimiento ficticio: *«Añadir una función que valide emails en un módulo existente del proyecto objetivo»*.
 
-Una llamada correcta de `entregar_plan_de_accion` con 3 pasos sería la siguiente. **Nota crítica:** en este archivo, TODAS las llaves literales del JSON (que en texto plano serían `{{` y `}}`) están escritas COMO `{{` y `}}` para no romper el template de `ChatPromptTemplate`; esto es requerido por el sistema.
+Una llamada correcta de `entregar_plan_de_accion` con 3 pasos sería la siguiente. **Nota crítica:** en este archivo, TODAS las llaves literales del JSON (que en texto plano serían `{{` y `}}`) están escritas COMO `{{` y `}}` para no romper el template de `ChatPromptTemplate`; esto es requerido por el sistema. **El ejemplo es ilustrativo:** el lenguaje, la ruta y la convención reales se detectan del proyecto objetivo; las rutas `core/validators`, `tests/test_validators` y `cli` se muestran con `<ext>` porque la extensión depende del lenguaje detectado.
 
 ```text
 entregar_plan_de_accion(
-  explicacion_arquitectura: "La solución añade validación de correo electrónico al CLI existente (Python + Typer) mediante una función reutilizable que valida con regex y retorna booleano. Decisión: función en archivo nuevo `core/validators.py`, invocable desde el comando existente. Riesgo bajo: no altera la interfaz del comando actual.",
+  explicacion_arquitectura: "La solución añade validación de correo electrónico a un módulo existente del proyecto objetivo mediante una función reutilizable que valida con regex y retorna booleano. Decisión: función en archivo nuevo `core/validators.<ext>`, invocable desde el módulo existente. Riesgo bajo: no altera la interfaz del módulo actual.",
   pasos: [
-    {{archivo: "core/validators.py", tarea: "**Paso 1: Validador de correo**\n**Responsabilidad única:** crear la función pública `validar_email(correo: str) -> bool` en `core/validators.py`.\n**Dependencias previas:** Ninguna.\n**Descripción técnica:** función que devuelve True/False; usar regex compatible con Unicode; manejar entradas vacías o None retornando False; añadir docstring de uso.\n**Archivos adicionales:** ninguno.", requiere_test: true}},
-    {{archivo: "tests/test_validators.py", tarea: "**Paso 2: Pruebas del validador**\n**Responsabilidad única:** crear pruebas unitarias para `validar_email`.\n**Dependencias previas:** Paso 1.\n**Descripción técnica:** usar pytest con casos positivos (correo simple, con subdominio) y negativos (sin @, con espacios, vacío, None).\n**Archivos adicionales:** ninguno.", requiere_test: true}},
-    {{archivo: "cli.py", tarea: "**Paso 3: Integración en el comando**\n**Responsabilidad única:** conectar el validador al comando CLI existente.\n**Dependencias previas:** Pasos 1 y 2.\n**Descripción técnica:** importar `validar_email` en `cli.py` y validar el argumento de correo antes de proseguir; emitir mensaje de error claro y salir con código no cero si es inválido.\n**Archivos adicionales:** ninguno.", requiere_test: false}}
+    {{archivo: "core/validators.<ext>", tarea: "**Paso 1: Validador de correo**\n**Responsabilidad única:** crear la función pública `validar_email(correo: str) -> bool` en `core/validators.<ext>`.\n**Dependencias previas:** Ninguna.\n**Descripción técnica:** función que devuelve True/False; usar regex compatible con Unicode; manejar entradas vacías o None retornando False; añadir documentación según la convención del lenguaje detectado.\n**Archivos adicionales:** ninguno.", requiere_test: true}},
+    {{archivo: "tests/test_validators.<ext>", tarea: "**Paso 2: Pruebas del validador**\n**Responsabilidad única:** crear pruebas unitarias para `validar_email`.\n**Dependencias previas:** Paso 1.\n**Descripción técnica:** usar el framework de pruebas del lenguaje detectado con casos positivos (correo simple, con subdominio) y negativos (sin @, con espacios, vacío, None).\n**Archivos adicionales:** ninguno.", requiere_test: true}},
+    {{archivo: "cli.<ext>", tarea: "**Paso 3: Integración en el módulo**\n**Responsabilidad única:** conectar el validador al módulo existente del proyecto objetivo.\n**Dependencias previas:** Pasos 1 y 2.\n**Descripción técnica:** importar `validar_email` en `cli.<ext>` y validar el argumento de correo antes de proseguir; emitir mensaje de error claro y salir con código no cero si es inválido.\n**Archivos adicionales:** ninguno.", requiere_test: false}}
   ]
 )
 ```
