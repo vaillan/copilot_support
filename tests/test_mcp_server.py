@@ -63,7 +63,7 @@ def test_delegar_tarea_pausa_2_muestra_cambios(mock_ainvoke, mock_aget_state):
     assert "NO aprobó ni rechazó explícitamente" in resultado
     
     # Verificar que la función retorna el markdown de re-pausa (no procesa como rechazo)
-    assert "**Estado:** Pausado (PAUSA_2)" in resultado
+    assert "Estado: Pausado (PAUSA_2)" in resultado
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
 @patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
