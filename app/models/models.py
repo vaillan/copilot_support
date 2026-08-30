@@ -19,9 +19,3 @@ class ProjectState(MessagesState):
     loop_counter: int
     project_index: Optional[Dict[str, Any]] = None
     analisis_final: Optional[str] = None
-    # Motivo de la próxima pausa antes de agente_codificador:
-    #   - "plan_nuevo": el planificador entregó un plan y espera aprobación (PAUSA 1 legítima).
-    #   - "retrabajo_qa": el revisor rechazó el código y el flujo regresa al codificador
-    #     (re-trabajo interno; NO debe renderizarse como formulario de plan).
-    #   - None: sin semántica especial (comportamiento por defecto = PAUSA 1).
-    pausa_motivo: Optional[str] = None

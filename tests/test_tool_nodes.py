@@ -40,9 +40,8 @@ def test_nodo_herramientas_codificador(mock_tool_node, mock_actualizar_indice, m
     """
     Prueba que el nodo de herramientas del codificador inicializa ToolNode,
     ejecuta las herramientas y, tras ellas, refresca el índice del proyecto
-    (actualizar_indice_incremental) persistiéndolo SOLO en la caché de disco.
-    El índice ya NO viaja en el estado del grafo (evita inflar los checkpoints
-    de SQLite), por lo que el resultado NO contiene la clave 'project_index'.
+    (actualizar_indice_incremental), fusionando la clave 'project_index' en
+    el resultado devuelto.
     """
     mock_instance = MagicMock()
     mock_tool_node.return_value = mock_instance
@@ -68,8 +67,7 @@ def test_nodo_herramientas_codificador(mock_tool_node, mock_actualizar_indice, m
     )
 
     assert result["messages"] == [ToolMessage(content="escrito exitosamente", tool_call_id="1")]
-    # El índice se persiste en disco, no en el estado del grafo.
-    assert "project_index" not in result
+    assert result["project_index"] == indice_actualizado
 
 
 @patch('app.utils.project_index.actualizar_indice_incremental')
@@ -139,10 +137,10 @@ def test_nodo_herramientas_revisor_incluye_terminal(mock_tool_node, mock_state):
     assert "finalizar_revision" not in nombres_herramientas
 
 
-@patch('app.utils.terminal_tool.subprocess.run')
+@patch('app.agents.agente_revisor.subprocess.run')
 def test_terminal_ejecuta_agnostico_shell(mock_run, tmp_path):
     """La tool terminal ejecuta con shell=True (shell por defecto del SO) y cwd."""
-    from app.utils.terminal_tool import terminal
+    from app.agents.agente_revisor import terminal
 
     mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
 
@@ -154,10 +152,10 @@ def test_terminal_ejecuta_agnostico_shell(mock_run, tmp_path):
     assert "ok" in resultado
 
 
-@patch('app.utils.terminal_tool.subprocess.run')
+@patch('app.agents.agente_revisor.subprocess.run')
 def test_terminal_bloquea_sin_ejecutar(mock_run, tmp_path):
     """Un comando destructivo se bloquea sin invocar subprocess.run."""
-    from app.utils.terminal_tool import terminal
+    from app.agents.agente_revisor import terminal
 
     resultado = terminal.func(['rm -rf /'], cwd=str(tmp_path))
 

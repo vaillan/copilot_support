@@ -1,4 +1,8 @@
+import sys
+import os
+import subprocess
 import json
+from contextlib import redirect_stdout
 from langgraph.graph import END
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 from langgraph.types import Command
@@ -12,13 +16,118 @@ from app.models.models import ProjectState
 from langchain_core.runnables import RunnableConfig
 from app.utils.files import File, get_custom_file_tools
 from app.utils.prompt_utils import escapar_llaves
+from app.utils.shell_safety import validar_comando
 from app.utils.skills_loader import cargar_skills_para_prompt
-from app.utils.terminal_tool import configurar_directorio, terminal
+from app.settings.settings import Settings
 from functools import lru_cache
 from app.utils.args_utils import _get_args
 
+settings = Settings()
 fileSystem = File(directory="prompts")
 
+# Directorio del proyecto actual, propagado desde state["directorio_proyecto"]
+# vía _get_tools(). Se usa como cwd por defecto en la tool terminal().
+_ACTUAL_DIRECTORIO_PROYECTO: str = os.getcwd()
+
+
+def _detectar_shell() -> str:
+    """Detecta el shell o comando del sistema operativo actual.
+
+    Returns:
+        str: Nombre descriptivo del shell detectado ("Windows (cmd.exe)",
+            "macOS (shell POSIX)" o "Linux/Unix (shell POSIX)").
+    """
+    if sys.platform == "win32":
+        return "Windows (cmd.exe)"
+    if sys.platform == "darwin":
+        return "macOS (shell POSIX)"
+    return "Linux/Unix (shell POSIX)"
+
+
+@tool
+def terminal(commands: list[str] | str, cwd: str | None = None) -> str:
+    """Ejecuta comandos en la terminal del proyecto con confinamiento de directorio.
+
+    Pasa una lista de comandos o una cadena de comando (ej. "pytest" o ["pytest"]).
+    El parámetro opcional `cwd` fuerza un directorio de trabajo concreto; si se
+    omite (None), se usa el directorio del proyecto actual.
+
+    Garantías de seguridad: los comandos se ejecutan únicamente dentro del
+    directorio del proyecto (cwd), se filtran patrones peligrosos (borrado
+    destructivo, descarga+ejecución, git destructivo, variables críticas, rutas
+    sensibles, fork bombs, shutdown) antes de ejecutarse, y hay un timeout
+    configurable por comando.
+
+    Advertencia: NO es un sandbox real del sistema operativo. En entornos de
+    producción o compartidos el uso de esta herramienta debe estar restringido
+    y supervisado, ya que un comando permitido aún puede modificar archivos
+    dentro del proyecto o consumir recursos del host.
+
+    Args:
+        commands (list[str] | str): Lista de comandos o cadena de comando a ejecutar.
+        cwd (str | None): Directorio de trabajo concreto; por defecto None (se usa
+            el directorio del proyecto actual).
+
+    Returns:
+        str: Salida formateada por comando con su código de salida, STDOUT/STDERR
+            o mensajes de error/bloqueo.
+    """
+    if cwd is None:
+        cwd = _ACTUAL_DIRECTORIO_PROYECTO
+    if not os.path.isdir(cwd):
+        return f"Error: El directorio de trabajo '{cwd}' no existe o no es accesible. Comandos no ejecutados."
+
+    if isinstance(commands, str):
+        lista_comandos = [commands]
+    elif isinstance(commands, list):
+        lista_comandos = commands
+    else:
+        return "Error: Formato de comandos inválido. Proporciona una cadena o lista de cadenas."
+
+    resultados = []
+    shell_detectado = _detectar_shell()
+    for cmd in lista_comandos:
+        if not isinstance(cmd, str) or not cmd.strip():
+            continue
+        permitido, motivo_bloqueo = validar_comando(cmd, cwd)
+        if not permitido:
+            resultados.append(f"$ {cmd}\n🚨 Comando bloqueado: {motivo_bloqueo}")
+            continue
+        try:
+            res = subprocess.run(
+                cmd,
+                shell=True,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=settings.TERMINAL_TIMEOUT_SECONDS,
+                stdin=subprocess.DEVNULL
+            )
+            stdout = res.stdout.strip() if res.stdout else ""
+            stderr = res.stderr.strip() if res.stderr else ""
+            salida = []
+            if stdout:
+                salida.append(f"STDOUT:\n{stdout}")
+            if stderr:
+                salida.append(f"STDERR:\n{stderr}")
+            if not salida:
+                salida.append(f"Comando '{cmd}' ejecutado con código de salida {res.returncode} (sin salida).")
+            resultados.append(f"$ {cmd}\nCódigo de salida: {res.returncode}\n" + "\n".join(salida))
+        except subprocess.TimeoutExpired:
+            resultados.append(f"$ {cmd}\n🚨 Timeout: El comando excedió el tiempo límite de {settings.TERMINAL_TIMEOUT_SECONDS} segundos.")
+        except BaseException as e:
+            mensaje_error = str(e)
+            if "not recognized" in mensaje_error.lower() or "command not found" in mensaje_error.lower() or "is not recognized" in mensaje_error.lower():
+                resultados.append(
+                    f"$ {cmd}\n🚨 Error al ejecutar comando: {mensaje_error}\n"
+                    f"Shell detectado: {shell_detectado}. El comando puede no ser compatible con esta plataforma."
+                )
+            else:
+                resultados.append(f"$ {cmd}\n🚨 Error al ejecutar comando ({shell_detectado}): {mensaje_error}")
+
+    return "\n\n---\n\n".join(resultados) if resultados else "No se ejecutaron comandos válidos."
 
 @tool
 def finalizar_revision(aprobado: bool, requiere_pruebas: bool = True, reporte_errores: str = "") -> str:
@@ -46,10 +155,9 @@ def finalizar_revision(aprobado: bool, requiere_pruebas: bool = True, reporte_er
 def _get_tools(directorio: str):
     """Construye y cachea la lista de herramientas de revisión para un directorio.
 
-    Actualiza el directorio del proyecto actual (compartido con la tool
-    `terminal` de app/utils/terminal_tool.py) y combina las herramientas de
-    terminal y finalización con las de lectura de archivos (read_file,
-    read_file_summary).
+    Actualiza el directorio del proyecto actual si el directorio es válido y
+    combina las herramientas de terminal y finalización con las de lectura de
+    archivos (read_file, read_file_summary).
 
     Args:
         directorio (str): Ruta del directorio del proyecto.
@@ -57,7 +165,9 @@ def _get_tools(directorio: str):
     Returns:
         list[BaseTool]: Lista de herramientas (terminal, finalizar_revision y las de lectura).
     """
-    configurar_directorio(directorio)
+    global _ACTUAL_DIRECTORIO_PROYECTO
+    if directorio and os.path.isdir(directorio):
+        _ACTUAL_DIRECTORIO_PROYECTO = directorio
     todas = get_custom_file_tools(directorio)
     herramientas_lectura = [
         t for t in todas
@@ -122,8 +232,7 @@ def agente_revisor(state: ProjectState) -> Command:
                     "errores_terminal": f"Errores detectados tras múltiples intentos de prueba: {errores_detectados}",
                     "messages": [HumanMessage(content=f"Pruebas no concluidas adecuadamente. Errores detectados: {errores_detectados}")],
                     "loop_counter": 0,
-                    "revision_count": revision_count,
-                    "pausa_motivo": "retrabajo_qa"
+                    "revision_count": revision_count
                 },
                 goto="agente_codificador"
             )
@@ -145,15 +254,10 @@ def agente_revisor(state: ProjectState) -> Command:
     
     prompt_sistema = fileSystem.get_file_content(file_name="revisor_prompt.md")
     
-    # Inyectar el índice del proyecto cargándolo desde la caché en disco
-    # (optimización de tokens sin persistir el índice en los checkpoints).
-    from app.utils.project_index import (
-        extraer_archivos_relevantes,
-        formatear_indice_para_prompt,
-        obtener_indice_para_agentes,
-    )
-    project_index = obtener_indice_para_agentes(directorio, state.get("project_index"))
+    # Inyectar el índice del proyecto si está disponible en el estado (optimización de tokens)
+    project_index = state.get("project_index")
     if project_index and isinstance(project_index, dict):
+        from app.utils.project_index import extraer_archivos_relevantes, formatear_indice_para_prompt
         plan_estado = state.get("plan_de_accion")
         texto_fuentes = "\n".join(filter(None, [
             json.dumps(plan_estado, ensure_ascii=False, default=str) if plan_estado else "",
@@ -256,8 +360,7 @@ def agente_revisor(state: ProjectState) -> Command:
                             "errores_terminal": errores,
                             "messages": [respuesta] + tool_messages,
                             "loop_counter": 0,
-                            "revision_count": revision_count,
-                            "pausa_motivo": "retrabajo_qa"
+                            "revision_count": revision_count
                         },
                         goto="agente_codificador"
                     )

@@ -42,34 +42,8 @@ class Settings(BaseSettings):
     TERMINAL_TIMEOUT_SECONDS: int = int(os.getenv("TERMINAL_TIMEOUT_SECONDS", "30"))
 
     # ==========================================
-    # Servidor MCP (bucle de herramientas)
-    # ==========================================
-    # Tope de ciclos agente->herramientas que el servidor procesa sin saltar a
-    # la siguiente pausa humana al reanudar una tarea. Antes era un cap duro de
-    # 20 que dejaba tareas a medio hacer y provocaba re-pausas fantasma con el
-    # plan viejo. Configurable vía variable de entorno MCP_TOOL_LOOP_MAX.
-    MCP_TOOL_LOOP_MAX: int = int(os.getenv("MCP_TOOL_LOOP_MAX", "50"))
-
-    # ==========================================
-    # Terminal del agente codificador
-    # ==========================================
-    # Si es True, el Agente Codificador recibe la tool terminal() para ejecutar
-    # los tests (p. ej. pytest) y auto-validarlos ANTES de entregar el código.
-    # Esto elimina la causa del bucle QA-rechaza → codificador por tests sin
-    # validar. Configurable vía variable de entorno CODIFICADOR_TERMINAL_ENABLED.
-    CODIFICADOR_TERMINAL_ENABLED: bool = os.getenv("CODIFICADOR_TERMINAL_ENABLED", "true").lower() in ("true", "1", "yes")
-
-    # ==========================================
     # Índice de Proyecto (Optimización de Tokens)
     # ==========================================
     PROJECT_INDEX_ENABLED: bool = os.getenv("PROJECT_INDEX_ENABLED", "true").lower() in ("true", "1", "yes")
     PROJECT_INDEX_MAX_TOKENS_PER_FILE: int = int(os.getenv("PROJECT_INDEX_MAX_TOKENS_PER_FILE", "400"))
     PROJECT_INDEX_CACHE_DIR: str = os.getenv("PROJECT_INDEX_CACHE_DIR", ".project_index")
-
-    # ==========================================
-    # Búsqueda web del planificador (DuckDuckGo)
-    # ==========================================
-    # Desactivada por defecto: DuckDuckGo aplica rate-limits con reintentos
-    # estériles que degradan la latencia del planificador. Activar solo si el
-    # plan la necesita explícitamente.
-    ENABLE_WEB_SEARCH: bool = os.getenv("ENABLE_WEB_SEARCH", "false").lower() in ("true", "1", "yes")

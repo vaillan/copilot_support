@@ -13,8 +13,6 @@ from app.models.llm_factory import get_coder_llm
 from app.utils.summarization import aplicar_resumen_middleware
 from app.utils.prompt_utils import escapar_llaves
 from app.utils.skills_loader import cargar_skills_para_prompt
-from app.settings.settings import Settings
-from app.utils.terminal_tool import configurar_directorio, terminal
 from functools import lru_cache
 from app.utils.args_utils import _get_args
 
@@ -71,24 +69,13 @@ def _get_tools(directorio: str):
     """
     Lista (con caché) las herramientas de manejo de archivos del directorio dado.
 
-    Incluye la tool `terminal` (compartida con el revisor) cuando
-    CODIFICADOR_TERMINAL_ENABLED está activo (default), para que el codificador
-    pueda ejecutar los tests (p. ej. pytest) y auto-validarlos ANTES de entregar
-    el código. Esto elimina la causa del bucle QA-rechaza → codificador por
-    tests sin validar.
-
     Args:
         directorio: Ruta del directorio del proyecto (str).
 
     Returns:
-        list: Herramientas de archivo configuradas para el directorio y,
-            opcionalmente, la tool de terminal.
+        list: Herramientas de archivo configuradas para el directorio.
     """
-    herramientas = list(get_custom_file_tools(directorio))
-    if Settings().CODIFICADOR_TERMINAL_ENABLED:
-        configurar_directorio(directorio)
-        herramientas.append(terminal)
-    return herramientas
+    return get_custom_file_tools(directorio)
 
 def agente_codificador(state: ProjectState) -> Command:
     """
@@ -119,15 +106,10 @@ def agente_codificador(state: ProjectState) -> Command:
     revision_count = state.get("revision_count", 0)
     prompt_sistema = fileSystem.get_file_content(file_name="codificador_prompt.md")
     
-    # Inyectar el índice del proyecto cargándolo desde la caché en disco
-    # (optimización de tokens sin persistir el índice en los checkpoints).
-    from app.utils.project_index import (
-        extraer_archivos_relevantes,
-        formatear_indice_para_prompt,
-        obtener_indice_para_agentes,
-    )
-    project_index = obtener_indice_para_agentes(directorio, state.get("project_index"))
+    # Inyectar el índice del proyecto si está disponible en el estado (optimización de tokens)
+    project_index = state.get("project_index")
     if project_index and isinstance(project_index, dict):
+        from app.utils.project_index import extraer_archivos_relevantes, formatear_indice_para_prompt
         plan_estado = state.get("plan_de_accion")
         texto_fuentes = "\n".join(filter(None, [
             json.dumps(plan_estado, ensure_ascii=False, default=str) if plan_estado else "",
@@ -208,10 +190,7 @@ def agente_codificador(state: ProjectState) -> Command:
                         "codigo_escrito": resumen,
                         "errores_terminal": "",
                         "messages": [respuesta] + tool_messages,
-                        "loop_counter": 0,
-                        # El codificador terminó su trabajo: se limpia el motivo de
-                        # pausa para no contaminar la próxima pausa canónica.
-                        "pausa_motivo": None
+                        "loop_counter": 0
                     },
                     goto="agente_revisor"
                 )
@@ -263,10 +242,9 @@ def nodo_herramientas_codificador(state: ProjectState, config: RunnableConfig):
         from app.utils.project_index import actualizar_indice_incremental
 
         if Settings().PROJECT_INDEX_ENABLED and os.path.isdir(directorio):
-            # El índice actualizado se persiste SOLO en la caché de disco
-            # (.project_index/.project_index.json). Ya no se devuelve en el
-            # estado del grafo para no inflar los checkpoints de SQLite.
-            actualizar_indice_incremental(directorio, state.get("project_index"))
+            indice_actualizado = actualizar_indice_incremental(directorio, state.get("project_index"))
+            if isinstance(resultado, dict):
+                return {**resultado, "project_index": indice_actualizado}
     except Exception:
         # Si el refresco del índice falla, devolvemos el resultado original sin
         # interrumpir el flujo normal de ejecución de las herramientas.

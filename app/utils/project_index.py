@@ -241,53 +241,6 @@ def _resumir_js_ts(contenido: str, max_tokens: int) -> Dict[str, Any]:
     }
 
 
-def _resumir_firmas_generico(contenido: str, max_tokens: int) -> Dict[str, Any]:
-    """Genera resumen multi-lenguaje de imports y firmas candidatas."""
-    lineas = contenido.splitlines()
-    imports: List[str] = []
-    firmas: List[str] = []
-    patron_firma = re.compile(r"type\s+\w+\s+struct")
-
-    for linea in lineas:
-        linea_strip = linea.strip()
-        if not linea_strip:
-            continue
-        # Imports antes que comentarios para no descartar #include de C/C++
-        if linea_strip.startswith(("import ", "use ", "using ", "include ", "#include ", "require ", "require_once ")) or (
-            linea_strip.startswith("from ") and " import " in linea_strip
-        ):
-            imports.append(linea_strip[:120])
-            continue
-        if linea_strip.startswith(("//", "#", "/*", "*", "--", ";")):
-            continue
-        if linea_strip.startswith("end"):
-            continue
-        if any(p in linea_strip for p in ("func ", "fn ", "def ", "function ", "class ", "struct ", "interface ", "public ", "private ", "protected ", "impl ", "sub ")) or patron_firma.search(linea_strip):
-            firmas.append(linea_strip[:120])
-
-    limite_caracteres = max_tokens * 4
-    resumen_parts: List[str] = []
-    if imports:
-        resumen_parts.append("IMPORTS:\n" + "\n".join(imports[:30]))
-    if firmas:
-        resumen_parts.append("FIRMAS:\n" + "\n".join(firmas[:40]))
-
-    if resumen_parts:
-        resumen = "\n\n".join(resumen_parts)
-    else:
-        # Fallback al comportamiento de _resumir_generico (primeras líneas)
-        resumen = "\n".join(lineas[:20])
-
-    if len(resumen) > limite_caracteres:
-        resumen = resumen[:limite_caracteres] + "\n...[truncado]"
-
-    return {
-        "resumen": resumen,
-        "imports": imports[:30],
-        "firmas": firmas[:40],
-    }
-
-
 def _resumir_config(contenido: str, max_tokens: int) -> Dict[str, Any]:
     """Genera resumen de archivos de configuración: claves de primer nivel."""
     claves: List[str] = []
@@ -385,8 +338,6 @@ def resumir_archivo(ruta: Path, max_tokens: int = 400, contenido: Optional[str] 
         return _resumir_config(contenido, max_tokens)
     if ext in DOC_EXTENSIONS:
         return _resumir_doc(contenido, max_tokens)
-    if ext in CODE_EXTENSIONS:
-        return _resumir_firmas_generico(contenido, max_tokens)
     return _resumir_generico(contenido, max_tokens)
 
 
@@ -703,38 +654,6 @@ def obtener_resumen_archivo(
         guardar_indice(dir_resuelto, indice)
 
     return resumen
-
-
-def obtener_indice_para_agentes(
-    directorio: str,
-    indice_estado: Optional[Dict[str, Any]] = None,
-) -> Optional[Dict[str, Any]]:
-    """
-    Obtiene el índice del proyecto para los agentes SIN persistirlo en el
-    estado del grafo.
-
-    Motivación: el índice puede pesar varios MB y, al viajar dentro de
-    ``ProjectState``, se serializaba al checkpointer SQLite en CADA paso del
-    grafo, degradando la latencia de cada ``ainvoke``/``aget_state``.
-
-    Estrategia: si el estado ya trae un índice (compatibilidad hacia atrás),
-    se reutiliza; en caso contrario se carga desde la caché en disco
-    (``.project_index/.project_index.json``), que es mantenida fresca por
-    ``construir_indice``/``actualizar_indice_incremental``.
-
-    Args:
-        directorio: Ruta del proyecto.
-        indice_estado: Índice presente en el estado (opcional, prioritario).
-
-    Returns:
-        El índice (dict) o None si no hay caché disponible.
-    """
-    if indice_estado and isinstance(indice_estado, dict):
-        return indice_estado
-    try:
-        return cargar_indice(directorio)
-    except Exception:
-        return None
 
 
 def extraer_archivos_relevantes(texto: str, indice: Optional[Dict[str, Any]]) -> List[str]:
