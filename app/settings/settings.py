@@ -47,3 +47,10 @@ class Settings(BaseSettings):
     PROJECT_INDEX_ENABLED: bool = os.getenv("PROJECT_INDEX_ENABLED", "true").lower() in ("true", "1", "yes")
     PROJECT_INDEX_MAX_TOKENS_PER_FILE: int = int(os.getenv("PROJECT_INDEX_MAX_TOKENS_PER_FILE", "400"))
     PROJECT_INDEX_CACHE_DIR: str = os.getenv("PROJECT_INDEX_CACHE_DIR", ".project_index")
+
+    # ==========================================
+    # Búsqueda web del agente planificador
+    # ==========================================
+    # Habilita la herramienta busqueda_web_duckduckgo (desactivada por defecto
+    # para evitar llamadas de red innecesarias en cada planificación).
+    ENABLE_WEB_SEARCH: bool = os.getenv("ENABLE_WEB_SEARCH", "false").lower() in ("true", "1", "yes")

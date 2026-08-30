@@ -16,6 +16,9 @@ from app.utils.prompt_utils import escapar_llaves
 from app.utils.skills_loader import cargar_skills_para_prompt
 from functools import lru_cache
 from app.utils.args_utils import _get_args
+from app.settings.settings import Settings
+
+settings = Settings()
 
 fileSystem = File(directory="prompts")
 
@@ -90,21 +93,22 @@ def _get_tools(directorio: str):
         directorio: Ruta del directorio del proyecto (str).
 
     Returns:
-        list[Tool]: Herramientas de lectura/archivo más la búsqueda web DuckDuckGo.
+        list[Tool]: Herramientas de lectura/archivo y, si está habilitada, la búsqueda web DuckDuckGo.
     """
     todas = get_custom_file_tools(directorio)
     herramientas_lectura = [
         t for t in todas
         if t.name in ["read_file", "list_directory", "get_project_index", "read_file_summary"]
     ]
-    
-    searx = DuckDuckGoSearchAPIWrapper(max_results=2)
-    tool_busqueda = Tool(
-        name="busqueda_web_duckduckgo",
-        description="Busca en internet documentación técnica actualizada, tutoriales o foros.",
-        func=searx.run
-    )
-    herramientas = herramientas_lectura + [tool_busqueda]
+
+    herramientas = list(herramientas_lectura)
+    if settings.ENABLE_WEB_SEARCH:
+        searx = DuckDuckGoSearchAPIWrapper(max_results=2)
+        herramientas.append(Tool(
+            name="busqueda_web_duckduckgo",
+            description="Busca en internet documentación técnica actualizada, tutoriales o foros.",
+            func=searx.run
+        ))
     return herramientas
 
 def agente_planificador(state: ProjectState) -> Command:
@@ -112,10 +116,13 @@ def agente_planificador(state: ProjectState) -> Command:
     Analiza el requerimiento, investiga el proyecto/internet y genera un plan.
     """
     loop_counter = state.get("loop_counter", 0) + 1
-    if loop_counter > 15:
+    if loop_counter > 8:
+        # Resetear loop_counter evita que el contador persistido en el
+        # checkpointer bloquee la siguiente invocación del mismo thread.
         return Command(
             update={
-                "messages": [HumanMessage(content="Error: Se ha excedido el límite máximo de iteraciones (15) en el Agente Planificador. El proceso se detiene para evitar un bucle infinito.")]
+                "messages": [HumanMessage(content="Error: Se ha excedido el límite máximo de iteraciones (8) en el Agente Planificador. El proceso se detiene para evitar un bucle infinito.")],
+                "loop_counter": 0,
             },
             goto=END
         )

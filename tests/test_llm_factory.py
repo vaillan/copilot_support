@@ -23,7 +23,7 @@ class TestLLMFactory(unittest.TestCase):
             temperature=0.0,
             api_key="test_key",
             max_retries=3,
-            timeout=10000
+            timeout=120
         )
 
     @patch('app.models.llm_factory.settings')
@@ -42,7 +42,7 @@ class TestLLMFactory(unittest.TestCase):
             temperature=0.5,
             api_key="openai_key",
             max_retries=3,
-            timeout=10000
+            timeout=120
         )
 
     @patch('app.models.llm_factory.settings')
