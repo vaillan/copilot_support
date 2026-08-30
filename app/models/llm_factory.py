@@ -10,12 +10,21 @@ provider_map = {
     "google": "google_genai",
     "openai": "openai",
     "anthropic": "anthropic",
-    "open-router": "openrouter",
+    # OpenRouter se enruta vía ChatOpenAI (API compatible con OpenAI) en lugar
+    # de ChatOpenRouter: el paquete langchain-openrouter se cuelga indefinidamente
+    # en algunas configuraciones Windows/httpx (httpx.ReadTimeout en cada intento),
+    # lo que bloqueaba al Planificador ~9 min (4 intentos x 120s) hasta fallar.
+    # ChatOpenAI + base_url responde en ~1-2s con tool-binding verificado.
+    "open-router": "openai",
+    "openrouter": "openai",
     "local": "ollama",
     "azure":"azure_openai",
     "aws-bedrock":"bedrock_converse",
     "huggingface":"huggingface",
 }
+
+# Endpoint OpenAI-compatible de OpenRouter (usado cuando el proveedor es open-router).
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 def _create_llm(provider: str, model_name: str, api_key: str, temperature: float = 0.0):
     prov = provider.lower() if provider else "google_genai"
@@ -48,8 +57,18 @@ def _create_llm(provider: str, model_name: str, api_key: str, temperature: float
                 "temperature": temperature,
                 "api_key": api_key,
                 "max_retries": 3,
-                "timeout": 10000
+                # Timeout HTTP en segundos. Antes era 10000 (interpretado como
+                # ~2.8 horas por proveedores que lo leen en segundos), lo que
+                # provocaba llamadas colgadas que solo morían con el timeout
+                # global de la tarea MCP. 120s es suficiente incluso para
+                # modelos lentos y evita bloquear el event loop del servidor.
+                "timeout": 120
             }
+            # OpenRouter expone una API compatible con OpenAI: basta con apuntar
+            # base_url a su endpoint. NO usar langchain-openrouter (ChatOpenRouter),
+            # que se cuelga en este entorno (ver comentario en provider_map).
+            if prov in ("open-router", "openrouter"):
+                kwargs["base_url"] = OPENROUTER_BASE_URL
             if rate_limiter:
                 kwargs["rate_limiter"] = rate_limiter
             return init_chat_model(**kwargs)

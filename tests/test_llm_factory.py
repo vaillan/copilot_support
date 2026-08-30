@@ -23,7 +23,7 @@ class TestLLMFactory(unittest.TestCase):
             temperature=0.0,
             api_key="test_key",
             max_retries=3,
-            timeout=10000
+            timeout=120
         )
 
     @patch('app.models.llm_factory.settings')
@@ -42,7 +42,7 @@ class TestLLMFactory(unittest.TestCase):
             temperature=0.5,
             api_key="openai_key",
             max_retries=3,
-            timeout=10000
+            timeout=120
         )
 
     @patch('app.models.llm_factory.settings')
@@ -59,6 +59,27 @@ class TestLLMFactory(unittest.TestCase):
         _, kwargs = mock_init.call_args
         self.assertIn("rate_limiter", kwargs)
         self.assertIsInstance(kwargs["rate_limiter"], InMemoryRateLimiter)
+
+    @patch('app.models.llm_factory.settings')
+    @patch('app.models.llm_factory.init_chat_model')
+    def test_get_llm_open_router_usa_chat_openai_con_base_url(self, mock_init, mock_settings):
+        """
+        Regresión: el proveedor 'open-router' debe enrutarse vía ChatOpenAI
+        (init_chat_model model_provider='openai') con base_url apuntando al
+        endpoint OpenAI-compatible de OpenRouter. NO vía langchain-openrouter
+        (ChatOpenRouter), que se cuelga (httpx.ReadTimeout) y bloqueaba al
+        Planificador ~9 min por tarea.
+        """
+        mock_settings.LLM_PROVIDER = "open-router"
+        mock_settings.LLM_MODEL = "deepseek/deepseek-v4-flash-0731"
+        mock_settings.LLM_API_KEY = "or_key"
+        mock_settings.LLM_REQUESTS_PER_SECOND = 0.0
+
+        _create_llm("open-router", "deepseek/deepseek-v4-flash-0731", "or_key", 0.0)
+
+        _, kwargs = mock_init.call_args
+        self.assertEqual(kwargs["model_provider"], "openai")
+        self.assertEqual(kwargs["base_url"], "https://openrouter.ai/api/v1")
 
     @patch('app.models.llm_factory.settings')
     @patch('app.models.llm_factory.ChatOllama')
