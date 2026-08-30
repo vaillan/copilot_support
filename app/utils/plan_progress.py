@@ -102,3 +102,21 @@ def construir_contexto_compacto(plan: Any, progreso: Optional[Dict[str, Any]]) -
     if cuerpo is None:
         return None
     return f"{ledger}\n\n--- PASO ACTUAL ({paso_actual} de {total}) ---\n{cuerpo}"
+
+
+def construir_plan_pruebas(plan: Any) -> str:
+    """Devuelve el plan limitado a los pasos con requiere_test=True (para el revisor), reutilizando parsear_pasos_plan."""
+    # try/except defensivo: nunca debe interrumpir el flujo de revisión por un formato inesperado.
+    try:
+        if isinstance(plan, dict) and isinstance(plan.get("pasos"), list):
+            pasos_test = [
+                p for p in plan["pasos"]
+                if isinstance(p, dict) and p.get("requiere_test") is True
+            ]
+            if not pasos_test:
+                return "Ningún paso del plan requiere pruebas."
+            pasos = parsear_pasos_plan({"pasos": pasos_test})
+            return "\n\n".join(p["cuerpo"] for p in pasos)
+        return str(plan) if plan else "Sin plan."
+    except Exception:
+        return str(plan) if plan else "Sin plan."

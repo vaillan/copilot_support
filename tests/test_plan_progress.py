@@ -6,6 +6,7 @@ from app.utils.plan_progress import (
     avanzar_progreso,
     construir_contexto_compacto,
     construir_ledger,
+    construir_plan_pruebas,
     inicializar_progreso,
     parsear_pasos_plan,
 )
@@ -144,3 +145,51 @@ def test_construir_contexto_compacto_con_plan_o_progreso_invalidos() -> None:
     assert construir_contexto_compacto(PLAN_MARKDOWN, {"pasos_completados": "x", "paso_actual": 2, "total_pasos": 3}) is None
     assert construir_contexto_compacto(PLAN_MARKDOWN, {"pasos_completados": [1], "paso_actual": "x", "total_pasos": 3}) is None
     assert construir_contexto_compacto(PLAN_MARKDOWN, {"pasos_completados": [1], "paso_actual": 0, "total_pasos": 3}) is None
+
+
+def test_construir_plan_pruebas_filtra_pasos_con_test() -> None:
+    plan: Dict[str, Any] = {
+        "pasos": [
+            {"archivo": "a.py", "tarea": "**Paso 1: Logica**\nDetalle PASO_CON_TEST_1", "requiere_test": True},
+            {"archivo": "b.md", "tarea": "**Paso 2: Docs**\nDetalle PASO_SIN_TEST", "requiere_test": False},
+            {"archivo": "c.py", "tarea": "**Paso 3: Mas logica**\nDetalle PASO_CON_TEST_2", "requiere_test": True},
+        ]
+    }
+
+    salida = construir_plan_pruebas(plan)
+
+    assert "PASO_CON_TEST_1" in salida
+    assert "PASO_CON_TEST_2" in salida
+    assert "PASO_SIN_TEST" not in salida
+
+
+def test_construir_plan_pruebas_sin_pasos_con_test() -> None:
+    plan: Dict[str, Any] = {
+        "pasos": [
+            {"archivo": "a.md", "tarea": "**Paso 1: Docs**\nDetalle DOCS", "requiere_test": False},
+        ]
+    }
+
+    assert construir_plan_pruebas(plan) == "Ningún paso del plan requiere pruebas."
+
+
+def test_construir_plan_pruebas_sin_plan() -> None:
+    assert construir_plan_pruebas(None) == "Sin plan."
+
+
+def test_construir_plan_pruebas_con_texto_plano() -> None:
+    assert construir_plan_pruebas("texto plano") == "texto plano"
+
+
+def test_construir_plan_pruebas_con_pasos_mezclados() -> None:
+    plan: Dict[str, Any] = {
+        "pasos": [
+            {"archivo": "a.py", "tarea": "**Paso 1: Logica**\nDetalle PASO_DICT", "requiere_test": True},
+            "paso suelto",
+        ]
+    }
+
+    salida = construir_plan_pruebas(plan)
+
+    assert "PASO_DICT" in salida
+    assert "paso suelto" not in salida

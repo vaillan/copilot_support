@@ -21,6 +21,7 @@ from app.utils.skills_loader import cargar_skills_para_prompt
 from app.settings.settings import Settings
 from functools import lru_cache
 from app.utils.args_utils import _get_args
+from app.utils.plan_progress import construir_plan_pruebas
 
 settings = Settings()
 fileSystem = File(directory="prompts")
@@ -290,7 +291,7 @@ def agente_revisor(state: ProjectState) -> Command:
         "messages": mensajes_contexto,
         "directorio": directorio,
         "codigo_escrito": state.get("codigo_escrito", "Sin reporte."),
-        "plan": state.get("plan_de_accion", "Sin plan.")
+        "plan": construir_plan_pruebas(state.get("plan_de_accion"))
     })
     
     respuesta = llm_con_herramientas.invoke(prompt)

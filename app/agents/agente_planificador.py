@@ -171,12 +171,24 @@ def agente_planificador(state: ProjectState) -> Command:
     llm_con_herramientas = llm.bind_tools(herramientas_investigacion + [entregar_plan_de_accion])
     
     prompt_sistema = fileSystem.get_file_content(file_name="planificador_prompt.md")
+
+    # Nota (KISS): no se añade ledger de investigación al prompt; el historial de
+    # mensajes ya conserva los tool_calls y sus resultados entre iteraciones.
+    if instruccion:
+        prompt_sistema += (
+            "\n\n=== INSTRUCCIÓN ORIGINAL DEL USUARIO (fuente de verdad; no resumir ni alterar) ===\n"
+            + escapar_llaves(instruccion)
+        )
     
     # Inyectar el índice del proyecto si está disponible en el estado (optimización de tokens)
     project_index = state.get("project_index")
     if project_index and isinstance(project_index, dict):
-        from app.utils.project_index import formatear_indice_para_prompt
-        indice_texto = escapar_llaves(formatear_indice_para_prompt(project_index))
+        from app.utils.project_index import extraer_archivos_relevantes, formatear_indice_para_prompt
+        if instruccion:
+            archivos_relevantes = extraer_archivos_relevantes(instruccion, project_index)
+            indice_texto = escapar_llaves(formatear_indice_para_prompt(project_index, archivos_relevantes=archivos_relevantes))
+        else:
+            indice_texto = escapar_llaves(formatear_indice_para_prompt(project_index))
         prompt_sistema += (
             "\n\n=== ÍNDICE DEL PROYECTO (proporcionado, NO necesitas explorar todo) ===\n"
             f"{indice_texto}"
