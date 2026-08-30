@@ -49,6 +49,31 @@ def _log_stderr(msg: str):
         pass
 
 
+def _actualizar_registry(tarea_id: str, estado: str, detalle: str = "") -> None:
+    """Sincroniza el TaskRegistry de forma segura (best-effort con log).
+
+    Debe invocarse en TODOS los caminos de transición del grafo (pausas
+    canónicas, rechazos del usuario, re-trabajo de QA y agotamiento del bucle
+    de herramientas) para evitar la desincronización entre el estado real del
+    grafo y el registro (que antes solo se actualizaba en pausas limpias).
+
+    Args:
+        tarea_id: Identificador de la tarea a actualizar.
+        estado: Nuevo estado (debe estar en task_registry.ESTADOS_VALIDOS).
+        detalle: Detalle opcional de la transición.
+    """
+    try:
+        actualizado = task_registry.update_status(tarea_id, estado, detalle=detalle)
+        if not actualizado:
+            _log_stderr(
+                f"[MCP] TaskRegistry: no se pudo actualizar '{tarea_id}' a '{estado}' "
+                "(tarea inexistente o estado inválido)"
+            )
+    except Exception as e:
+        # El registro es best-effort: nunca debe romper el flujo principal.
+        _log_stderr(f"[MCP] TaskRegistry: error actualizando '{tarea_id}' a '{estado}': {e}")
+
+
 async def notificar_progreso(ctx: Optional[Context], mensaje: str, progreso: Optional[int] = None, total: int = 100):
     """
     Envía mensajes de log y progreso en tiempo real de forma segura y directa.
@@ -390,15 +415,24 @@ async def delegar_tarea_a_equipo_ia(
                 resultado = await agentes_app.ainvoke(None, config) # type: ignore
                 estado_post = await agentes_app.aget_state(config) # type: ignore
                 
-                # Bucle para procesar herramientas del nodo actual sin saltar a la siguiente pausa humana
+                # Bucle para procesar herramientas del nodo actual sin saltar a la siguiente pausa humana.
+                # El cap es configurable (MCP_TOOL_LOOP_MAX, default 50): el cap duro de 20 agotaba
+                # tareas largas a medio hacer y provocaba re-pausas fantasma con el plan viejo.
+                tool_loop_max = Settings().MCP_TOOL_LOOP_MAX
                 tool_loop_count = 0
-                while estado_post.next and estado_post.next[0] == siguiente_nodo and tool_loop_count < 20:
+                while estado_post.next and estado_post.next[0] == siguiente_nodo and tool_loop_count < tool_loop_max:
                     tool_step = tool_loop_count + 1
                     msg_tool = f"⚙️ Procesando herramientas en nodo '{siguiente_nodo}' ({tool_step})...."
                     await notificar_progreso(ctx, msg_tool, 60, 100)
                     resultado = await agentes_app.ainvoke(None, config) # type: ignore
                     estado_post = await agentes_app.aget_state(config) # type: ignore
                     tool_loop_count += 1
+                if estado_post.next and estado_post.next[0] == siguiente_nodo and tool_loop_count >= tool_loop_max:
+                    _log_stderr(
+                        f"[MCP] ADVERTENCIA: el bucle de herramientas agotó MCP_TOOL_LOOP_MAX="
+                        f"{tool_loop_max} en nodo '{siguiente_nodo}' (tarea '{tarea_id}'). "
+                        "El post-procesamiento informará el estado real del grafo."
+                    )
             else:
                 msg_feedback = f"↩️ Procesando rechazo/feedback del usuario para nodo '{siguiente_nodo}'..."
                 await notificar_progreso(ctx, msg_feedback, 30, 100)
@@ -515,8 +549,34 @@ async def delegar_tarea_a_equipo_ia(
 
         if estado.next:
             siguiente_nodo = estado.next[0]
-            
-            if siguiente_nodo == "agente_codificador":
+            pausa_motivo = estado.values.get("pausa_motivo")
+
+            if siguiente_nodo == "agente_codificador" and pausa_motivo == "retrabajo_qa":
+                # Re-trabajo interno: el revisor (QA) rechazó el código y el grafo
+                # regresó al codificador. NO es una PAUSA 1 legítima (el plan ya fue
+                # aprobado): se informa el estado real en lugar del formulario de plan.
+                errores_qa_retrabajo = str(estado.values.get("errores_terminal") or "Sin detalle de errores.")
+                markdown_retrabajo = (
+                    f"### 🔁 Re-trabajo interno: QA rechazó el código\n"
+                    f"- **ID Tarea:** `{tarea_id}`\n"
+                    f"- **Directorio:** `{directorio_proyecto}`\n"
+                    f"- **Estado:** Re-trabajo en curso (RETRABAJO_QA) - NO requiere aprobación del plan.\n\n"
+                    f"#### 📄 Explicación:\n"
+                    f"El Agente Revisor (QA) rechazó el código y el flujo regresó automáticamente al "
+                    f"Agente Codificador para corregir los errores. El plan ya fue aprobado, por lo que "
+                    f"**NO debes mostrar el formulario de aprobación del plan**. Usa "
+                    f"`consultar_estado_tarea(tarea_id='{tarea_id}')` para seguir el progreso, o escribe "
+                    f"feedback si quieres guiar la corrección.\n\n"
+                    f"#### 🧪 Errores reportados por QA:\n"
+                    f"```\n{errores_qa_retrabajo}\n```\n"
+                )
+                msg_retrabajo = f"🔁 Re-trabajo de QA en curso (tarea '{tarea_id}'): el codificador corregirá los errores.\n\n{markdown_retrabajo}"
+                await notificar_progreso(ctx, msg_retrabajo, 45, 100)
+                _log_stderr(f"[MCP] RETRABAJO_QA - tarea '{tarea_id}' regresando a codificador")
+                _actualizar_registry(tarea_id, "running", detalle=f"Re-trabajo QA: {errores_qa_retrabajo[:200]}")
+                return markdown_retrabajo
+
+            elif siguiente_nodo == "agente_codificador":
                 plan = estado.values.get("plan_de_accion", {})
                 if isinstance(plan, dict):
                     explicacion = plan.get("explicacion_arquitectura", "Plan de acción propuesto por el equipo de IA.")
@@ -536,10 +596,7 @@ async def delegar_tarea_a_equipo_ia(
                 msg_pausa1 = f"⏸️ PAUSA 1: Plan de acción listo. Esperando revisión del usuario (tarea '{tarea_id}').\n\n{markdown_pausa}"
                 await notificar_progreso(ctx, msg_pausa1, 40, 100)
                 _log_stderr(f"[MCP] PAUSA 1 - tarea '{tarea_id}' esperando aprobación de plan")
-                try:
-                    task_registry.update_status(tarea_id, "paused_planning", detalle=explicacion)
-                except Exception:
-                    pass
+                _actualizar_registry(tarea_id, "paused_planning", detalle=explicacion)
                 return markdown_pausa
                 
             elif siguiente_nodo == "agente_revisor":
@@ -556,11 +613,30 @@ async def delegar_tarea_a_equipo_ia(
                 msg_cambios = f"⏸️ PAUSA 2: Código escrito. Esperando aprobación antes de pruebas QA (tarea '{tarea_id}').\n\n{markdown_pausa}"
                 await notificar_progreso(ctx, msg_cambios, 70, 100)
                 _log_stderr(f"[MCP] PAUSA 2 - tarea '{tarea_id}' esperando aprobación de código")
-                try:
-                    task_registry.update_status(tarea_id, "paused_code", detalle=codigo_escrito)
-                except Exception:
-                    pass
+                _actualizar_registry(tarea_id, "paused_code", detalle=codigo_escrito)
                 return markdown_pausa
+
+            else:
+                # Pausa en un nodo no canónico (p.ej. bucle de herramientas agotado a
+                # mitad de ciclo): se informa el estado real del grafo sin etiquetarlo
+                # como PAUSA 1/2 ni regurgitar el plan viejo.
+                detalle_pausa = (
+                    f"Ejecución pausada antes del nodo '{siguiente_nodo}' "
+                    "(posible agotamiento del bucle de herramientas)."
+                )
+                markdown_pausa_generica = (
+                    f"### ⏸️ Ejecución pausada (nodo no canónico)\n"
+                    f"- **ID Tarea:** `{tarea_id}`\n"
+                    f"- **Directorio:** `{directorio_proyecto}`\n"
+                    f"- **Estado:** Pausado antes de `{siguiente_nodo}`.\n\n"
+                    f"#### 📄 Explicación:\n{detalle_pausa}\n"
+                    f"Usa `consultar_estado_tarea(tarea_id='{tarea_id}')` para inspeccionar el "
+                    f"estado detallado, o reanuda con approve=true para continuar.\n"
+                )
+                await notificar_progreso(ctx, markdown_pausa_generica, 50, 100)
+                _log_stderr(f"[MCP] PAUSA NO CANÓNICA antes de '{siguiente_nodo}' - tarea '{tarea_id}'")
+                _actualizar_registry(tarea_id, "running", detalle=detalle_pausa)
+                return markdown_pausa_generica
 
         # Si no hay 'next', el grafo llegó a END
         values = estado.values if hasattr(estado, "values") else {}
@@ -576,10 +652,7 @@ async def delegar_tarea_a_equipo_ia(
             msg_fin += "\n\n⚠️ ADVERTENCIA: No se detectaron cambios ni modificaciones en los archivos del disco (git diff / status está vacío)."
         await notificar_progreso(ctx, msg_fin, 100, 100)
         _log_stderr(f"[MCP] Tarea '{tarea_id}' COMPLETADA")
-        try:
-            task_registry.update_status(tarea_id, "completed", detalle=codigo_escrito)
-        except Exception:
-            pass
+        _actualizar_registry(tarea_id, "completed", detalle=codigo_escrito)
         # Si el grafo terminó en un análisis puro (sin programación), el estado
         # contiene 'analisis_final'. Se extrae del estado o del resultado para
         # generar un reporte de análisis dedicado en lugar del reporte de tarea
@@ -614,20 +687,14 @@ async def delegar_tarea_a_equipo_ia(
             msg_timeout = f"🚨 Timeout: La tarea '{tarea_id}' excedió el límite máximo de ejecución ({timeout_seconds}s)."
             await notificar_progreso(ctx, msg_timeout, 100, 100)
             _log_stderr(f"[MCP] TIMEOUT tarea '{tarea_id}'")
-            try:
-                task_registry.update_status(tarea_id, "timeout", detalle=msg_timeout)
-            except Exception:
-                pass
+            _actualizar_registry(tarea_id, "timeout", detalle=msg_timeout)
             return f"{msg_timeout} Por favor, reintenta dividiendo la instrucción en pasos más específicos o verifica el estado de la tarea con tarea_id='{tarea_id}'."
         except BaseException as e:
             err_msg = str(e)
             msg_err = f"🚨 El equipo de agentes falló con un error interno en tarea '{tarea_id}': {err_msg}"
             _log_stderr(f"[MCP] ERROR tarea '{tarea_id}': {err_msg}")
             await notificar_progreso(ctx, msg_err, 100, 100)
-            try:
-                task_registry.update_status(tarea_id, "error", detalle=err_msg)
-            except Exception:
-                pass
+            _actualizar_registry(tarea_id, "error", detalle=err_msg)
             return msg_err
     finally:
         # Liberar siempre el registro de la tarea activa (éxito, pausa, timeout o error).
