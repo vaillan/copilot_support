@@ -1,12 +1,22 @@
-from langchain.agents.middleware import SummarizationMiddleware
-from langchain_core.messages import AnyMessage
-from typing import List
+from typing import List, Optional
+
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AnyMessage, HumanMessage
+from langchain_core.prompts import ChatPromptTemplate
+
 from app.models.llm_factory import get_llm
 
-def aplicar_resumen_middleware(messages: List[AnyMessage], model=None, trigger_count: int = 15, keep_count: int = 8) -> List[AnyMessage]:
-    """
-    Aplica SummarizationMiddleware para resumir automáticamente el historial de mensajes
-    cuando se supera el umbral (trigger_count), conservando los últimos (keep_count) mensajes.
+
+def aplicar_resumen_middleware(
+    messages: List[AnyMessage],
+    model: Optional[BaseChatModel] = None,
+    trigger_count: int = 15,
+    keep_count: int = 8,
+) -> List[AnyMessage]:
+    """Resume el historial antiguo con el LLM al superar el umbral y conserva los mensajes recientes.
+
+    Ante cualquier fallo del modelo devuelve los mensajes originales sin modificar, de modo que
+    la optimización de contexto nunca rompe el flujo del agente.
     """
     if not messages or len(messages) <= trigger_count:
         return messages
@@ -15,21 +25,18 @@ def aplicar_resumen_middleware(messages: List[AnyMessage], model=None, trigger_c
         model = get_llm()
 
     try:
-        mw = SummarizationMiddleware(
-            model=model,
-            trigger=("messages", trigger_count),
-            keep=("messages", keep_count)
-        )
-        result = mw.before_model({"messages": messages}, {"callbacks": []}) # pyright: ignore[reportArgumentType]
-        if result and "messages" in result:
-            new_msgs = []
-            for m in result["messages"]:
-                # Excluir mensajes de remoción si existen en el resultado
-                if hasattr(m, "id") and m.id == "__remove_all__":
-                    continue
-                new_msgs.append(m)
-            return new_msgs
-    except Exception:
-        pass
+        antiguos = messages[:-keep_count]
+        recientes = messages[-keep_count:]
+        if not antiguos:
+            return messages
 
-    return messages
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", "Resume de forma concisa la siguiente conversación entre humano y asistente, conservando decisiones tomadas, errores detectados y contexto relevante para continuar el trabajo."),
+            ("human", "{contenido}"),
+        ])
+        contenido = "\n".join(f"{type(m).__name__}: {m.content}" for m in antiguos)
+        resumen = model.invoke(prompt.format_messages(contenido=contenido))
+        texto = str(resumen.content) if hasattr(resumen, "content") else str(resumen)
+        return [HumanMessage(content=f"[Resumen de conversación anterior] {texto}")] + recientes
+    except Exception:
+        return messages
