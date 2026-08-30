@@ -63,7 +63,7 @@ def test_delegar_tarea_pausa_2_muestra_cambios(mock_ainvoke, mock_aget_state):
     assert "NO aprobó ni rechazó explícitamente" in resultado
     
     # Verificar que la función retorna el markdown de re-pausa (no procesa como rechazo)
-    assert "Estado: Pausado (PAUSA_2)" in resultado
+    assert "**Estado:** Pausado (PAUSA_2)" in resultado
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
 @patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
@@ -550,3 +550,172 @@ def test_herramientas_registradas():
         "listar_tareas",
         "cancelar_tarea",
     }.issubset(nombres)
+
+
+# ===========================================================================
+# Tests de los fixes de latencia/fallas del MCP
+# ===========================================================================
+
+@patch("mcp_server.obtener_git_diff", return_value="")
+@patch("mcp_server.Settings")
+@patch("mcp_server.construir_indice")
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
+def test_delegar_tarea_registra_y_limpia_tarea_activa(mock_ainvoke, mock_aget_state, mock_indice, mock_settings, mock_git):
+    """
+    Fix 8: delegar_tarea_a_equipo_ia debe registrar su asyncio.Task real en
+    'tareas_activas' mientras corre y limpiarla al terminar, para que
+    cancelar_tarea() pueda interrumpirla de verdad.
+    """
+    import mcp_server as ms
+
+    async def _escenario():
+        mock_state = MagicMock()
+        mock_state.next = []
+        mock_state.values = {"codigo_escrito": "ok", "errores_terminal": "Ninguno."}
+        mock_ainvoke.return_value = {"codigo_escrito": "ok"}
+        mock_settings.return_value.PROJECT_INDEX_ENABLED = False
+
+        # aget_state lento: garantiza que la tarea siga viva cuando verifiquemos
+        # el registro en 'tareas_activas' (los mocks instantáneos terminan antes).
+        async def _aget_state_lento(config):
+            await asyncio.sleep(0.3)
+            return mock_state
+
+        mock_aget_state.side_effect = _aget_state_lento
+
+        tarea = asyncio.create_task(
+            ms.delegar_tarea_a_equipo_ia(
+                instruccion="Nueva tarea de prueba",
+                directorio_proyecto="./",
+                tarea_id="task_activa_fix8",
+            )
+        )
+        await asyncio.sleep(0.05)
+        assert "task_activa_fix8" in ms.tareas_activas
+        resultado = await tarea
+        assert "task_activa_fix8" not in ms.tareas_activas
+        return resultado
+
+    resultado = asyncio.run(_escenario())
+    assert "completada" in resultado.lower()
+
+
+def test_cancelar_tarea_interrumpe_task_activa():
+    """
+    Fix 8: cancelar_tarea debe encontrar la asyncio.Task registrada en
+    'tareas_activas' e interrumpirla realmente.
+    """
+    import mcp_server as ms
+
+    async def _escenario():
+        ms.task_registry.register_task(
+            tarea_id="task_cancel_fix8",
+            thread_id="task_cancel_fix8",
+            directorio_proyecto="./",
+            instruccion="x",
+            estado="running",
+        )
+        liberada = asyncio.Event()
+
+        async def _tarea_larga():
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                liberada.set()
+                raise
+
+        t = asyncio.create_task(_tarea_larga())
+        # Ceder el control para que la tarea arranque: cancelar una Task que
+        # nunca inició lanza CancelledError sin ejecutar su cuerpo (el except
+        # interno nunca correría y el evento nunca se establecería).
+        await asyncio.sleep(0.05)
+        ms.tareas_activas["task_cancel_fix8"] = t
+        try:
+            mock_ctx = AsyncMock()
+            # Llamar a la función cruda (.fn): la FunctionTool de FastMCP puede
+            # ejecutar en otro loop/hilo, y Task.cancel() no es thread-safe.
+            cruda = getattr(ms.cancelar_tarea, "fn", ms.cancelar_tarea)
+            msg = await cruda("task_cancel_fix8", ctx=mock_ctx)
+            await asyncio.wait_for(liberada.wait(), timeout=2)
+            assert "interrumpida" in msg
+        finally:
+            ms.tareas_activas.pop("task_cancel_fix8", None)
+            ms.task_registry.remove_task("task_cancel_fix8")
+
+    asyncio.run(_escenario())
+
+
+def test_planificador_sin_busqueda_web_cuando_deshabilitada():
+    """
+    Fix 6: con ENABLE_WEB_SEARCH=false el planificador NO debe exponer la
+    herramienta de búsqueda web DuckDuckGo (rate-limits con reintentos
+    estériles degradaban la latencia).
+    """
+    from app.agents.agente_planificador import _get_tools
+    herramientas = _get_tools("./", incluir_busqueda_web=False)
+    nombres = [t.name for t in herramientas]
+    assert "busqueda_web_duckduckgo" not in nombres
+
+
+def test_planificador_con_busqueda_web_cuando_habilitada():
+    """Fix 6: con ENABLE_WEB_SEARCH=true la tool de búsqueda web está disponible."""
+    from app.agents.agente_planificador import _get_tools
+    herramientas = _get_tools("./", incluir_busqueda_web=True)
+    nombres = [t.name for t in herramientas]
+    assert "busqueda_web_duckduckgo" in nombres
+
+
+def test_obtener_indice_para_agentes_prefiere_estado_y_cae_a_cache(tmp_path):
+    """
+    Fix 7: obtener_indice_para_agentes reutiliza el índice del estado si existe
+    (compatibilidad) y en caso contrario carga desde la caché de disco (None si
+    no hay caché), de modo que el índice ya no viaja en los checkpoints.
+    """
+    from app.utils.project_index import obtener_indice_para_agentes
+    indice_estado = {"version": 1, "resumenes": {"a.py": {}}}
+    assert obtener_indice_para_agentes(str(tmp_path), indice_estado) is indice_estado
+    # Directorio temporal sin caché previa -> None (sin excepción)
+    assert obtener_indice_para_agentes(str(tmp_path), None) is None
+
+
+def test_aplicar_resumen_middleware_timeout_devuelve_historial_original():
+    """
+    Fix 10: si la llamada LLM de resumen se cuelga (timeout), se debe devolver
+    el historial original sin bloquear al agente.
+    """
+    import time
+    from app.utils import summarization
+    from langchain_core.messages import HumanMessage
+
+    msgs = [HumanMessage(content=f"mensaje {i}") for i in range(20)]
+
+    def _resumen_colgado(*args, **kwargs):
+        time.sleep(5)  # simula LLM colgado
+        return msgs
+
+    with patch.object(summarization, "_ejecutar_resumen", side_effect=_resumen_colgado):
+        resultado = summarization.aplicar_resumen_middleware(msgs, timeout_segundos=0.1)
+    assert resultado == msgs
+
+
+def test_aplicar_resumen_middleware_error_devuelve_historial_original():
+    """Fix 10: si el resumen lanza una excepción, se devuelve el historial original."""
+    from app.utils import summarization
+    from langchain_core.messages import HumanMessage
+
+    msgs = [HumanMessage(content=f"mensaje {i}") for i in range(20)]
+
+    with patch.object(summarization, "_ejecutar_resumen", side_effect=RuntimeError("boom")):
+        resultado = summarization.aplicar_resumen_middleware(msgs)
+    assert resultado == msgs
+
+
+def test_aplicar_resumen_middleware_historial_corto_sin_cambios():
+    """Fix 10: con historial <= trigger_count no se hace ninguna llamada LLM."""
+    from app.utils.summarization import aplicar_resumen_middleware
+    from langchain_core.messages import HumanMessage
+
+    msgs = [HumanMessage(content=f"m{i}") for i in range(5)]
+    resultado = aplicar_resumen_middleware(msgs, model=MagicMock())
+    assert resultado == msgs

@@ -303,7 +303,9 @@ async def visualizar_cambios(
             partes.append(msg_err)
 
     if dir_a_consultar:
-        diff_git = obtener_git_diff(dir_a_consultar)
+        # subprocess bloqueante: se ejecuta en un hilo para no congelar el
+        # event loop del servidor MCP (SSE deja de responder a pings).
+        diff_git = await asyncio.to_thread(obtener_git_diff, dir_a_consultar)
         if diff_git:
             msg_diff = f"🔍 CAMBIOS DETALLADOS EN DISCO (Git Diff / Status en '{dir_a_consultar}'):\n{diff_git}"
             partes.append(msg_diff)
@@ -421,7 +423,7 @@ async def delegar_tarea_a_equipo_ia(
                     else:
                         # FEEDBACK CONSTRUCTIVO: Retornamos la pausa de revisión con instrucciones claras
                         codigo_escrito = estado_actual.values.get("codigo_escrito", "No se registró un resumen de cambios.")
-                        diff_git = obtener_git_diff(directorio_proyecto)
+                        diff_git = await asyncio.to_thread(obtener_git_diff, directorio_proyecto)
                         markdown_feedback_rev = generar_markdown_pausa(
                             tarea_id=tarea_id,
                             tipo_pausa="PAUSA_2",
@@ -476,19 +478,21 @@ async def delegar_tarea_a_equipo_ia(
             msg_planificador = f"🏗️ Iniciando Agente Planificador (Arquitecto) para '{instruccion_corta}...'..."
             await notificar_progreso(ctx, msg_planificador, 20, 100)
             _log_stderr(f"[MCP] Nueva tarea '{tarea_id}': iniciando Planificador")
-            # Construir el índice del proyecto para optimizar tokens (si está habilitado)
-            project_index = None
+            # Refrescar el índice del proyecto en su caché de disco (si está
+            # habilitado). El índice YA NO viaja en el estado del grafo: los
+            # agentes lo cargan desde .project_index/ vía obtener_indice_para_agentes.
+            # Esto evita serializar MBs al checkpointer SQLite en cada paso.
+            # construir_indice es I/O de disco bloqueante: se ejecuta en un hilo.
             try:
                 settings_mcp = Settings()
                 if getattr(settings_mcp, "PROJECT_INDEX_ENABLED", True):
-                    project_index = construir_indice(directorio_proyecto)
+                    await asyncio.to_thread(construir_indice, directorio_proyecto)
             except Exception:
-                project_index = None
+                pass
 
             estado_inicial = {
                 "instruccion_usuario": instruccion,
                 "directorio_proyecto": directorio_proyecto,
-                "project_index": project_index,
                 "messages": [HumanMessage(content=instruccion)],
                 "revision_count": 0,
                 "loop_counter": 0
@@ -540,7 +544,7 @@ async def delegar_tarea_a_equipo_ia(
                 
             elif siguiente_nodo == "agente_revisor":
                 codigo_escrito = estado.values.get("codigo_escrito", "No se registró un resumen de cambios.")
-                diff_git = obtener_git_diff(directorio_proyecto)
+                diff_git = await asyncio.to_thread(obtener_git_diff, directorio_proyecto)
                 markdown_pausa = generar_markdown_pausa(
                     tarea_id=tarea_id,
                     tipo_pausa="PAUSA_2",
@@ -563,7 +567,7 @@ async def delegar_tarea_a_equipo_ia(
         codigo_escrito = values.get("codigo_escrito") or (resultado.get("codigo_escrito") if isinstance(resultado, dict) else "No se reportó código.")
         errores_qa = values.get("errores_terminal") or (resultado.get("errores_terminal") if isinstance(resultado, dict) else "Sin errores.")
         
-        diff_git = obtener_git_diff(directorio_proyecto)
+        diff_git = await asyncio.to_thread(obtener_git_diff, directorio_proyecto)
         msg_fin = f"✅ Tarea '{tarea_id}' completada exitosamente."
         if diff_git:
             diff_msg = f"\n\n🔍 Cambios en disco finales:\n{diff_git}"
@@ -595,27 +599,39 @@ async def delegar_tarea_a_equipo_ia(
                 reporte_final += f"\n\n⚠️ ADVERTENCIA: La tarea finalizó pero git diff no muestra modificaciones en '{directorio_proyecto}'. Comprueba si el Agente Codificador omitió la escritura de archivos."
         return reporte_final
 
+    # Registrar la asyncio.Task real en 'tareas_activas' para que
+    # cancelar_tarea() pueda interrumpirla. Antes este mapa nunca se llenaba
+    # y la cancelación era decorativa (la tarea huérfana seguía consumiendo
+    # el event loop y degradando la respuesta del servidor).
+    tarea_async_actual = asyncio.current_task()
+    if tarea_async_actual is not None:
+        tareas_activas[tarea_id] = tarea_async_actual
+
     try:
-        return await asyncio.wait_for(_ejecutar_logica(), timeout=timeout_seconds)
-    except asyncio.TimeoutError:
-        msg_timeout = f"🚨 Timeout: La tarea '{tarea_id}' excedió el límite máximo de ejecución ({timeout_seconds}s)."
-        await notificar_progreso(ctx, msg_timeout, 100, 100)
-        _log_stderr(f"[MCP] TIMEOUT tarea '{tarea_id}'")
         try:
-            task_registry.update_status(tarea_id, "timeout", detalle=msg_timeout)
-        except Exception:
-            pass
-        return f"{msg_timeout} Por favor, reintenta dividiendo la instrucción en pasos más específicos o verifica el estado de la tarea con tarea_id='{tarea_id}'."
-    except BaseException as e:
-        err_msg = str(e)
-        msg_err = f"🚨 El equipo de agentes falló con un error interno en tarea '{tarea_id}': {err_msg}"
-        _log_stderr(f"[MCP] ERROR tarea '{tarea_id}': {err_msg}")
-        await notificar_progreso(ctx, msg_err, 100, 100)
-        try:
-            task_registry.update_status(tarea_id, "error", detalle=err_msg)
-        except Exception:
-            pass
-        return msg_err
+            return await asyncio.wait_for(_ejecutar_logica(), timeout=timeout_seconds)
+        except asyncio.TimeoutError:
+            msg_timeout = f"🚨 Timeout: La tarea '{tarea_id}' excedió el límite máximo de ejecución ({timeout_seconds}s)."
+            await notificar_progreso(ctx, msg_timeout, 100, 100)
+            _log_stderr(f"[MCP] TIMEOUT tarea '{tarea_id}'")
+            try:
+                task_registry.update_status(tarea_id, "timeout", detalle=msg_timeout)
+            except Exception:
+                pass
+            return f"{msg_timeout} Por favor, reintenta dividiendo la instrucción en pasos más específicos o verifica el estado de la tarea con tarea_id='{tarea_id}'."
+        except BaseException as e:
+            err_msg = str(e)
+            msg_err = f"🚨 El equipo de agentes falló con un error interno en tarea '{tarea_id}': {err_msg}"
+            _log_stderr(f"[MCP] ERROR tarea '{tarea_id}': {err_msg}")
+            await notificar_progreso(ctx, msg_err, 100, 100)
+            try:
+                task_registry.update_status(tarea_id, "error", detalle=err_msg)
+            except Exception:
+                pass
+            return msg_err
+    finally:
+        # Liberar siempre el registro de la tarea activa (éxito, pausa, timeout o error).
+        tareas_activas.pop(tarea_id, None)
 
 
 @mcp.tool()
