@@ -77,7 +77,7 @@ Para evitar saturar la ventana de contexto y mantener máxima precisión, aplica
 
 Debes procesar el plan **paso a paso**, en el orden exacto indicado por el Arquitecto, implementando **UN SOLO paso a la vez** de principio a fin antes de pasar al siguiente. NO intentes implementar todo el plan de golpe: satura la ventana de contexto y multiplica los errores.
 
-1. **Registro de progreso:** lleva un registro explícito de qué pasos están completos, cuál es el paso actual y cuáles quedan pendientes (ej. «Completos: 1, 2 · Actual: 3 · Pendientes: 4, 5»).
+1. **Registro de progreso (fuente de verdad externa):** el sistema inyecta en este prompt un ledger determinista («Pasos completos: ... · Paso actual: N de M · Pendientes: ...») junto con el cuerpo del paso actual, regenerado desde el estado en CADA iteración (sobrevive a la compresión del historial). Ese ledger es la ÚNICA fuente de verdad del progreso: NO rastrees los pasos desde tu memoria del historial. Si el ledger no está presente, el plan completo llega en {plan} y comienzas por el Paso 1. Tras verificar que el paso actual quedó completo (ciclo (a)-(e) de la regla 4), invoca MarcarPasoCompletado(numero_paso: N) para registrarlo; si no la invocas, el ledger simplemente no avanza (no bloquea el flujo).
 2. **Respeto de dependencias:** respeta el bloque «Dependencias previas» de cada paso. NO implementes un paso cuyas dependencias no estén completas. Si un paso depende de pasos anteriores, verifica primero que esos pasos ya estén implementados y funcionales.
 3. **Formato del plan:** cada paso del plan contiene bloques Markdown: «**Paso N: <título>**», «**Responsabilidad única:**», «**Dependencias previas:**», «**Descripción técnica:**» y «**Archivos adicionales:**». Usa estos bloques para guiar tu implementación y respeta el orden de los pasos.
 4. **Ciclo por paso:** para cada paso, en este orden:
@@ -113,6 +113,7 @@ Durante la implementación dispones de estas herramientas de archivos. Antes de 
   - Parámetros: `source_path` (o `source`) y `destination_path` (o `destination` o `dest`).
 - `move_file`: Mueve un archivo a otra ubicación.
   - Parámetros: `source_path` (o `source`) y `destination_path` (o `destination` o `dest`).
+- MarcarPasoCompletado: registra que el paso actual del plan quedó implementado y verificado. Parámetros: numero_paso (int). NO escribe en disco y NO sustituye a las herramientas de escritura: úsala DESPUÉS de confirmar éxito en disco del paso. Es opcional: si no la llamas, el ledger no avanza.
 
 ---
 

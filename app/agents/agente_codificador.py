@@ -1,4 +1,5 @@
 import json
+from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 from langgraph.types import Command
@@ -15,12 +16,17 @@ from app.utils.prompt_utils import escapar_llaves
 from app.utils.skills_loader import cargar_skills_para_prompt
 from functools import lru_cache
 from app.utils.args_utils import _get_args
+from app.utils.plan_progress import avanzar_progreso, construir_contexto_compacto, construir_ledger, parsear_pasos_plan
 
 fileSystem = File(directory="prompts")
 
 class CodigoCompletado(BaseModel):
     """Llama a esta herramienta EXCLUSIVAMENTE cuando hayas terminado de programar todos los pasos del plan."""
     resumen_cambios: str = Field(description="Resumen detallado de los archivos que creaste o modificaste.")
+
+class MarcarPasoCompletado(BaseModel):
+    """Registra que el paso actual del plan quedó implementado y verificado."""
+    numero_paso: int = Field(description="Número del paso del plan que quedó completo.")
 
 # Conjunto de herramientas que realizan una escritura física en disco.
 herramientas_modificacion = {"write_file", "edit_file", "copy_file", "move_file", "file_delete"}
@@ -100,7 +106,7 @@ def agente_codificador(state: ProjectState) -> Command:
     herramientas_codigo = _get_tools(directorio)
     
     llm = get_coder_llm(temperature=0.0)
-    llm_con_herramientas = llm.bind_tools(herramientas_codigo + [CodigoCompletado])
+    llm_con_herramientas = llm.bind_tools(herramientas_codigo + [CodigoCompletado, MarcarPasoCompletado])
     
     errores = state.get("errores_terminal", "")
     revision_count = state.get("revision_count", 0)
@@ -138,7 +144,12 @@ def agente_codificador(state: ProjectState) -> Command:
     ])
     
     plan = state.get("plan_de_accion", "Sin plan.")
-    
+
+    # Ledger de progreso + cuerpo del paso actual inyectados como contexto compacto,
+    # regenerado en cada iteración desde el estado (sobrevive a la sumarización).
+    contexto_compacto = construir_contexto_compacto(plan, state.get("progreso_plan"))
+    plan_para_prompt = contexto_compacto if contexto_compacto is not None else plan
+
     # Optimización de contexto con SummarizationMiddleware
     msgs = state.get("messages", [])
     mensajes_contexto = aplicar_resumen_middleware(msgs, llm)
@@ -148,7 +159,7 @@ def agente_codificador(state: ProjectState) -> Command:
     prompt = prompt_template.invoke({
         "messages": mensajes_contexto,
         "directorio": directorio,
-        "plan": plan
+        "plan": plan_para_prompt
     })
     respuesta = llm_con_herramientas.invoke(prompt)
     
@@ -218,11 +229,57 @@ def agente_codificador(state: ProjectState) -> Command:
             goto="agente_codificador"
         )
 
+def _procesar_llamadas_progreso(state: ProjectState, llamadas: List[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], List[ToolMessage]]:
+    """
+    Actualiza progreso_plan de forma determinista y genera los ToolMessage de las llamadas de progreso.
+    """
+    total = len(parsear_pasos_plan(state.get("plan_de_accion")))
+    progreso = state.get("progreso_plan")
+    tool_msgs: List[ToolMessage] = []
+
+    for tc in llamadas:
+        numero_paso = _get_args(tc).get("numero_paso")
+        if total <= 0:
+            tool_msgs.append(ToolMessage(
+                tool_call_id=tc["id"],
+                content="No se pudo parsear el plan de acción; el progreso no se registra.",
+            ))
+        elif not isinstance(numero_paso, int) or not (1 <= numero_paso <= total):
+            tool_msgs.append(ToolMessage(
+                tool_call_id=tc["id"],
+                content=f"Paso {numero_paso} fuera de rango (1-{total}); no se registró progreso.",
+            ))
+        else:
+            progreso = avanzar_progreso(progreso, numero_paso, total)
+            tool_msgs.append(ToolMessage(
+                tool_call_id=tc["id"],
+                content=f"Paso {numero_paso} registrado como completado. {construir_ledger(progreso)}",
+            ))
+
+    return progreso, tool_msgs
+
+
+def _refrescar_indice(resultado: Dict[str, Any], directorio: str, state: ProjectState) -> Dict[str, Any]:
+    """
+    Refresca project_index tras escritura en disco si PROJECT_INDEX_ENABLED está activo; silencia errores.
+    """
+    try:
+        import os
+        from app.settings.settings import Settings
+        from app.utils.project_index import actualizar_indice_incremental
+
+        if Settings().PROJECT_INDEX_ENABLED and os.path.isdir(directorio):
+            indice_actualizado = actualizar_indice_incremental(directorio, state.get("project_index"))
+            return {**resultado, "project_index": indice_actualizado}
+    except Exception:
+        pass
+
+    return resultado
+
+
 def nodo_herramientas_codificador(state: ProjectState, config: RunnableConfig):
     """
-    Ejecuta las herramientas de manejo de archivos mediante ToolNode de LangGraph.
-
-    Tras la ejecución de las herramientas (que pueden escribir archivos en disco), refresca automáticamente el índice del proyecto si está habilitado (PROJECT_INDEX_ENABLED=true), actualizando la clave 'project_index' del estado para que los agentes posteriores trabajen con un índice coherente.
+    Ejecuta las herramientas del codificador, registra el progreso del plan y actualiza el índice del proyecto.
 
     Args:
         state: Estado global del proyecto (ProjectState).
@@ -234,20 +291,39 @@ def nodo_herramientas_codificador(state: ProjectState, config: RunnableConfig):
     directorio = state.get("directorio_proyecto", "./")
     herramientas = _get_tools(directorio)
     nodo = ToolNode(herramientas)
-    resultado = nodo.invoke(state, config=config)
 
-    try:
-        import os
-        from app.settings.settings import Settings
-        from app.utils.project_index import actualizar_indice_incremental
+    # Separar las tool_calls de progreso: nunca llegan al ToolNode (no escriben en disco).
+    ultimo_ai = None
+    for m in reversed(state.get("messages", [])):
+        if isinstance(m, AIMessage) and m.tool_calls:
+            ultimo_ai = m
+            break
 
-        if Settings().PROJECT_INDEX_ENABLED and os.path.isdir(directorio):
-            indice_actualizado = actualizar_indice_incremental(directorio, state.get("project_index"))
-            if isinstance(resultado, dict):
-                return {**resultado, "project_index": indice_actualizado}
-    except Exception:
-        # Si el refresco del índice falla, devolvemos el resultado original sin
-        # interrumpir el flujo normal de ejecución de las herramientas.
-        pass
+    tool_calls = ultimo_ai.tool_calls if ultimo_ai is not None else []
+    llamadas_progreso = [tc for tc in tool_calls if isinstance(tc, dict) and tc.get("name") == "MarcarPasoCompletado"]
+    llamadas_archivo = [tc for tc in tool_calls if not (isinstance(tc, dict) and tc.get("name") == "MarcarPasoCompletado")]
 
-    return resultado
+    # Flujo normal sin llamadas de progreso: comportamiento idéntico al original.
+    if not llamadas_progreso:
+        return _refrescar_indice(nodo.invoke(state, config=config), directorio, state)
+
+    progreso_final, tool_msgs = _procesar_llamadas_progreso(state, llamadas_progreso)
+
+    if llamadas_archivo:
+        # Reconstruir la última AIMessage solo con las llamadas que sí escriben en disco.
+        estado_filtrado = {
+            **{k: v for k, v in state.items() if k != "messages"},
+            "messages": [
+                m if m is not ultimo_ai else AIMessage(content=ultimo_ai.content, tool_calls=llamadas_archivo, id=ultimo_ai.id)
+                for m in state.get("messages", [])
+            ],
+        }
+        resultado = _refrescar_indice(nodo.invoke(estado_filtrado, config=config), directorio, state)
+        return {
+            **resultado,
+            "messages": list(resultado.get("messages", [])) + tool_msgs,
+            "progreso_plan": progreso_final,
+        }
+
+    # Solo llamadas de progreso: sin escritura en disco, sin refresco de índice.
+    return {"messages": tool_msgs, "progreso_plan": progreso_final}
