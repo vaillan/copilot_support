@@ -106,10 +106,15 @@ def agente_codificador(state: ProjectState) -> Command:
     revision_count = state.get("revision_count", 0)
     prompt_sistema = fileSystem.get_file_content(file_name="codificador_prompt.md")
     
-    # Inyectar el índice del proyecto si está disponible en el estado (optimización de tokens)
-    project_index = state.get("project_index")
+    # Inyectar el índice del proyecto cargándolo desde la caché en disco
+    # (optimización de tokens sin persistir el índice en los checkpoints).
+    from app.utils.project_index import (
+        extraer_archivos_relevantes,
+        formatear_indice_para_prompt,
+        obtener_indice_para_agentes,
+    )
+    project_index = obtener_indice_para_agentes(directorio, state.get("project_index"))
     if project_index and isinstance(project_index, dict):
-        from app.utils.project_index import extraer_archivos_relevantes, formatear_indice_para_prompt
         plan_estado = state.get("plan_de_accion")
         texto_fuentes = "\n".join(filter(None, [
             json.dumps(plan_estado, ensure_ascii=False, default=str) if plan_estado else "",
@@ -242,9 +247,10 @@ def nodo_herramientas_codificador(state: ProjectState, config: RunnableConfig):
         from app.utils.project_index import actualizar_indice_incremental
 
         if Settings().PROJECT_INDEX_ENABLED and os.path.isdir(directorio):
-            indice_actualizado = actualizar_indice_incremental(directorio, state.get("project_index"))
-            if isinstance(resultado, dict):
-                return {**resultado, "project_index": indice_actualizado}
+            # El índice actualizado se persiste SOLO en la caché de disco
+            # (.project_index/.project_index.json). Ya no se devuelve en el
+            # estado del grafo para no inflar los checkpoints de SQLite.
+            actualizar_indice_incremental(directorio, state.get("project_index"))
     except Exception:
         # Si el refresco del índice falla, devolvemos el resultado original sin
         # interrumpir el flujo normal de ejecución de las herramientas.

@@ -9,6 +9,7 @@ from langchain_core.tools import Tool, tool
 from langgraph.prebuilt import ToolNode
 from app.models.llm_factory import get_planner_llm
 from app.models.models import ProjectState
+from app.settings.settings import Settings
 from langchain_core.runnables import RunnableConfig
 from app.utils.files import File, get_custom_file_tools
 from app.utils.summarization import aplicar_resumen_middleware
@@ -82,29 +83,36 @@ def entregar_plan_de_accion(explicacion_arquitectura: str, pasos: List[Paso]) ->
     return "Plan de acción aceptado e iniciando fase de codificación."
 
 @lru_cache(maxsize=10)
-def _get_tools(directorio: str):
+def _get_tools(directorio: str, incluir_busqueda_web: bool = True):
     """
     Lista (con caché) las herramientas de investigación del directorio dado.
 
     Args:
         directorio: Ruta del directorio del proyecto (str).
+        incluir_busqueda_web: Si True, agrega la herramienta de búsqueda web
+            DuckDuckGo. Se controla con la variable de entorno ENABLE_WEB_SEARCH
+            (desactivada por defecto porque DuckDuckGo aplica rate-limits con
+            reintentos estériles que degradan la latencia del planificador).
 
     Returns:
-        list[Tool]: Herramientas de lectura/archivo más la búsqueda web DuckDuckGo.
+        list[Tool]: Herramientas de lectura/archivo y, opcionalmente, la
+            búsqueda web DuckDuckGo.
     """
     todas = get_custom_file_tools(directorio)
     herramientas_lectura = [
         t for t in todas
         if t.name in ["read_file", "list_directory", "get_project_index", "read_file_summary"]
     ]
-    
-    searx = DuckDuckGoSearchAPIWrapper(max_results=2)
-    tool_busqueda = Tool(
-        name="busqueda_web_duckduckgo",
-        description="Busca en internet documentación técnica actualizada, tutoriales o foros.",
-        func=searx.run
-    )
-    herramientas = herramientas_lectura + [tool_busqueda]
+
+    herramientas = list(herramientas_lectura)
+    if incluir_busqueda_web:
+        searx = DuckDuckGoSearchAPIWrapper(max_results=2)
+        tool_busqueda = Tool(
+            name="busqueda_web_duckduckgo",
+            description="Busca en internet documentación técnica actualizada, tutoriales o foros.",
+            func=searx.run
+        )
+        herramientas.append(tool_busqueda)
     return herramientas
 
 def agente_planificador(state: ProjectState) -> Command:
@@ -130,9 +138,11 @@ def agente_planificador(state: ProjectState) -> Command:
         directorio = state.get("directorio_proyecto", "./")
         prompt_sistema_analisis = fileSystem.get_file_content(file_name="analisis_prompt.md")
 
-        project_index = state.get("project_index")
+        # El índice NO viaja en el estado (evita persistir MBs en cada checkpoint):
+        # se carga desde la caché en disco mantenida por construir_indice.
+        from app.utils.project_index import formatear_indice_para_prompt, obtener_indice_para_agentes
+        project_index = obtener_indice_para_agentes(directorio, state.get("project_index"))
         if project_index and isinstance(project_index, dict):
-            from app.utils.project_index import formatear_indice_para_prompt
             indice_texto = escapar_llaves(formatear_indice_para_prompt(project_index))
             prompt_sistema_analisis += (
                 "\n\n=== ÍNDICE DEL PROYECTO (proporcionado para análisis contextual) ===\n"
@@ -165,17 +175,19 @@ def agente_planificador(state: ProjectState) -> Command:
         )
 
     directorio = state.get("directorio_proyecto", "./")
-    herramientas_investigacion = _get_tools(directorio)
+    web_search_habilitada = Settings().ENABLE_WEB_SEARCH
+    herramientas_investigacion = _get_tools(directorio, incluir_busqueda_web=web_search_habilitada)
     
     llm = get_planner_llm(temperature=0.0)
     llm_con_herramientas = llm.bind_tools(herramientas_investigacion + [entregar_plan_de_accion])
     
     prompt_sistema = fileSystem.get_file_content(file_name="planificador_prompt.md")
     
-    # Inyectar el índice del proyecto si está disponible en el estado (optimización de tokens)
-    project_index = state.get("project_index")
+    # Inyectar el índice del proyecto cargándolo desde la caché en disco
+    # (optimización de tokens sin persistir el índice en los checkpoints).
+    from app.utils.project_index import formatear_indice_para_prompt, obtener_indice_para_agentes
+    project_index = obtener_indice_para_agentes(directorio, state.get("project_index"))
     if project_index and isinstance(project_index, dict):
-        from app.utils.project_index import formatear_indice_para_prompt
         indice_texto = escapar_llaves(formatear_indice_para_prompt(project_index))
         prompt_sistema += (
             "\n\n=== ÍNDICE DEL PROYECTO (proporcionado, NO necesitas explorar todo) ===\n"
@@ -274,6 +286,7 @@ def nodo_herramientas_planificador(state: ProjectState, config: RunnableConfig):
         dict: Resultado de la ejecución de las herramientas de investigación.
     """
     directorio = state.get("directorio_proyecto", "./")
-    herramientas = _get_tools(directorio)
+    web_search_habilitada = Settings().ENABLE_WEB_SEARCH
+    herramientas = _get_tools(directorio, incluir_busqueda_web=web_search_habilitada)
     nodo = ToolNode(herramientas)
     return nodo.invoke(state, config=config)

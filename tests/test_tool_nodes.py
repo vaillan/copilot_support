@@ -40,8 +40,9 @@ def test_nodo_herramientas_codificador(mock_tool_node, mock_actualizar_indice, m
     """
     Prueba que el nodo de herramientas del codificador inicializa ToolNode,
     ejecuta las herramientas y, tras ellas, refresca el índice del proyecto
-    (actualizar_indice_incremental), fusionando la clave 'project_index' en
-    el resultado devuelto.
+    (actualizar_indice_incremental) persistiéndolo SOLO en la caché de disco.
+    El índice ya NO viaja en el estado del grafo (evita inflar los checkpoints
+    de SQLite), por lo que el resultado NO contiene la clave 'project_index'.
     """
     mock_instance = MagicMock()
     mock_tool_node.return_value = mock_instance
@@ -67,7 +68,8 @@ def test_nodo_herramientas_codificador(mock_tool_node, mock_actualizar_indice, m
     )
 
     assert result["messages"] == [ToolMessage(content="escrito exitosamente", tool_call_id="1")]
-    assert result["project_index"] == indice_actualizado
+    # El índice se persiste en disco, no en el estado del grafo.
+    assert "project_index" not in result
 
 
 @patch('app.utils.project_index.actualizar_indice_incremental')

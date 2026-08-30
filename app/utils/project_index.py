@@ -656,6 +656,38 @@ def obtener_resumen_archivo(
     return resumen
 
 
+def obtener_indice_para_agentes(
+    directorio: str,
+    indice_estado: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Obtiene el índice del proyecto para los agentes SIN persistirlo en el
+    estado del grafo.
+
+    Motivación: el índice puede pesar varios MB y, al viajar dentro de
+    ``ProjectState``, se serializaba al checkpointer SQLite en CADA paso del
+    grafo, degradando la latencia de cada ``ainvoke``/``aget_state``.
+
+    Estrategia: si el estado ya trae un índice (compatibilidad hacia atrás),
+    se reutiliza; en caso contrario se carga desde la caché en disco
+    (``.project_index/.project_index.json``), que es mantenida fresca por
+    ``construir_indice``/``actualizar_indice_incremental``.
+
+    Args:
+        directorio: Ruta del proyecto.
+        indice_estado: Índice presente en el estado (opcional, prioritario).
+
+    Returns:
+        El índice (dict) o None si no hay caché disponible.
+    """
+    if indice_estado and isinstance(indice_estado, dict):
+        return indice_estado
+    try:
+        return cargar_indice(directorio)
+    except Exception:
+        return None
+
+
 def extraer_archivos_relevantes(texto: str, indice: Optional[Dict[str, Any]]) -> List[str]:
     """Devuelve las rutas de indice['resumenes'] mencionadas en el texto (o [] si no hay coincidencias)."""
     if not texto or not isinstance(indice, dict):

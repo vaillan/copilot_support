@@ -254,10 +254,15 @@ def agente_revisor(state: ProjectState) -> Command:
     
     prompt_sistema = fileSystem.get_file_content(file_name="revisor_prompt.md")
     
-    # Inyectar el índice del proyecto si está disponible en el estado (optimización de tokens)
-    project_index = state.get("project_index")
+    # Inyectar el índice del proyecto cargándolo desde la caché en disco
+    # (optimización de tokens sin persistir el índice en los checkpoints).
+    from app.utils.project_index import (
+        extraer_archivos_relevantes,
+        formatear_indice_para_prompt,
+        obtener_indice_para_agentes,
+    )
+    project_index = obtener_indice_para_agentes(directorio, state.get("project_index"))
     if project_index and isinstance(project_index, dict):
-        from app.utils.project_index import extraer_archivos_relevantes, formatear_indice_para_prompt
         plan_estado = state.get("plan_de_accion")
         texto_fuentes = "\n".join(filter(None, [
             json.dumps(plan_estado, ensure_ascii=False, default=str) if plan_estado else "",

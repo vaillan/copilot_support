@@ -47,3 +47,11 @@ class Settings(BaseSettings):
     PROJECT_INDEX_ENABLED: bool = os.getenv("PROJECT_INDEX_ENABLED", "true").lower() in ("true", "1", "yes")
     PROJECT_INDEX_MAX_TOKENS_PER_FILE: int = int(os.getenv("PROJECT_INDEX_MAX_TOKENS_PER_FILE", "400"))
     PROJECT_INDEX_CACHE_DIR: str = os.getenv("PROJECT_INDEX_CACHE_DIR", ".project_index")
+
+    # ==========================================
+    # Búsqueda web del planificador (DuckDuckGo)
+    # ==========================================
+    # Desactivada por defecto: DuckDuckGo aplica rate-limits con reintentos
+    # estériles que degradan la latencia del planificador. Activar solo si el
+    # plan la necesita explícitamente.
+    ENABLE_WEB_SEARCH: bool = os.getenv("ENABLE_WEB_SEARCH", "false").lower() in ("true", "1", "yes")
