@@ -4,6 +4,27 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.prompt_values import ChatPromptValue
 from app.agents.agente_codificador import agente_codificador
 
+_RESULTADO_SIN_DISPARAR = {
+    "disparar": False,
+    "archivos_modificados": [],
+    "razon": "test",
+    "hashes_actualizados": {},
+    "last_ts": 0.0,
+}
+
+
+@pytest.fixture(autouse=True)
+def _sin_regeneracion_tests():
+    """Neutraliza el hook de regeneración de tests en las pruebas de enrutamiento.
+
+    El comportamiento del hook se valida específicamente en
+    tests/test_test_regenerator.py y en test_codificador_hook_regeneracion_dispara.
+    """
+    with patch('app.agents.agente_codificador.evaluar_regeneracion_tests',
+               return_value=dict(_RESULTADO_SIN_DISPARAR)):
+        yield
+
+
 @pytest.fixture
 def mock_state():
     return {
@@ -275,3 +296,37 @@ def test_codificador_detecta_confirmacion_exitosa_en_toolmessage(mock_aplicar_mi
     # Debe avanzar a revisión porque el ToolMessage confirma la escritura exitosa en disco
     assert result.goto == "agente_revisor"
     assert result.update["codigo_escrito"] == "cambios aplicados"
+
+
+def test_codificador_hook_regeneracion_dispara(mock_state):
+    """Integración del hook: si el evaluador dispara, el codificador vuelve a su bucle
+    con un HumanMessage de regeneración y el contador de regeneraciones se incrementa."""
+    with patch('app.agents.agente_codificador.get_coder_llm') as mock_get_llm, \
+         patch('app.agents.agente_codificador.fileSystem.get_file_content', return_value="prompt"), \
+         patch('app.agents.agente_codificador.aplicar_resumen_middleware', return_value=[HumanMessage(content="ctx")]), \
+         patch('app.agents.agente_codificador.evaluar_regeneracion_tests') as mock_eval:
+        mock_eval.return_value = {
+            "disparar": True,
+            "archivos_modificados": ["app/main.py"],
+            "razon": "ok",
+            "hashes_actualizados": {"app/main.py": "abc123"},
+            "last_ts": 123.0,
+        }
+        mock_llm = MagicMock()
+        mock_get_llm.return_value = mock_llm
+        mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(
+            content="",
+            tool_calls=[{"name": "CodigoCompletado", "args": {"resumen_cambios": "hecho"}, "id": "cc"}]
+        )
+        estado = dict(mock_state)
+        estado["messages"] = [
+            AIMessage(content="", tool_calls=[{"name": "write_file", "args": {"file_path": "app/main.py"}, "id": "w"}])
+        ]
+
+        result = agente_codificador(estado)
+
+        assert result.goto == "agente_codificador"
+        contenidos = [str(m.content) for m in result.update["messages"]]
+        assert any("Acción requerida" in c and "app/main.py" in c for c in contenidos)
+        assert result.update["test_regeneration_count"] == 1
+        assert result.update["test_regeneration_hashes"] == {"app/main.py": "abc123"}

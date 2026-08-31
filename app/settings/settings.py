@@ -47,3 +47,15 @@ class Settings(BaseSettings):
     PROJECT_INDEX_ENABLED: bool = os.getenv("PROJECT_INDEX_ENABLED", "true").lower() in ("true", "1", "yes")
     PROJECT_INDEX_MAX_TOKENS_PER_FILE: int = int(os.getenv("PROJECT_INDEX_MAX_TOKENS_PER_FILE", "400"))
     PROJECT_INDEX_CACHE_DIR: str = os.getenv("PROJECT_INDEX_CACHE_DIR", ".project_index")
+
+    # ==========================================
+    # Regeneración de Tests (anti-bucle)
+    # ==========================================
+    # Activa/desactiva el mecanismo que exige actualizar pruebas tras un cambio completado en disco.
+    TEST_REGENERATION_ENABLED: bool = os.getenv("TEST_REGENERATION_ENABLED", "true").lower() in ("true", "1", "yes")
+    # Tope máximo de regeneraciones de tests por tarea; al alcanzarlo el mecanismo se detiene (evita bucles infinitos).
+    TEST_REGENERATION_MAX_ITERATIONS: int = int(os.getenv("TEST_REGENERATION_MAX_ITERATIONS", "3"))
+    # Segundos mínimos entre dos regeneraciones consecutivas (debounce para escrituras múltiples).
+    TEST_REGENERATION_COOLDOWN_SECONDS: float = float(os.getenv("TEST_REGENERATION_COOLDOWN_SECONDS", "2.0"))
+    # Directorios (separados por coma) cuyos archivos nunca disparan la regeneración (salidas del propio mecanismo).
+    TEST_REGENERATION_EXCLUDED_DIRS: str = os.getenv("TEST_REGENERATION_EXCLUDED_DIRS", "tests")

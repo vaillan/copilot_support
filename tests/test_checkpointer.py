@@ -20,6 +20,18 @@ from app.main import crear_grafo
 RUTA_CHECKPOINTS = "checkpoints.sqlite"
 
 
+@pytest.fixture(autouse=True)
+def _sin_regeneracion_tests():
+    """Neutraliza el hook de regeneración de tests en las pruebas de checkpointer.
+
+    El comportamiento del hook se valida en tests/test_test_regenerator.py.
+    """
+    with patch('app.agents.agente_codificador.evaluar_regeneracion_tests',
+               return_value={"disparar": False, "archivos_modificados": [], "razon": "test",
+                             "hashes_actualizados": {}, "last_ts": 0.0}):
+        yield
+
+
 @pytest.fixture
 def mock_llm():
     with patch('app.agents.agente_planificador.get_planner_llm') as mock_plan, \

@@ -19,3 +19,10 @@ class ProjectState(MessagesState):
     loop_counter: int
     project_index: Optional[Dict[str, Any]] = None
     analisis_final: Optional[str] = None
+    # --- Mecanismo de regeneración de tests (anti-bucle) ---
+    # Número de regeneraciones de tests disparadas en la tarea actual.
+    test_regeneration_count: int = 0
+    # Hashes SHA-256 conocidos de los archivos modificados (detección de cambios reales).
+    test_regeneration_hashes: Optional[Dict[str, str]] = None
+    # Timestamp (time.time()) de la última regeneración disparada (cooldown/debounce).
+    test_regeneration_last_ts: float = 0.0

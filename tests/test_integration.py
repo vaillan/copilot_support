@@ -4,6 +4,20 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from app.main import crear_grafo
 
+
+@pytest.fixture(autouse=True)
+def _sin_regeneracion_tests():
+    """Neutraliza el hook de regeneración de tests en el flujo de integración.
+
+    El comportamiento del hook se valida en tests/test_test_regenerator.py y
+    tests/test_agente_codificador.py::test_codificador_hook_regeneracion_dispara.
+    """
+    with patch('app.agents.agente_codificador.evaluar_regeneracion_tests',
+               return_value={"disparar": False, "archivos_modificados": [], "razon": "test",
+                             "hashes_actualizados": {}, "last_ts": 0.0}):
+        yield
+
+
 @pytest.fixture
 def mock_llm():
     with patch('app.agents.agente_planificador.get_planner_llm') as mock_plan, \

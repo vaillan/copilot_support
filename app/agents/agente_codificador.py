@@ -11,7 +11,8 @@ from app.utils.files import File, get_custom_file_tools
 from app.models.models import ProjectState
 from app.models.llm_factory import get_coder_llm
 from app.utils.summarization import aplicar_resumen_middleware
-from app.utils.prompt_utils import escapar_llaves
+from app.utils.prompt_utils import escapar_llaves, construir_prompt_template_cacheado
+from app.utils.test_regenerator import evaluar_regeneracion_tests
 from app.utils.skills_loader import cargar_skills_para_prompt
 from functools import lru_cache
 from app.utils.args_utils import _get_args
@@ -135,10 +136,9 @@ def agente_codificador(state: ProjectState) -> Command:
             f"Corrige los siguientes errores:\n{escapar_llaves(errores)}"
         )
         
-    prompt_template = ChatPromptTemplate.from_messages([
-        ("system", prompt_sistema),
-        MessagesPlaceholder(variable_name="messages")
-    ])
+    # Caché de template: si el prompt de sistema es idéntico al de la iteración
+    # anterior, se reutiliza la instancia compilada (ahorro de trabajo redundante).
+    prompt_template = construir_prompt_template_cacheado(prompt_sistema)
     
     plan = state.get("plan_de_accion", "Sin plan.")
     
@@ -188,6 +188,32 @@ def agente_codificador(state: ProjectState) -> Command:
                         )
                     )
                 
+                # --- Hook de regeneración de pruebas (anti-bucle) ---
+                # Tras un cambio COMPLETADO en disco, evalúa si deben exigirse
+                # pruebas actualizadas. Los archivos bajo tests/ y los contenidos
+                # sin cambios reales (hash SHA-256) nunca re-disparan el mecanismo;
+                # el cooldown y el tope de iteraciones impiden bucles infinitos.
+                evaluacion = evaluar_regeneracion_tests(directorio, msgs, respuesta, state)
+                if evaluacion["disparar"]:
+                    archivos = ", ".join(evaluacion["archivos_modificados"])
+                    msg_regeneracion = (
+                        "Acción requerida: actualiza o crea las pruebas unitarias (pytest) para los "
+                        f"siguientes archivos modificados: {archivos}. Escribe los tests en el directorio "
+                        "'tests/' y verifica que pasan con pytest antes de llamar a CodigoCompletado de nuevo."
+                    )
+                    return Command(
+                        update={
+                            "codigo_escrito": resumen,
+                            "errores_terminal": "",
+                            "messages": [respuesta] + tool_messages + [HumanMessage(content=msg_regeneracion)],
+                            "loop_counter": loop_counter,
+                            "test_regeneration_count": int(state.get("test_regeneration_count") or 0) + 1,
+                            "test_regeneration_hashes": evaluacion["hashes_actualizados"],
+                            "test_regeneration_last_ts": evaluacion["last_ts"],
+                        },
+                        goto="agente_codificador"
+                    )
+
                 return Command(
                     update={
                         "codigo_escrito": resumen,
