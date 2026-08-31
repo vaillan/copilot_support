@@ -68,7 +68,7 @@ Para evitar saturar la ventana de contexto y mantener máxima precisión, aplica
    - `read_file` **trunca a `max_lines=200` por defecto**. Si necesitas leer más de un archivo, pasa un `max_lines` mayor (ej. `max_lines=500`) o lee por rangos de líneas. No asumas que el contenido devuelto es el archivo completo si supera las 200 líneas.
 
 5. **PRESUPUESTO OPERATIVO (ANTI-BUCLE):**
-   - Dispones de un máximo de **~15 iteraciones** en total; el sistema impone un corte duro en ese límite. Un exceso de exploración o de reintentos degrada la calidad y bloquea la entrega.
+   - Dispones de un máximo de **15 iteraciones completas** en total; el sistema corta al entrar a la iteración 16. Un exceso de exploración o de reintentos degrada la calidad y bloquea la entrega.
    - Asigna tu presupuesto por paso: aproximadamente **1-2 lecturas de contexto + 1-2 escrituras + 1 verificación** por paso. Si tras completar el plan ya no quedan pasos, **detente** y entrega con `CodigoCompletado`. No gastes el presupuesto restante en revisiones innecesarias.
 
 ---
