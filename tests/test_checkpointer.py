@@ -63,7 +63,7 @@ def test_persistencia_tras_invocacion(mock_llm, mock_file_system):
     mock_plan.return_value = mock_llm_plan
     mock_llm_plan.bind_tools.return_value.invoke.return_value = AIMessage(
         content="",
-        tool_calls=[{"name": "entregar_plan_de_accion", "args": {"explicacion_arquitectura": "test", "pasos": []}, "id": "1"}]
+        tool_calls=[{"name": "entregar_plan_de_accion", "args": {"explicacion_arquitectura": "test", "pasos": [{"archivo": "test.py", "tarea": "implementar", "requiere_test": True}]}, "id": "1"}]
     )
 
     mock_llm_cod = MagicMock()

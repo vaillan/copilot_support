@@ -38,8 +38,8 @@ def test_flujo_completo_exito(mock_llm, mock_file_system):
     mock_llm_plan = MagicMock()
     mock_plan.return_value = mock_llm_plan
     mock_llm_plan.bind_tools.return_value.invoke.return_value = AIMessage(
-        content="", 
-        tool_calls=[{"name": "entregar_plan_de_accion", "args": {"explicacion_arquitectura": "test", "pasos": []}, "id": "1"}]
+        content="",
+        tool_calls=[{"name": "entregar_plan_de_accion", "args": {"explicacion_arquitectura": "test", "pasos": [{"archivo": "test.py", "tarea": "implementar", "requiere_test": True}]}, "id": "1"}]
     )
     
     mock_llm_cod = MagicMock()
@@ -87,8 +87,8 @@ def test_flujo_con_errores_y_correccion(mock_llm, mock_file_system):
     mock_llm_plan = MagicMock()
     mock_plan.return_value = mock_llm_plan
     mock_llm_plan.bind_tools.return_value.invoke.return_value = AIMessage(
-        content="", 
-        tool_calls=[{"name": "entregar_plan_de_accion", "args": {"explicacion_arquitectura": "test", "pasos": []}, "id": "1"}]
+        content="",
+        tool_calls=[{"name": "entregar_plan_de_accion", "args": {"explicacion_arquitectura": "test", "pasos": [{"archivo": "test.py", "tarea": "implementar", "requiere_test": True}]}, "id": "1"}]
     )
     
     mock_llm_cod = MagicMock()
@@ -153,8 +153,8 @@ def test_flujo_sin_herramientas_evita_bucle(mock_llm, mock_file_system):
     mock_llm_plan.bind_tools.return_value.invoke.side_effect = [
         AIMessage(content="Hola, soy el planificador"),
         AIMessage(
-            content="", 
-            tool_calls=[{"name": "entregar_plan_de_accion", "args": {"explicacion_arquitectura": "test", "pasos": []}, "id": "1"}]
+            content="",
+            tool_calls=[{"name": "entregar_plan_de_accion", "args": {"explicacion_arquitectura": "test", "pasos": [{"archivo": "test.py", "tarea": "implementar", "requiere_test": True}]}, "id": "1"}]
         )
     ]
     

@@ -28,7 +28,10 @@ def test_agente_planificador_tool_call(mock_get_file, mock_get_llm, mock_state):
     
     tool_call = {
         "name": "entregar_plan_de_accion",
-        "args": {"explicacion_arquitectura": "test plan", "pasos": []},
+        "args": {
+            "explicacion_arquitectura": "test plan",
+            "pasos": [{"archivo": "main.py", "tarea": "hacer algo", "requiere_test": False}],
+        },
         "id": "call_1"
     }
     mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(content="", tool_calls=[tool_call])
@@ -43,6 +46,34 @@ def test_agente_planificador_tool_call(mock_get_file, mock_get_llm, mock_state):
     assert len(messages) == 2
     assert isinstance(messages[1], ToolMessage)
     assert messages[1].tool_call_id == "call_1"
+
+
+@patch('app.agents.agente_planificador.get_planner_llm')
+@patch('app.agents.agente_planificador.fileSystem.get_file_content')
+def test_agente_planificador_pasos_vacios_reintento(mock_get_file, mock_get_llm, mock_state):
+    """Anti-bucle: plan con 'pasos' vacíos NO se acepta; se pide reintento con error de herramienta."""
+    mock_llm = MagicMock()
+    mock_get_llm.return_value = mock_llm
+    mock_get_file.return_value = "system prompt"
+
+    tool_call = {
+        "name": "entregar_plan_de_accion",
+        "args": {"explicacion_arquitectura": "plan vacío", "pasos": []},
+        "id": "call_vacio_1"
+    }
+    mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(content="", tool_calls=[tool_call])
+
+    result = agente_planificador(mock_state)
+
+    assert isinstance(result, Command)
+    assert result.goto == "agente_planificador"
+    update = result.update or {}
+    assert "plan_de_accion" not in update
+    messages = update["messages"]
+    assert len(messages) == 2
+    assert isinstance(messages[1], ToolMessage)
+    assert messages[1].tool_call_id == "call_vacio_1"
+    assert "ERROR" in messages[1].content
 
 @patch('app.agents.agente_planificador.get_planner_llm')
 @patch('app.agents.agente_planificador.fileSystem.get_file_content')

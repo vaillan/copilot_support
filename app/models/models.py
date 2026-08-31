@@ -17,6 +17,8 @@ class ProjectState(MessagesState):
     errores_terminal: Optional[str]
     revision_count: int
     loop_counter: int
+    # Contador de respuestas vacías consecutivas del Planificador (anti-bucle).
+    empty_response_count: int = 0
     project_index: Optional[Dict[str, Any]] = None
     analisis_final: Optional[str] = None
     # --- Mecanismo de regeneración de tests (anti-bucle) ---

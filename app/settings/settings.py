@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     LLM_MODEL: str = os.getenv("LLM_MODEL", "")
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "")
 
+    # NOTA (alineación prompt-modelo): el Planificador consume el prompt más
+    # complejo del sistema (contrato estricto de tool-calls). Configure
+    # PLANNER_MODEL con un modelo con tool-calling fiable; los modelos
+    # "flash"/económicos tienden a responder con texto plano y provocar
+    # bucles de reintento en el grafo.
     PLANNER_API_KEY: str = os.getenv("PLANNER_API_KEY", "")
     PLANNER_MODEL: str = os.getenv("PLANNER_MODEL", "")
     PLANNER_PROVIDER: str = os.getenv("PLANNER_PROVIDER", "")
