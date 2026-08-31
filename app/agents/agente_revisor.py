@@ -2,6 +2,7 @@ import sys
 import os
 import subprocess
 import json
+import re
 from contextlib import redirect_stdout
 from langgraph.graph import END
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
@@ -174,6 +175,60 @@ def _get_tools(directorio: str):
     ]
     herramientas = [terminal, finalizar_revision] + herramientas_lectura
     return herramientas
+
+_PATRONES_APROBACION: list[str] = [
+    r"\baprobado\b",
+    r"\baprobada\b",
+    r"\bcorrecto\b",
+    r"\bcorrecta\b",
+    r"\bsin errores\b",
+    r"\bexitoso\b",
+    r"\bexitosa\b",
+    r"\bno requiere\b",
+    r"\bpaso las pruebas\b",
+    r"\bpasó las pruebas\b",
+    r"\bapproved\b",
+    r"\bcorrect\b",
+    r"\bno errors\b",
+    r"\bsuccessful\b",
+    r"\bno tests required\b",
+    r"\bpassed the tests\b",
+    r"\ball tests pass\b",
+]
+
+_PATRONES_NEGACION: list[str] = [
+    r"\bno aprobado\b",
+    r"\bno está aprobado\b",
+    r"\bno esta aprobado\b",
+    r"\bno fue aprobado\b",
+    r"\bnot approved\b",
+    r"\bno correcto\b",
+    r"\bnot correct\b",
+    r"\bincorrect\b",
+    r"\bincorrecto\b",
+    r"\bfailed\b",
+    r"\bfalló\b",
+    r"\bfallo\b",
+    r"\bno exitoso\b",
+    r"\bnot successful\b",
+    r"\bunsuccessful\b",
+]
+
+
+def _texto_indica_aprobacion(texto: str) -> bool:
+    """Determina si el texto del revisor expresa aprobación (español o inglés).
+
+    Args:
+        texto (str): Contenido textual de la respuesta del revisor.
+
+    Returns:
+        bool: True si el texto expresa aprobación; False en caso contrario.
+    """
+    contenido = texto.lower()
+    if any(re.search(p, contenido) for p in _PATRONES_NEGACION):
+        return False
+    return any(re.search(p, contenido) for p in _PATRONES_APROBACION)
+
 
 def agente_revisor(state: ProjectState) -> Command:
     """Ejecuta la revisión del código probándolo en la terminal y decide el flujo.
@@ -388,9 +443,7 @@ def agente_revisor(state: ProjectState) -> Command:
         )
     else:
         # Si la respuesta en texto sugiere aprobación o no requiere pruebas
-        contenido_texto = str(respuesta.content).lower()
-        palabras_aprobacion = ["aprobado", "correcto", "sin errores", "exitoso", "no requiere", "paso las pruebas", "pasó las pruebas"]
-        if any(p in contenido_texto for p in palabras_aprobacion):
+        if _texto_indica_aprobacion(str(respuesta.content)):
             return Command(
                 update={
                     "errores_terminal": "Ninguno. Código aprobado en revisión.",
