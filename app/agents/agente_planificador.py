@@ -390,12 +390,19 @@ def agente_planificador(state: ProjectState) -> Command:
                 goto="agente_planificador"
             )
 
-        # Si la respuesta es de texto y llevamos 2 o más reintentos sin herramientas, derivamos un plan con el contenido generado
-        if loop_counter >= 2:
+        # Si la respuesta es de texto y llevamos 4 o más reintentos sin herramientas, derivamos un plan con el contenido generado.
+        # El umbral de 4 (antes 2) da margen para que el LLM emita la tool_call
+        # 'entregar_plan_de_accion' real; el anti-bucle estructurado actúa en la
+        # iteración 13 y el tope duro en 15, por lo que 4 es seguro.
+        if loop_counter >= 4:
             text_content = str(respuesta.content)
+            # El texto del LLM es el mejor material disponible: se usa como
+            # explicación y como tarea del paso. NO se usa la instrucción del
+            # usuario como 'tarea' (duplicaba el requerimiento completo en la
+            # tabla del formulario de Pausa 1 e inflaba el reporte).
             plan_generado = {
-                "explicacion_arquitectura": text_content[:200],
-                "pasos": [{"archivo": "main.py", "tarea": state.get("instruccion_usuario", text_content), "requiere_test": False}]
+                "explicacion_arquitectura": text_content[:2000],
+                "pasos": [{"archivo": "main.py", "tarea": text_content[:2000], "requiere_test": False}]
             }
             return Command(
                 update={
