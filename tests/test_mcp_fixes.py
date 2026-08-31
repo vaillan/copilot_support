@@ -3,9 +3,10 @@ Pruebas de regresión para los 3 defectos corregidos del servidor MCP:
 
 1. Timeout por defecto de delegar_tarea_a_equipo_ia elevado a 1800s
    (la fase del Codificador no cabe en 300s).
-2. Timeout del LLM en llm_factory corregido a 300 SEGUNDOS
-   (el valor anterior 10000 equivalía a ~2.7h por llamada).
-3. '.task_registry.json' excluido del índice de proyecto.
+2. Timeout del LLM en llm_factory fijado en 900 segundos
+   (10 minutos por llamada LLM; openrouter lo recibe en milisegundos).
+3. 'tasks.db' excluido del índice de proyecto (la persistencia del
+   TaskRegistry migró de '.task_registry.json' a SQLite).
 """
 
 from pathlib import Path
@@ -27,17 +28,18 @@ def test_timeout_default_mcp_es_1800():
     assert '"1800"' in lineas[0], f"El default de timeout debe ser 1800, se encontró: {lineas[0]}"
 
 
-def test_timeout_llm_es_300_segundos():
-    """El timeout base del LLM en llm_factory.py debe ser 300 segundos.
+def test_timeout_llm_es_900_segundos():
+    """El timeout base del LLM en llm_factory.py debe ser 900 segundos.
 
-    Para openrouter se convierte a milisegundos (300_000) porque
+    Para openrouter se convierte a milisegundos (900_000) porque
     langchain_openrouter interpreta `timeout` en ms (mapea a SDK timeout_ms).
     """
     fuente = (RAIZ / "app" / "models" / "llm_factory.py").read_text(encoding="utf-8")
-    assert "timeout_llm_segundos = 300" in fuente, "El timeout base del LLM debe ser 300 segundos"
+    assert "timeout_llm_segundos = 900" in fuente, "El timeout base del LLM debe ser 900 segundos"
     assert '* 1000' in fuente, "openrouter debe recibir el timeout en milisegundos"
 
 
-def test_task_registry_json_excluido_del_indice():
-    """El archivo de persistencia del TaskRegistry no debe indexarse."""
-    assert ".task_registry.json" in EXCLUDED_FILES
+def test_task_registry_db_excluido_del_indice():
+    """La base SQLite del TaskRegistry no debe indexarse."""
+    assert "tasks.db" in EXCLUDED_FILES
+    assert ".task_registry.json" not in EXCLUDED_FILES

@@ -51,7 +51,7 @@ def _create_llm(provider: str, model_name: str, api_key: str, temperature: float
             # RetryConfig (max_elapsed_time = max_retries * 150s, con
             # retry_connection_errors=True) reintentaba con backoff hasta ~7.5
             # minutos: esa era la causa real de los cuelgues del Codificador.
-            timeout_llm_segundos = 300  # 5 minutos por llamada LLM.
+            timeout_llm_segundos = 900  # 10 minutos por llamada LLM.
             if mapped_provider == "openrouter":
                 timeout_llm = timeout_llm_segundos * 1000  # ms para langchain_openrouter
             else:
