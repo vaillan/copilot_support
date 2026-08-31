@@ -28,7 +28,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from app.main import crear_grafo
 from app.utils.project_index import construir_indice
-from app.utils.task_registry import task_registry
+from app.mcp.task_store import task_store
 from app.settings.settings import Settings
 
 
@@ -38,6 +38,10 @@ agentes_app = crear_grafo()
 
 # Mapa de tareas activas: tarea_id -> asyncio.Task en curso (para cancelación).
 tareas_activas: Dict[str, asyncio.Task] = {}
+
+# Longitud máxima de cada celda 'tarea' en la tabla de pasos del formulario
+# de pausa. La explicación del plan (sección 📄) nunca se trunca.
+_MAX_CELDA_TABLA = 300
 
 
 def _log_stderr(msg: str):
@@ -218,12 +222,17 @@ def generar_markdown_pausa(
     lineas.append(f"{explicacion}\n")
 
     # 3. Plan de Pasos (Tabla Markdown con iconos)
+    # Las celdas de la tabla se truncan a _MAX_CELDA_TABLA caracteres para que
+    # el formulario sea legible; la explicación completa (sección 📄) nunca se
+    # trunca, de modo que el plan íntegro siempre llega al usuario.
     if pasos:
         lineas.append("#### 📋")
         lineas.append("| # | 📝 | 📄 | 🧪 |")
         lineas.append("|---|---|---|---|")
         for idx, p in enumerate(pasos, start=1):
             t = str(p.get("tarea", "")).replace("|", "\\|")
+            if len(t) > _MAX_CELDA_TABLA:
+                t = t[:_MAX_CELDA_TABLA].rstrip() + "…"
             a = str(p.get("archivo", "-")).replace("|", "\\|")
             rt = "✅" if p.get("requiere_test") else "—"
             lineas.append(f"| {idx} | {t} | `{a}` | {rt} |")
@@ -325,6 +334,9 @@ async def delegar_tarea_a_equipo_ia(
     
     Args:
         instruccion: Lo que el usuario quiere construir, o el feedback si se está rechazando.
+            Mantén la instrucción CONCISA (objetivo, alcance y restricciones esenciales):
+            el texto completo se registra y se reutiliza en cada iteración del grafo,
+            por lo que las instrucciones muy largas desperdician tokens de contexto.
         directorio_proyecto: La ruta absoluta de la carpeta actual.
         approve: Booleano para aprobar y continuar si el proceso está pausado esperando revisión humana.
         tarea_id: OBLIGATORIO SI ESTÁS APROBANDO O RECHAZANDO UNA PAUSA. Déjalo vacío para iniciar una tarea nueva.
@@ -346,8 +358,8 @@ async def delegar_tarea_a_equipo_ia(
 
     # Registrar la tarea en el TaskRegistry (si no existe aún).
     try:
-        if task_registry.get_task(tarea_id) is None:
-            task_registry.register_task(
+        if task_store.get_task(tarea_id) is None:
+            task_store.register_task(
                 tarea_id=tarea_id,
                 thread_id=config["configurable"]["thread_id"],
                 directorio_proyecto=directorio_proyecto,
@@ -534,7 +546,7 @@ async def delegar_tarea_a_equipo_ia(
                 await notificar_progreso(ctx, msg_pausa1, 40, 100)
                 _log_stderr(f"[MCP] PAUSA 1 - tarea '{tarea_id}' esperando aprobación de plan")
                 try:
-                    task_registry.update_status(tarea_id, "paused_planning", detalle=explicacion)
+                    task_store.update_status(tarea_id, "paused_planning", detalle=explicacion)
                 except Exception:
                     pass
                 return markdown_pausa
@@ -554,7 +566,7 @@ async def delegar_tarea_a_equipo_ia(
                 await notificar_progreso(ctx, msg_cambios, 70, 100)
                 _log_stderr(f"[MCP] PAUSA 2 - tarea '{tarea_id}' esperando aprobación de código")
                 try:
-                    task_registry.update_status(tarea_id, "paused_code", detalle=codigo_escrito)
+                    task_store.update_status(tarea_id, "paused_code", detalle=codigo_escrito)
                 except Exception:
                     pass
                 return markdown_pausa
@@ -573,7 +585,7 @@ async def delegar_tarea_a_equipo_ia(
         await notificar_progreso(ctx, msg_fin, 100, 100)
         _log_stderr(f"[MCP] Tarea '{tarea_id}' COMPLETADA")
         try:
-            task_registry.update_status(tarea_id, "completed", detalle=codigo_escrito)
+            task_store.update_status(tarea_id, "completed", detalle=codigo_escrito)
         except Exception:
             pass
         # Si el grafo terminó en un análisis puro (sin programación), el estado
@@ -601,7 +613,7 @@ async def delegar_tarea_a_equipo_ia(
         await notificar_progreso(ctx, msg_timeout, 100, 100)
         _log_stderr(f"[MCP] TIMEOUT tarea '{tarea_id}'")
         try:
-            task_registry.update_status(tarea_id, "timeout", detalle=msg_timeout)
+            task_store.update_status(tarea_id, "timeout", detalle=msg_timeout)
         except Exception:
             pass
         return msg_timeout
@@ -611,7 +623,7 @@ async def delegar_tarea_a_equipo_ia(
         _log_stderr(f"[MCP] ERROR tarea '{tarea_id}': {err_msg}")
         await notificar_progreso(ctx, msg_err, 100, 100)
         try:
-            task_registry.update_status(tarea_id, "error", detalle=err_msg)
+            task_store.update_status(tarea_id, "error", detalle=err_msg)
         except Exception:
             pass
         return msg_err
@@ -641,7 +653,7 @@ async def consultar_estado_tarea(
         partes = []
 
         # 1. Estado registrado en el TaskRegistry
-        tarea = task_registry.get_task(tarea_id)
+        tarea = task_store.get_task(tarea_id)
         if tarea is not None:
             estado_registrado = tarea.get("estado", "desconocido")
             partes.append(f"### 📌 Estado registrado de la tarea '{tarea_id}'")
@@ -682,7 +694,7 @@ async def listar_tareas(
     try:
         await notificar_progreso(ctx, "📋 Listando tareas registradas...", 10, 100)
 
-        tareas = task_registry.list_tasks(estado=estado)
+        tareas = task_store.list_tasks(estado=estado)
 
         if not tareas:
             msg = "ℹ️ No hay tareas registradas" + (f" con estado '{estado}'" if estado else "") + "."
@@ -724,14 +736,14 @@ async def cancelar_tarea(
     try:
         await notificar_progreso(ctx, f"🛑 Intentando cancelar la tarea '{tarea_id}'...", 10, 100)
 
-        tarea = task_registry.get_task(tarea_id)
+        tarea = task_store.get_task(tarea_id)
         if tarea is None:
             msg = f"⚠️ No se encontró la tarea '{tarea_id}' en el registro. No se puede cancelar."
             await notificar_progreso(ctx, msg, 100, 100)
             return msg
 
         # Marcar como cancelada en el registro
-        task_registry.update_status(tarea_id, "cancelled", detalle="Cancelada por el usuario")
+        task_store.update_status(tarea_id, "cancelled", detalle="Cancelada por el usuario")
 
         # Intentar cancelar la asyncio.Task activa si existe
         task_activa = tareas_activas.get(tarea_id)

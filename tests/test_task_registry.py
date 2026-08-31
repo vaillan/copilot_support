@@ -1,10 +1,14 @@
 """
 Pruebas unitarias para app/utils/task_registry.py.
 
-Cubre: register_task, update_status, get_task, list_tasks, remove_task
-y concurrencia con múltiples hilos.
+La persistencia del registro es SQLite (base tasks.db, tabla tasks): los tests
+de disco consultan la base con sqlite3 o crean una nueva instancia del registro
+sobre la misma ruta. Cubre: register_task, update_status, get_task, list_tasks,
+remove_task y concurrencia con múltiples hilos.
 """
 
+import json
+import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -16,8 +20,8 @@ from app.utils.task_registry import TaskRegistry, ESTADOS_VALIDOS
 
 @pytest.fixture
 def registro(tmp_path):
-    """Fixture que devuelve un TaskRegistry limpio por prueba (persistencia aislada en tmp)."""
-    return TaskRegistry(ruta_persistencia=str(tmp_path / ".task_registry.json"))
+    """Fixture que devuelve un TaskRegistry limpio por prueba (persistencia SQLite aislada en tmp)."""
+    return TaskRegistry(ruta_persistencia=str(tmp_path / "tasks.db"))
 
 
 def test_register_task_crea_entrada_con_estado_running(registro):
@@ -108,7 +112,7 @@ def test_clear_vacia_registro(registro):
 
 def test_concurrencia_multihilo_no_corrompe_registro(tmp_path):
     """Varias operaciones simultáneas no deben corromper el registro."""
-    registro = TaskRegistry(ruta_persistencia=str(tmp_path / ".task_registry.json"))
+    registro = TaskRegistry(ruta_persistencia=str(tmp_path / "tasks.db"))
 
     def operar(i: int):
         tid = f"task_{i}"
@@ -144,8 +148,9 @@ def test_estados_validos_contiene_todos_los_esperados():
 
 def test_persistencia_sobrevive_reinicio_del_proceso(tmp_path):
     """Simula un reinicio del servidor MCP: una NUEVA instancia del registro
-    debe recuperar las tareas persistidas por la instancia anterior."""
-    ruta = str(tmp_path / ".task_registry.json")
+    debe recuperar las tareas persistidas por la instancia anterior desde la
+    base SQLite."""
+    ruta = str(tmp_path / "tasks.db")
     registro = TaskRegistry(ruta_persistencia=ruta)
     registro.register_task(tarea_id="task_reinicio", estado="running")
     registro.update_status("task_reinicio", "paused_planning", detalle="Plan listo")
@@ -158,27 +163,32 @@ def test_persistencia_sobrevive_reinicio_del_proceso(tmp_path):
 
 
 def test_update_status_persiste_estado_en_disco(tmp_path):
-    """El cambio de estado debe reflejarse inmediatamente en el archivo JSON."""
-    import json
-
-    ruta = tmp_path / ".task_registry.json"
+    """El cambio de estado debe reflejarse inmediatamente en la tabla tasks de la base SQLite."""
+    ruta = tmp_path / "tasks.db"
     registro = TaskRegistry(ruta_persistencia=str(ruta))
     registro.register_task(tarea_id="task_disco")
     registro.update_status("task_disco", "completed", detalle="OK")
 
-    with open(ruta, "r", encoding="utf-8") as f:
-        datos = json.load(f)
-    assert datos["task_disco"]["estado"] == "completed"
-    assert datos["task_disco"]["detalle"] == "OK"
+    conn = sqlite3.connect(str(ruta))
+    fila = conn.execute(
+        "SELECT datos FROM tasks WHERE tarea_id = ?", ("task_disco",)
+    ).fetchone()
+    conn.close()
+
+    assert fila is not None
+    datos = json.loads(fila[0])
+    assert datos["estado"] == "completed"
+    assert datos["detalle"] == "OK"
 
 
 def test_fallo_io_degrada_a_memoria_sin_excepcion(tmp_path):
-    """Si la persistencia falla (ruta no escribible), el registro sigue
-    funcionando en memoria y no propaga excepciones."""
+    """Si la persistencia falla (ruta no escribible), la conexión SQLite se
+    degrada a una base en memoria (:memory:) sin lanzar excepción y el registro
+    sigue operativo."""
     # 'padre' es un ARCHIVO: mkdir(parents=True) sobre su hijo fallará.
     padre_archivo = tmp_path / "padre"
     padre_archivo.write_text("no soy un directorio", encoding="utf-8")
-    ruta_invalida = padre_archivo / "sub" / ".task_registry.json"
+    ruta_invalida = padre_archivo / "sub" / "tasks.db"
 
     registro = TaskRegistry(ruta_persistencia=str(ruta_invalida))
     tarea = registro.register_task(tarea_id="task_memoria")
@@ -188,20 +198,20 @@ def test_fallo_io_degrada_a_memoria_sin_excepcion(tmp_path):
 
 
 def test_remove_task_y_clear_persisten_cambios(tmp_path):
-    """remove_task y clear deben reflejarse en el archivo de persistencia."""
-    import json
-
-    ruta = tmp_path / ".task_registry.json"
+    """remove_task y clear deben reflejarse en la base SQLite."""
+    ruta = tmp_path / "tasks.db"
     registro = TaskRegistry(ruta_persistencia=str(ruta))
     registro.register_task(tarea_id="task_borrar")
     registro.remove_task("task_borrar")
 
-    with open(ruta, "r", encoding="utf-8") as f:
-        datos = json.load(f)
-    assert "task_borrar" not in datos
+    conn = sqlite3.connect(str(ruta))
+    fila = conn.execute(
+        "SELECT datos FROM tasks WHERE tarea_id = ?", ("task_borrar",)
+    ).fetchone()
+    assert fila is None
 
     registro.register_task(tarea_id="task_otra")
     registro.clear()
-    with open(ruta, "r", encoding="utf-8") as f:
-        datos = json.load(f)
-    assert datos == {}
+    total = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+    conn.close()
+    assert total == 0

@@ -63,8 +63,8 @@ EXCLUDED_FILES: Set[str] = {
     "Gemfile.lock",
     "composer.lock",
     INDEX_FILENAME,
-    # Registro de tareas del MCP (persistencia propia, nunca indexar)
-    ".task_registry.json",
+    # Base SQLite del registro de tareas del MCP (persistencia propia, nunca indexar)
+    "tasks.db",
 }
 
 # Extensiones de archivos binarios o no textuales que se omiten

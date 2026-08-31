@@ -34,3 +34,4 @@ checkpoints.sqlite*
 .tabnine/skills/
 .warp/skills/
 **/.skills/
+tasks.db* 
