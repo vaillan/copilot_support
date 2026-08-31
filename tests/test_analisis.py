@@ -85,8 +85,9 @@ def test_reporte_final_incluye_analisis(mock_ainvoke, mock_aget_state):
         tarea_id="task_analisis",
     ))
 
-    assert "✅ Análisis completado por el equipo LangGraph" in resultado
-    assert "Análisis detallado del módulo X" in resultado
+    # Formato actual del reporte de análisis puro (mcp_server.py): "✅ task: <id>\n\n📋 <análisis>"
+    assert "✅ task: task_analisis" in resultado
+    assert "📋 Análisis detallado del módulo X" in resultado
 
 
 @patch("app.agents.agente_planificador.get_planner_llm")
