@@ -56,14 +56,14 @@ def test_delegar_tarea_pausa_2_muestra_cambios(mock_ainvoke, mock_aget_state):
 
     # La instruccion "Crear helpers" NO es un rechazo explícito,
     # por lo que el servidor debe re-pausar con feedback del usuario
-    assert "ATENCIÓN ASISTENTE DE IA" in resultado
+    assert "🛑 AI ASSISTANT" in resultado
     assert "Creado archivo app/utils/helpers.py con funciones aux." in resultado
-    assert "INSTRUCCIONES PARA EL USUARIO HUMANO" in resultado
+    assert "👉 ✅ = approve" in resultado
     assert "Revisión de Código (Feedback del Usuario Recibido)" in resultado
     assert "NO aprobó ni rechazó explícitamente" in resultado
     
     # Verificar que la función retorna el markdown de re-pausa (no procesa como rechazo)
-    assert "**Estado:** Pausado (PAUSA_2)" in resultado
+    assert "**Estado/Status:** ⏸️ PAUSA_2" in resultado
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
 @patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
@@ -87,10 +87,10 @@ def test_delegar_tarea_con_contexto_notificaciones(mock_ainvoke, mock_aget_state
         ctx=mock_ctx
     ))
 
-    assert "ATENCIÓN ASISTENTE DE IA" in resultado
+    assert "🛑 AI ASSISTANT" in resultado
     assert "Formulario de Aprobación de Plan de Acción" in resultado
     assert "Plan de prueba" in resultado
-    assert "INSTRUCCIONES PARA EL USUARIO HUMANO" in resultado
+    assert "👉 ✅ = approve" in resultado
     assert mock_ctx.info.called
     assert mock_ctx.report_progress.called
 
@@ -124,7 +124,7 @@ def test_delegar_tarea_aprobacion_y_completado(mock_ainvoke, mock_aget_state):
         ctx=mock_ctx
     ))
 
-    assert "✅ Tarea completada exitosamente" in resultado
+    assert "✅ task: task_456" in resultado
     assert "Se implementaron las funciones requeridas." in resultado
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
@@ -149,7 +149,7 @@ def test_delegar_tarea_preserva_stdout(mock_ainvoke, mock_aget_state):
     ))
 
     assert sys.stdout is original_stdout
-    assert "✅ Tarea completada exitosamente" in resultado
+    assert "✅ task: task_stdout_check" in resultado
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
 @patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
@@ -185,7 +185,7 @@ def test_delegar_tarea_auto_approve_parametro(mock_ainvoke, mock_aget_state):
         auto_approve=True
     ))
 
-    assert "✅ Tarea completada exitosamente" in resultado
+    assert "✅ task:" in resultado
     assert "Código generado y verificado" in resultado
     assert mock_ainvoke.call_count == 3
 
@@ -225,7 +225,7 @@ def test_delegar_tarea_auto_approve_env_var(mock_ainvoke, mock_aget_state, env_v
             auto_approve=False
         ))
 
-    assert "✅ Tarea completada exitosamente" in resultado
+    assert "✅ task:" in resultado
     assert "Código final via env var" in resultado
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
@@ -247,7 +247,7 @@ def test_delegar_tarea_sin_auto_approve_mantiene_pausa(mock_ainvoke, mock_aget_s
             auto_approve=False
         ))
 
-    assert "ATENCIÓN ASISTENTE DE IA" in resultado
+    assert "🛑 AI ASSISTANT" in resultado
     assert "Plan manual" in resultado
 
 @patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
@@ -264,8 +264,8 @@ def test_delegar_tarea_timeout_excedido(mock_aget_state):
             tarea_id="task_timeout"
         ))
 
-    assert "🚨 Timeout:" in resultado
-    assert "excedió el límite máximo de ejecución" in resultado
+    assert "🚨 ⏱️ TIMEOUT" in resultado
+    assert "task_timeout" in resultado
 
 def test_notificar_progreso_captura_broken_resource_error():
     mock_ctx = AsyncMock()
@@ -318,24 +318,24 @@ def test_generar_markdown_pausa_orden_prominente():
 
     # Verificar que el título y metadatos están presentes
     assert "### 📌 Plan de Arquitectura Propuesto" in reporte
-    assert "- **ID Tarea:** `task_xyz123`" in reporte
-    assert "- **Directorio:** `/ruta/proyecto`" in reporte
-    assert "- **Estado:** Pausado (PAUSA_1) - Requiere aprobación humana." in reporte
+    assert "- **ID:** `task_xyz123`" in reporte
+    assert "- **Dir:** `/ruta/proyecto`" in reporte
+    assert "- **Estado/Status:** ⏸️ PAUSA_1" in reporte
 
     # Verificar que la explicación y la tabla de pasos aparecen en el reporte
-    assert "#### 📄 Explicación / Resumen:" in reporte
+    assert "#### 📄" in reporte
     assert "Esta es la explicación detallada de la arquitectura modular." in reporte
-    assert "#### 📋 Plan de Pasos Propuestos:" in reporte
-    assert "| 1 | Crear archivo de configuración | `config.py` | No |" in reporte
-    assert "| 2 | Implementar lógica principal | `main.py` | Si |" in reporte
+    assert "#### 📋" in reporte
+    assert "| 1 | Crear archivo de configuración | `config.py` | — |" in reporte
+    assert "| 2 | Implementar lógica principal | `main.py` | ✅ |" in reporte
 
     # Verificar orden estricto: El plan de acción (título, explicación, tabla) debe aparecer ANTES
-    # de los avisos para la IA ("🛑 ATENCIÓN ASISTENTE DE IA") y de las instrucciones del usuario ("👉 INSTRUCCIONES PARA EL USUARIO HUMANO").
+    # de los avisos para la IA ("🛑 AI ASSISTANT") y de las instrucciones del usuario ("👉 ✅ = approve").
     pos_titulo = reporte.find("### 📌 Plan de Arquitectura Propuesto")
     pos_explicacion = reporte.find("Esta es la explicación detallada de la arquitectura modular.")
-    pos_tabla = reporte.find("Plan de Pasos Propuestos")
-    pos_ia = reporte.find("🛑 ATENCIÓN ASISTENTE DE IA")
-    pos_humano = reporte.find("👉 **INSTRUCCIONES PARA EL USUARIO HUMANO:**")
+    pos_tabla = reporte.find("#### 📋")
+    pos_ia = reporte.find("🛑 AI ASSISTANT")
+    pos_humano = reporte.find("👉 ✅ = approve")
 
     assert pos_titulo < pos_ia
     assert pos_explicacion < pos_ia
@@ -355,12 +355,12 @@ def test_generar_markdown_pausa_con_diff():
 
     assert "### 📌 Revisión de Código Desarrollado" in reporte
     assert "Se creó el archivo app.py." in reporte
-    assert "#### 🔍 Git Diff / Cambios en Disco:" in reporte
+    assert "#### 🔍" in reporte
     assert "+print('hello')" in reporte
 
     pos_explicacion = reporte.find("Se creó el archivo app.py.")
-    pos_diff = reporte.find("Git Diff / Cambios en Disco")
-    pos_ia = reporte.find("🛑 ATENCIÓN ASISTENTE DE IA")
+    pos_diff = reporte.find("#### 🔍")
+    pos_ia = reporte.find("🛑 AI ASSISTANT")
 
     assert pos_explicacion < pos_diff
     assert pos_diff < pos_ia
@@ -550,3 +550,149 @@ def test_herramientas_registradas():
         "listar_tareas",
         "cancelar_tarea",
     }.issubset(nombres)
+
+
+# =============================================================================
+# Pruebas del formato neutralizado (sin prosa en idioma natural)
+# =============================================================================
+
+def test_generar_markdown_pausa_sin_prosa_espanola():
+    """El reporte de pausa NO debe contener las etiquetas fijas en español del formato antiguo."""
+    pasos_ejemplo = [
+        {"tarea": "Crear archivo de configuración", "archivo": "config.py", "requiere_test": False},
+    ]
+    reporte = generar_markdown_pausa(
+        tarea_id="task_xyz123",
+        tipo_pausa="PAUSA_1",
+        titulo="Plan de Arquitectura Propuesto",
+        explicacion="Esta es la explicación detallada.",
+        pasos=pasos_ejemplo,
+        directorio_proyecto="/ruta/proyecto"
+    )
+
+    cadenas_prohibidas = [
+        "ATENCIÓN ASISTENTE DE IA",
+        "INSTRUCCIONES PARA EL USUARIO HUMANO",
+        "Plan de Pasos Propuestos",
+        "Requiere aprobación humana",
+        "PARA APROBAR",
+        "PARA RECHAZAR",
+        "ID Tarea",
+        "Explicación / Resumen",
+        "Git Diff / Cambios en Disco",
+    ]
+    for cadena in cadenas_prohibidas:
+        assert cadena not in reporte, f"La cadena fija en español '{cadena}' no debe aparecer en el formato neutralizado."
+
+
+def test_generar_markdown_pausa_estructura_neutralizada():
+    """El reporte de pausa debe contener la estructura neutralizada con iconos."""
+    pasos_ejemplo = [
+        {"tarea": "Paso de prueba", "archivo": "a.py", "requiere_test": True},
+    ]
+    reporte = generar_markdown_pausa(
+        tarea_id="task_xyz123",
+        tipo_pausa="PAUSA_1",
+        titulo="Título Dinámico",
+        explicacion="Explicación dinámica.",
+        pasos=pasos_ejemplo,
+        directorio_proyecto="/ruta/proyecto"
+    )
+
+    assert "### 📌 Título Dinámico" in reporte
+    assert "- **ID:** `task_xyz123`" in reporte
+    assert "- **Dir:** `/ruta/proyecto`" in reporte
+    assert "- **Estado/Status:** ⏸️ PAUSA_1" in reporte
+    assert "#### 📄" in reporte
+    assert "#### 📋" in reporte
+    assert "| # | 📝 | 📄 | 🧪 |" in reporte
+    assert "🛑 AI ASSISTANT" in reporte
+    assert "👉 ✅ = approve / ❌ = reject + feedback" in reporte
+
+
+def test_generar_markdown_pausa_tabla_usa_iconos():
+    """La columna requiere_test de la tabla debe usar iconos ✅/— en lugar de Si/No."""
+    pasos_ejemplo = [
+        {"tarea": "A", "archivo": "a.py", "requiere_test": True},
+        {"tarea": "B", "archivo": "b.py", "requiere_test": False},
+    ]
+    reporte = generar_markdown_pausa(
+        tarea_id="task_icons",
+        tipo_pausa="PAUSA_1",
+        titulo="Título",
+        explicacion="Explicación",
+        pasos=pasos_ejemplo
+    )
+
+    assert "| 1 | A | `a.py` | ✅ |" in reporte
+    assert "| 2 | B | `b.py` | — |" in reporte
+    assert "| Si |" not in reporte
+    assert "| No |" not in reporte
+
+
+def test_generar_markdown_pausa_con_diff_neutralizado():
+    """La sección de diff debe marcarse solo con el icono 🔍, sin encabezado textual."""
+    diff_ejemplo = "diff --git a/app.py b/app.py\n+print('hello')"
+    reporte = generar_markdown_pausa(
+        tarea_id="task_diff789",
+        tipo_pausa="PAUSA_2",
+        titulo="Revisión de Código Desarrollado",
+        explicacion="Se creó el archivo app.py.",
+        diff_git=diff_ejemplo,
+        directorio_proyecto="./"
+    )
+
+    assert "#### 🔍" in reporte
+    assert "+print('hello')" in reporte
+    assert "Git Diff / Cambios en Disco" not in reporte
+
+
+def test_delegar_tarea_approve_sin_tarea_id_neutralizado():
+    """El error de aprobación sin tarea_id debe estar neutralizado (sin prosa en español)."""
+    resultado = asyncio.run(delegar_tarea_a_equipo_ia(
+        instruccion="x",
+        directorio_proyecto="./",
+        approve=True
+    ))
+
+    assert "🚨 approve: tarea_id required" in resultado
+    assert "No puedes aprobar" not in resultado
+
+
+@patch("mcp_server.obtener_git_diff", return_value="")
+@patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+def test_delegar_tarea_completado_sin_prosa_espanola(mock_aget_state, mock_ainvoke, mock_git_diff):
+    """El mensaje de completado y el reporte final no deben contener prosa fija en español."""
+    mock_state_final = MagicMock()
+    mock_state_final.next = []
+    mock_state_final.values = {
+        "codigo_escrito": "ok",
+        "errores_terminal": "0"
+    }
+    mock_aget_state.return_value = mock_state_final
+
+    resultado = asyncio.run(delegar_tarea_a_equipo_ia(
+        instruccion="Tarea neutral",
+        directorio_proyecto="./",
+        tarea_id="task_neutral"
+    ))
+
+    assert "✅ task: task_neutral" in resultado
+    assert "Tarea completada exitosamente" not in resultado
+    assert "ADVERTENCIA" not in resultado
+
+
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+def test_delegar_tarea_error_interno_sin_prosa_espanola(mock_aget_state):
+    """El mensaje de error interno no debe contener prosa fija en español."""
+    mock_aget_state.side_effect = RuntimeError("boom")
+
+    resultado = asyncio.run(delegar_tarea_a_equipo_ia(
+        instruccion="Tarea con error",
+        directorio_proyecto="./",
+        tarea_id="task_err"
+    ))
+
+    assert "🚨 task: task_err: boom" in resultado
+    assert "error interno" not in resultado

@@ -206,54 +206,43 @@ def generar_markdown_pausa(
     """
     lineas = []
     
-    # 1. Título principal y Metadatos de la Tarea en la parte superior prominente
+    # 1. Título principal y Metadatos de la Tarea
     lineas.append(f"### 📌 {titulo}")
-    lineas.append(f"- **ID Tarea:** `{tarea_id}`")
+    lineas.append(f"- **ID:** `{tarea_id}`")
     if directorio_proyecto:
-        lineas.append(f"- **Directorio:** `{directorio_proyecto}`")
-    lineas.append(f"- **Estado:** Pausado ({tipo_pausa}) - Requiere aprobación humana.\n")
+        lineas.append(f"- **Dir:** `{directorio_proyecto}`")
+    lineas.append(f"- **Estado/Status:** ⏸️ {tipo_pausa}\n")
     
-    # 2. Explicación / Resumen
-    lineas.append("#### 📄 Explicación / Resumen:")
+    # 2. Explicación / Resumen (contenido dinámico, sin encabezado textual)
+    lineas.append("#### 📄")
     lineas.append(f"{explicacion}\n")
 
-    # 3. Plan de Pasos Propuestos (Tabla Markdown)
+    # 3. Plan de Pasos (Tabla Markdown con iconos)
     if pasos:
-        lineas.append("#### 📋 Plan de Pasos Propuestos:")
-        lineas.append("| # | Tarea | Archivo | Requiere Test |")
-        lineas.append("|---|-------|---------|---------------|")
+        lineas.append("#### 📋")
+        lineas.append("| # | 📝 | 📄 | 🧪 |")
+        lineas.append("|---|---|---|---|")
         for idx, p in enumerate(pasos, start=1):
             t = str(p.get("tarea", "")).replace("|", "\\|")
             a = str(p.get("archivo", "-")).replace("|", "\\|")
-            rt = "Si" if p.get("requiere_test") else "No"
+            rt = "✅" if p.get("requiere_test") else "—"
             lineas.append(f"| {idx} | {t} | `{a}` | {rt} |")
         lineas.append("")
 
-    # 4. Git Diff / Cambios en Disco (si existen)
+    # 4. Git Diff / Cambios en Disco (contenido dinámico, sin encabezado textual)
     if diff_git:
-        lineas.append("#### 🔍 Git Diff / Cambios en Disco:")
+        lineas.append("#### 🔍")
         lineas.append("```diff")
         lineas.append(diff_git)
         lineas.append("```\n")
 
-    # 5. Bloque de advertencia para el asistente de IA (desplazado hacia la parte inferior)
-    lineas.append("================================================================================")
-    lineas.append("🛑 ATENCIÓN ASISTENTE DE IA (ZOO CODE / COPILOT / CURSOR):")
-    lineas.append("EL FLUJO ESTÁ PAUSADO ESPERANDO CONFIRMACIÓN DEL USUARIO HUMANO.")
-    lineas.append("**DETÉN LA EJECUCIÓN AUTOMÁTICA DE HERRAMIENTAS DE INMEDIATO.**")
-    lineas.append("NO ejecutes ninguna función ni herramienta por tu cuenta.")
-    lineas.append("Muestra todo el plan de acción y/o los cambios de código anteriores directamente al usuario humano en el chat y **ESPERA** pacientemente a que el usuario escriba su decisión explícita.")
-    lineas.append("================================================================================\n")
+    # 5. Bloque de advertencia para el asistente de IA (inglés neutro compacto)
+    lineas.append("---")
+    lineas.append("🛑 AI ASSISTANT: FLOW PAUSED. STOP TOOL EXECUTION. SHOW THE PLAN/CHANGES ABOVE TO THE HUMAN USER AND WAIT FOR THEIR EXPLICIT DECISION (APPROVE/REJECT) IN THE CHAT.")
+    lineas.append("---\n")
 
-    # 6. Instrucciones para el usuario humano (en la parte inferior)
-    lineas.append("--------------------------------------------------------------------------------")
-    lineas.append("👉 **INSTRUCCIONES PARA EL USUARIO HUMANO:**")
-    lineas.append("--------------------------------------------------------------------------------")
-    lineas.append("Por favor, revisa detalladamente el plan o los cambios de código anteriores.")
-    lineas.append("• **PARA APROBAR:** Escribe en el chat que apruebas la tarea (ej. 'Aprobar' o 'Acepto').")
-    lineas.append("• **PARA RECHAZAR O PEDIR CAMBIOS:** Escribe en el chat 'Rechazar' junto con tus observaciones o correcciones.")
-    lineas.append("El asistente de IA debe detenerse y esperar a que tú escribas tu respuesta.")
-    lineas.append("================================================================================")
+    # 6. Instrucciones para el usuario humano (iconos compactos, sin prosa)
+    lineas.append("👉 ✅ = approve / ❌ = reject + feedback")
 
     return "\n".join(lineas)
 
@@ -349,7 +338,7 @@ async def delegar_tarea_a_equipo_ia(
     # Si es una tarea nueva, generamos un ID único. Si estamos resumiendo, usamos el que nos pasa el LLM.
     if not tarea_id:
         if approve:
-            return "Error: No puedes aprobar una tarea sin proporcionar el 'tarea_id' de la sesión pausada."
+            return "🚨 approve: tarea_id required"
         uuid_hex = uuid.uuid4().hex[:8]
         tarea_id = f"task_{uuid_hex}"
         
@@ -408,14 +397,20 @@ async def delegar_tarea_a_equipo_ia(
                         # RECHAZO EXPLICITO: Regresamos al codificador
                         msg_rechazo_cod = f"El usuario rechazó el código con este feedback: {instruccion}"
                         msg_rechazo_human = f"Rechazo de código: {instruccion}"
+                        # as_node: el grafo está interrumpido ANTES de agente_revisor; tratar
+                        # este Command como salida de ese nodo evita el error
+                        # INVALID_CONCURRENT_GRAPH_UPDATE (dos escrituras de loop_counter
+                        # en el mismo superstep al reanudar).
+                        # NOTA: NO se resetea revision_count: el tope global de 3 revisiones
+                        # del Revisor debe acumularse across sesiones para frenar bucles.
                         comando = Command(
                             goto="agente_codificador",
                             update={
                                 "errores_terminal": msg_rechazo_cod,
                                 "messages": [HumanMessage(content=msg_rechazo_human)],
-                                "loop_counter": 0,
-                                "revision_count": 0
-                            }
+                                "loop_counter": 0
+                            },
+                            as_node="agente_revisor"
                         )
                         resultado = await agentes_app.ainvoke(comando, config) # type: ignore
                     else:
@@ -440,12 +435,16 @@ async def delegar_tarea_a_equipo_ia(
                     if es_rechazo:
                         # RECHAZO EXPLICITO: Regresamos al planificador
                         msg_rechazo_plan = f"El usuario rechazó el plan de acción: {instruccion}"
+                        # as_node: el grafo está interrumpido ANTES de agente_codificador;
+                        # tratar este Command como salida de ese nodo evita el error
+                        # INVALID_CONCURRENT_GRAPH_UPDATE al reanudar.
                         comando = Command(
                             goto="agente_planificador",
                             update={
                                 "messages": [HumanMessage(content=msg_rechazo_plan)],
                                 "loop_counter": 0
-                            }
+                            },
+                            as_node="agente_codificador"
                         )
                         resultado = await agentes_app.ainvoke(comando, config) # type: ignore
                     else:
@@ -560,16 +559,15 @@ async def delegar_tarea_a_equipo_ia(
 
         # Si no hay 'next', el grafo llegó a END
         values = estado.values if hasattr(estado, "values") else {}
-        codigo_escrito = values.get("codigo_escrito") or (resultado.get("codigo_escrito") if isinstance(resultado, dict) else "No se reportó código.")
-        errores_qa = values.get("errores_terminal") or (resultado.get("errores_terminal") if isinstance(resultado, dict) else "Sin errores.")
+        codigo_escrito = values.get("codigo_escrito") or (resultado.get("codigo_escrito") if isinstance(resultado, dict) else "-")
+        errores_qa = values.get("errores_terminal") or (resultado.get("errores_terminal") if isinstance(resultado, dict) else "-")
         
         diff_git = obtener_git_diff(directorio_proyecto)
-        msg_fin = f"✅ Tarea '{tarea_id}' completada exitosamente."
+        msg_fin = f"✅ task: {tarea_id}"
         if diff_git:
-            diff_msg = f"\n\n🔍 Cambios en disco finales:\n{diff_git}"
-            msg_fin += diff_msg
+            msg_fin += f"\n\n🔍 {diff_git}"
         else:
-            msg_fin += "\n\n⚠️ ADVERTENCIA: No se detectaron cambios ni modificaciones en los archivos del disco (git diff / status está vacío)."
+            msg_fin += "\n\n⚠️ git diff: 0 changes"
         await notificar_progreso(ctx, msg_fin, 100, 100)
         _log_stderr(f"[MCP] Tarea '{tarea_id}' COMPLETADA")
         try:
@@ -583,32 +581,31 @@ async def delegar_tarea_a_equipo_ia(
         analisis_final = values.get("analisis_final") or (resultado.get("analisis_final") if isinstance(resultado, dict) else None)
 
         if analisis_final:
-            reporte_final = f"✅ Análisis completado por el equipo LangGraph.\nID de Tarea: {tarea_id}\n\n📋 REPORTE DE ANÁLISIS:\n{analisis_final}"
+            reporte_final = f"✅ task: {tarea_id}\n\n📋 {analisis_final}"
         else:
             reporte_final = (
-                f"✅ Tarea completada exitosamente por el equipo LangGraph.\n"
-                f"ID de Tarea: {tarea_id}\n"
-                f"Resumen de cambios: {codigo_escrito}\n"
-                f"Estado final de los tests (QA): {errores_qa}"
+                f"✅ task: {tarea_id}\n"
+                f"📝 {codigo_escrito}\n"
+                f"🧪 {errores_qa}"
             )
             if not diff_git:
-                reporte_final += f"\n\n⚠️ ADVERTENCIA: La tarea finalizó pero git diff no muestra modificaciones en '{directorio_proyecto}'. Comprueba si el Agente Codificador omitió la escritura de archivos."
+                reporte_final += f"\n\n⚠️ git diff: 0 changes ({directorio_proyecto})"
         return reporte_final
 
     try:
         return await asyncio.wait_for(_ejecutar_logica(), timeout=timeout_seconds)
     except asyncio.TimeoutError:
-        msg_timeout = f"🚨 Timeout: La tarea '{tarea_id}' excedió el límite máximo de ejecución ({timeout_seconds}s)."
+        msg_timeout = f"🚨 ⏱️ TIMEOUT ({timeout_seconds}s) — task: {tarea_id}"
         await notificar_progreso(ctx, msg_timeout, 100, 100)
         _log_stderr(f"[MCP] TIMEOUT tarea '{tarea_id}'")
         try:
             task_registry.update_status(tarea_id, "timeout", detalle=msg_timeout)
         except Exception:
             pass
-        return f"{msg_timeout} Por favor, reintenta dividiendo la instrucción en pasos más específicos o verifica el estado de la tarea con tarea_id='{tarea_id}'."
+        return msg_timeout
     except BaseException as e:
         err_msg = str(e)
-        msg_err = f"🚨 El equipo de agentes falló con un error interno en tarea '{tarea_id}': {err_msg}"
+        msg_err = f"🚨 task: {tarea_id}: {err_msg}"
         _log_stderr(f"[MCP] ERROR tarea '{tarea_id}': {err_msg}")
         await notificar_progreso(ctx, msg_err, 100, 100)
         try:
