@@ -42,13 +42,27 @@ def _create_llm(provider: str, model_name: str, api_key: str, temperature: float
         return ChatOllama(**kwargs)
     else:
         try:
+            # NOTA sobre unidades de `timeout` (verificada en el código fuente de
+            # langchain_openrouter/chat_models.py: `request_timeout: int = Field(
+            # alias="timeout")`, docstring "Timeout in milliseconds. Maps to SDK
+            # timeout_ms"): langchain_openrouter espera MILISEGUNDOS, mientras que
+            # el resto de proveedores (openai, google_genai, etc.) esperan SEGUNDOS.
+            # Pasar 300 (segundos) a openrouter equivalía a 0.3s por intento, y su
+            # RetryConfig (max_elapsed_time = max_retries * 150s, con
+            # retry_connection_errors=True) reintentaba con backoff hasta ~7.5
+            # minutos: esa era la causa real de los cuelgues del Codificador.
+            timeout_llm_segundos = 300  # 5 minutos por llamada LLM.
+            if mapped_provider == "openrouter":
+                timeout_llm = timeout_llm_segundos * 1000  # ms para langchain_openrouter
+            else:
+                timeout_llm = timeout_llm_segundos  # segundos para el resto
             kwargs = {
                 "model": mod,
                 "model_provider": mapped_provider,
                 "temperature": temperature,
                 "api_key": api_key,
                 "max_retries": 3,
-                "timeout": 10000
+                "timeout": timeout_llm
             }
             if rate_limiter:
                 kwargs["rate_limiter"] = rate_limiter

@@ -361,7 +361,10 @@ async def delegar_tarea_a_equipo_ia(
     await notificar_progreso(ctx, f"🚀 Iniciando procesamiento para tarea '{tarea_id}'...", 10, 100)
     _log_stderr(f"[MCP] Iniciando tarea '{tarea_id}' con auto_approve={effective_auto_approve}")
 
-    timeout_seconds = int(os.environ.get("MCP_TASK_TIMEOUT_SECONDS", "300"))
+    # Default elevado a 1800s: la fase del Codificador (múltiples llamadas LLM
+    # + escritura de archivos) no cabe en 300s y provocaba TIMEOUT prematuros
+    # que cancelaban el grafo a mitad de superstep.
+    timeout_seconds = int(os.environ.get("MCP_TASK_TIMEOUT_SECONDS", "1800"))
 
     async def _ejecutar_logica() -> str:
         estado_actual = await agentes_app.aget_state(config) # type: ignore
