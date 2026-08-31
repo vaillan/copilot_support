@@ -89,8 +89,11 @@ def agente_codificador(state: ProjectState) -> Command:
     """
     loop_counter = state.get("loop_counter", 0) + 1
     if loop_counter > 15:
+        # Registrar el aborto en errores_terminal: sin esto, el reporte final
+        # del MCP mostraría "Sin errores" pese a que el flujo abortó por bucle.
         return Command(
             update={
+                "errores_terminal": "Abortado: el Agente Codificador excedió el límite máximo de 15 iteraciones sin completar el plan (posible bucle). Revisar el plan y los errores previos.",
                 "messages": [HumanMessage(content="Error: Se ha excedido el límite máximo de iteraciones (15) en el Agente Codificador. El proceso se detiene para evitar un bucle infinito.")]
             },
             goto=END
