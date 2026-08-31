@@ -696,3 +696,143 @@ def test_delegar_tarea_error_interno_sin_prosa_espanola(mock_aget_state):
 
     assert "🚨 task: task_err: boom" in resultado
     assert "error interno" not in resultado
+
+
+# =============================================================================
+# Pruebas de la ruta de rechazo (O0A: Command sin as_node)
+# =============================================================================
+
+@patch("mcp_server.obtener_git_diff", return_value="")
+@patch("mcp_server.Command")
+@patch("mcp_server.agentes_app.aupdate_state", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+def test_rechazo_pausa_2_genera_command_goto_codificador(mock_aget_state, mock_ainvoke, mock_aupdate_state, mock_command, mock_git_diff):
+    """El rechazo en Pausa 2 aplica aupdate_state(as_node='agente_revisor') y Command solo con goto."""
+    from langchain_core.messages import HumanMessage
+
+    estado_pausado = MagicMock()
+    estado_pausado.next = ["agente_revisor"]
+    estado_pausado.values = {"codigo_escrito": "Código en revisión"}
+
+    estado_final = MagicMock()
+    estado_final.next = []
+    estado_final.values = {"codigo_escrito": "Código en revisión", "errores_terminal": "0 errores"}
+
+    mock_aget_state.side_effect = [estado_pausado, estado_final]
+
+    asyncio.run(delegar_tarea_a_equipo_ia(
+        instruccion="rechazo con feedback",
+        directorio_proyecto="./",
+        tarea_id="task_rechazo_p2",
+        approve=False
+    ))
+
+    args_upd, kwargs_upd = mock_aupdate_state.call_args
+    assert kwargs_upd["as_node"] == "agente_revisor"
+    update = args_upd[1]
+    assert update["loop_counter"] == 0
+    assert update["errores_terminal"] == "El usuario rechazó el código con este feedback: rechazo con feedback"
+    feedback = update["messages"][0]
+    assert isinstance(feedback, HumanMessage)
+    assert feedback.content == "Rechazo de código: rechazo con feedback"
+    # El Command ya no transporta update: solo redirige el goto.
+    assert mock_command.call_args.kwargs == {"goto": "agente_codificador"}
+    assert mock_ainvoke.await_count == 1
+    assert mock_ainvoke.await_args.args[0] is mock_command.return_value
+
+
+@patch("mcp_server.obtener_git_diff", return_value="")
+@patch("mcp_server.Command")
+@patch("mcp_server.agentes_app.aupdate_state", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+def test_rechazo_pausa_1_genera_command_goto_planificador(mock_aget_state, mock_ainvoke, mock_aupdate_state, mock_command, mock_git_diff):
+    """El rechazo en Pausa 1 aplica aupdate_state(as_node='agente_codificador') y Command solo con goto."""
+    from langchain_core.messages import HumanMessage
+
+    estado_pausado = MagicMock()
+    estado_pausado.next = ["agente_codificador"]
+    estado_pausado.values = {"plan_de_accion": {"explicacion_arquitectura": "Plan rechazado", "pasos": []}}
+
+    estado_final = MagicMock()
+    estado_final.next = []
+    estado_final.values = {"codigo_escrito": "ok", "errores_terminal": "0 errores"}
+
+    mock_aget_state.side_effect = [estado_pausado, estado_final]
+
+    asyncio.run(delegar_tarea_a_equipo_ia(
+        instruccion="no apruebo el plan de acción",
+        directorio_proyecto="./",
+        tarea_id="task_rechazo_p1",
+        approve=False
+    ))
+
+    args_upd, kwargs_upd = mock_aupdate_state.call_args
+    assert kwargs_upd["as_node"] == "agente_codificador"
+    update = args_upd[1]
+    assert update["loop_counter"] == 0
+    assert "errores_terminal" not in update
+    feedback = update["messages"][0]
+    assert isinstance(feedback, HumanMessage)
+    assert feedback.content == "El usuario rechazó el plan de acción: no apruebo el plan de acción"
+    # El Command ya no transporta update: solo redirige el goto.
+    assert mock_command.call_args.kwargs == {"goto": "agente_planificador"}
+    assert mock_ainvoke.await_count == 1
+    assert mock_ainvoke.await_args.args[0] is mock_command.return_value
+
+
+@pytest.mark.parametrize("instruccion", ["", "   "])
+@patch("mcp_server.obtener_git_diff", return_value="")
+@patch("mcp_server.Command")
+@patch("mcp_server.agentes_app.aupdate_state", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+def test_rechazo_feedback_vacio_repausa_pausa_2(mock_aget_state, mock_ainvoke, mock_aupdate_state, mock_command, mock_git_diff, instruccion):
+    """Feedback vacío o con solo espacios en Pausa 2 re-pausa sin construir Command ni reanudar."""
+    estado_pausado = MagicMock()
+    estado_pausado.next = ["agente_revisor"]
+    estado_pausado.values = {"codigo_escrito": "Código en revisión"}
+
+    mock_aget_state.return_value = estado_pausado
+
+    resultado = asyncio.run(delegar_tarea_a_equipo_ia(
+        instruccion=instruccion,
+        directorio_proyecto="./",
+        tarea_id="task_repausa_2",
+        approve=False
+    ))
+
+    assert "Revisión de Código (Feedback del Usuario Recibido)" in resultado
+    assert "NO aprobó ni rechazó explícitamente" in resultado
+    mock_aupdate_state.assert_not_awaited()
+    mock_command.assert_not_called()
+    mock_ainvoke.assert_not_awaited()
+
+
+@pytest.mark.parametrize("instruccion", ["", "   "])
+@patch("mcp_server.obtener_git_diff", return_value="")
+@patch("mcp_server.Command")
+@patch("mcp_server.agentes_app.aupdate_state", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+def test_rechazo_feedback_vacio_repausa_pausa_1(mock_aget_state, mock_ainvoke, mock_aupdate_state, mock_command, mock_git_diff, instruccion):
+    """Feedback vacío o con solo espacios en Pausa 1 re-pausa sin construir Command ni reanudar."""
+    estado_pausado = MagicMock()
+    estado_pausado.next = ["agente_codificador"]
+    estado_pausado.values = {"plan_de_accion": {"explicacion_arquitectura": "Plan propuesto", "pasos": []}}
+
+    mock_aget_state.return_value = estado_pausado
+
+    resultado = asyncio.run(delegar_tarea_a_equipo_ia(
+        instruccion=instruccion,
+        directorio_proyecto="./",
+        tarea_id="task_repausa_1",
+        approve=False
+    ))
+
+    assert "Plan de Acción (Feedback del Usuario Recibido)" in resultado
+    assert "NO aprobó ni rechazó explícitamente" in resultado
+    mock_aupdate_state.assert_not_awaited()
+    mock_command.assert_not_called()
+    mock_ainvoke.assert_not_awaited()

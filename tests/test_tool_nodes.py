@@ -161,3 +161,70 @@ def test_terminal_bloquea_sin_ejecutar(mock_run, tmp_path):
 
     mock_run.assert_not_called()
     assert "Comando bloqueado" in resultado
+
+
+# =============================================================================
+# Pruebas de busqueda_web_duckduckgo como StructuredTool (O0B)
+# =============================================================================
+
+@patch('app.agents.agente_planificador.DuckDuckGoSearchAPIWrapper')
+def test_busqueda_web_tool_call_estructurado(mock_busqueda):
+    """Un tool_call estructurado {'query': ...} ejecuta via ToolNode y devuelve el resultado del wrapper."""
+    import app.agents.agente_planificador as ag
+    from langchain_core.messages import AIMessage
+    from langgraph.prebuilt import ToolNode
+
+    instancia = MagicMock()
+    instancia.run.return_value = "Resultado mock de busqueda"
+    mock_busqueda.return_value = instancia
+
+    ag._get_tools.cache_clear()
+    herramientas = ag._get_tools('./')
+    nodo = ToolNode(herramientas)
+
+    mensaje = AIMessage(content='', tool_calls=[{'name': 'busqueda_web_duckduckgo', 'args': {'query': 'test'}, 'id': 'call_test', 'type': 'tool_call'}])
+    from langgraph.graph import StateGraph, MessagesState, START, END
+    builder = StateGraph(MessagesState)
+    builder.add_node('tools', nodo)
+    builder.add_edge(START, 'tools')
+    builder.add_edge('tools', END)
+    app_mini = builder.compile()
+    resultado = app_mini.invoke({'messages': [mensaje]})
+
+    mensajes_res = resultado['messages']
+    mensaje_tool = mensajes_res[-1]
+    assert isinstance(mensaje_tool, ToolMessage)
+    assert mensaje_tool.content == "Resultado mock de busqueda"
+    instancia.run.assert_called_once_with('test')
+    ag._get_tools.cache_clear()
+
+@patch('app.agents.agente_planificador.DuckDuckGoSearchAPIWrapper')
+def test_busqueda_web_args_inesperados_error_controlado(mock_busqueda):
+    """Args que no cumplen el schema producen ToolMessage de error sin crash."""
+    import app.agents.agente_planificador as ag
+    from langchain_core.messages import AIMessage
+    from langgraph.prebuilt import ToolNode
+
+    instancia = MagicMock()
+    instancia.run.return_value = "Resultado mock de busqueda"
+    mock_busqueda.return_value = instancia
+
+    ag._get_tools.cache_clear()
+    herramientas = ag._get_tools('./')
+    nodo = ToolNode(herramientas)
+
+    mensaje = AIMessage(content='', tool_calls=[{'name': 'busqueda_web_duckduckgo', 'args': {'consulta': 'test'}, 'id': 'call_bad', 'type': 'tool_call'}])
+    from langgraph.graph import StateGraph, MessagesState, START, END
+    builder = StateGraph(MessagesState)
+    builder.add_node('tools', nodo)
+    builder.add_edge(START, 'tools')
+    builder.add_edge('tools', END)
+    app_mini = builder.compile()
+    resultado = app_mini.invoke({'messages': [mensaje]})
+
+    mensajes_res = resultado['messages']
+    mensaje_tool = mensajes_res[-1]
+    assert isinstance(mensaje_tool, ToolMessage)
+    assert mensaje_tool.content != "Resultado mock de busqueda"
+    instancia.run.assert_not_called()
+    ag._get_tools.cache_clear()

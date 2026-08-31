@@ -7,7 +7,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 from langgraph.types import Command
 from langgraph.graph import END
-from langchain_core.tools import Tool, tool
+from langchain_core.tools import StructuredTool, tool
 from langgraph.prebuilt import ToolNode
 from app.models.llm_factory import get_planner_llm
 from app.models.models import ProjectState
@@ -119,6 +119,12 @@ def entregar_plan_de_accion(explicacion_arquitectura: str, pasos: List[Paso]) ->
     """
     return "Plan de acción aceptado e iniciando fase de codificación."
 
+class BusquedaWebInput(BaseModel):
+    """Esquema de entrada de la herramienta de busqueda web DuckDuckGo."""
+
+    query: str = Field(description="Consulta de busqueda en internet")
+
+
 @lru_cache(maxsize=10)
 def _get_tools(directorio: str):
     """
@@ -137,10 +143,23 @@ def _get_tools(directorio: str):
     ]
     
     searx = DuckDuckGoSearchAPIWrapper(max_results=1)
-    tool_busqueda = Tool(
+
+    def _buscar_web(query: str) -> str:
+        """Ejecuta la busqueda web capturando excepciones del buscador.
+
+        Nunca propaga la excepcion al ToolNode: devuelve un string de error
+        controlado para que el LLM pueda corregir la consulta.
+        """
+        try:
+            return searx.run(query)
+        except Exception as e:
+            return f"Error en la busqueda web: {type(e).__name__}: {e}"
+
+    tool_busqueda = StructuredTool(
         name="busqueda_web_duckduckgo",
-        description="Busca en internet documentación técnica actualizada, tutoriales o foros.",
-        func=searx.run
+        description="Busca en internet documentacion tecnica actualizada, tutoriales o foros.",
+        func=_buscar_web,
+        args_schema=BusquedaWebInput,
     )
     herramientas = herramientas_lectura + [tool_busqueda]
     return herramientas

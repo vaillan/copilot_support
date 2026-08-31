@@ -397,22 +397,21 @@ async def delegar_tarea_a_equipo_ia(
                         # RECHAZO EXPLICITO: Regresamos al codificador
                         msg_rechazo_cod = f"El usuario rechazó el código con este feedback: {instruccion}"
                         msg_rechazo_human = f"Rechazo de código: {instruccion}"
-                        # as_node: el grafo está interrumpido ANTES de agente_revisor; tratar
-                        # este Command como salida de ese nodo evita el error
-                        # INVALID_CONCURRENT_GRAPH_UPDATE (dos escrituras de loop_counter
-                        # en el mismo superstep al reanudar).
-                        # NOTA: NO se resetea revision_count: el tope global de 3 revisiones
+                        # aupdate_state reemplaza los writes pendientes del nodo interrumpido
+                        # (incluido loop_counter) evitando INVALID_CONCURRENT_GRAPH_UPDATE;
+                        # el Command solo redirige el goto sin update para no colisionar en el superstep.
+                        # NO se resetea revision_count: el tope global de 3 revisiones
                         # del Revisor debe acumularse across sesiones para frenar bucles.
-                        comando = Command(
-                            goto="agente_codificador",
-                            update={
+                        await agentes_app.aupdate_state(
+                            config,
+                            {
                                 "errores_terminal": msg_rechazo_cod,
                                 "messages": [HumanMessage(content=msg_rechazo_human)],
                                 "loop_counter": 0
                             },
-                            as_node="agente_revisor"
+                            as_node=str(siguiente_nodo)
                         )
-                        resultado = await agentes_app.ainvoke(comando, config) # type: ignore
+                        resultado = await agentes_app.ainvoke(Command(goto="agente_codificador"), config) # type: ignore
                     else:
                         # FEEDBACK CONSTRUCTIVO: Retornamos la pausa de revisión con instrucciones claras
                         codigo_escrito = estado_actual.values.get("codigo_escrito", "No se registró un resumen de cambios.")
@@ -435,21 +434,21 @@ async def delegar_tarea_a_equipo_ia(
                     if es_rechazo:
                         # RECHAZO EXPLICITO: Regresamos al planificador
                         msg_rechazo_plan = f"El usuario rechazó el plan de acción: {instruccion}"
-                        # as_node: el grafo está interrumpido ANTES de agente_codificador;
-                        # tratar este Command como salida de ese nodo evita el error
-                        # INVALID_CONCURRENT_GRAPH_UPDATE al reanudar.
-                        comando = Command(
-                            goto="agente_planificador",
-                            update={
+                        # aupdate_state reemplaza los writes pendientes del nodo interrumpido
+                        # (incluido loop_counter) evitando INVALID_CONCURRENT_GRAPH_UPDATE;
+                        # el Command solo redirige el goto sin update para no colisionar en el superstep.
+                        await agentes_app.aupdate_state(
+                            config,
+                            {
                                 "messages": [HumanMessage(content=msg_rechazo_plan)],
                                 "loop_counter": 0
                             },
-                            as_node="agente_codificador"
+                            as_node=str(siguiente_nodo)
                         )
-                        resultado = await agentes_app.ainvoke(comando, config) # type: ignore
+                        resultado = await agentes_app.ainvoke(Command(goto="agente_planificador"), config) # type: ignore
                     else:
                         # FEEDBACK CONSTRUCTIVO: Retornamos el plan de nuevo con instrucciones claras
-                        plan = estado.values.get("plan_de_accion", {})
+                        plan = estado_actual.values.get("plan_de_accion", {})
                         if isinstance(plan, dict):
                             explicacion = plan.get("explicacion_arquitectura", "Plan de acción propuesto.")
                             pasos_plan = plan.get("pasos", [])
