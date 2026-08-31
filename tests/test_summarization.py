@@ -24,10 +24,11 @@ def test_umbral_no_superado_devuelve_misma_lista() -> None:
 def test_umbral_superado_resume_y_conserva_recientes() -> None:
     messages = [HumanMessage(content=f"msg {i}") for i in range(20)]
     resultado = aplicar_resumen_middleware(messages, model=FakeModel(), trigger_count=15, keep_count=8)
-    assert len(resultado) == 9
-    assert isinstance(resultado[0], HumanMessage)
-    assert resultado[0].content.startswith("[Resumen de conversación anterior]")
-    assert resultado[1:] == messages[-8:]
+    # Estructura: [instrucción original preservada] + [resumen] + [8 recientes]
+    assert len(resultado) == 10
+    assert resultado[0] is messages[0]
+    assert resultado[1].content.startswith("[Resumen de conversación anterior]")
+    assert resultado[2:] == messages[-8:]
 
 
 def test_lista_vacia_devuelve_vacia() -> None:
@@ -39,7 +40,7 @@ def test_model_none_usa_llm_por_defecto() -> None:
     with patch("app.utils.summarization.get_llm", return_value=FakeModel()):
         resultado = aplicar_resumen_middleware(messages, trigger_count=15, keep_count=8)
     assert isinstance(resultado[0], HumanMessage)
-    assert "Resumen de prueba" in resultado[0].content
+    assert any("Resumen de prueba" in str(m.content) for m in resultado)
 
 
 def test_modelo_que_falla_devuelve_mensajes_originales() -> None:

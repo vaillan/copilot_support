@@ -12,7 +12,7 @@ from app.models.models import ProjectState
 from langchain_core.runnables import RunnableConfig
 from app.utils.files import File, get_custom_file_tools
 from app.utils.summarization import aplicar_resumen_middleware
-from app.utils.prompt_utils import escapar_llaves
+from app.utils.prompt_utils import escapar_llaves, construir_prompt_template_cacheado
 from app.utils.skills_loader import cargar_skills_para_prompt
 from functools import lru_cache
 from app.utils.args_utils import _get_args
@@ -98,7 +98,7 @@ def _get_tools(directorio: str):
         if t.name in ["read_file", "list_directory", "get_project_index", "read_file_summary"]
     ]
     
-    searx = DuckDuckGoSearchAPIWrapper(max_results=2)
+    searx = DuckDuckGoSearchAPIWrapper(max_results=1)
     tool_busqueda = Tool(
         name="busqueda_web_duckduckgo",
         description="Busca en internet documentación técnica actualizada, tutoriales o foros.",
@@ -186,10 +186,9 @@ def agente_planificador(state: ProjectState) -> Command:
     if seccion_skills:
         prompt_sistema += "\n\n" + seccion_skills
 
-    prompt_template = ChatPromptTemplate.from_messages([
-        ("system", prompt_sistema),
-        MessagesPlaceholder(variable_name="messages")
-    ])
+    # Caché de template: reutiliza la instancia compilada si el prompt de sistema
+    # es idéntico al de la iteración anterior (ahorro de trabajo redundante).
+    prompt_template = construir_prompt_template_cacheado(prompt_sistema)
     
     # Optimización de contexto con SummarizationMiddleware
     msgs = state.get("messages", [])

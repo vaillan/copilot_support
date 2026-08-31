@@ -6,7 +6,6 @@ from contextlib import redirect_stdout
 from langgraph.graph import END
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 from langgraph.types import Command
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from app.models.llm_factory import get_reviewer_llm
 from app.utils.summarization import aplicar_resumen_middleware
 
@@ -15,7 +14,7 @@ from langgraph.prebuilt import ToolNode
 from app.models.models import ProjectState
 from langchain_core.runnables import RunnableConfig
 from app.utils.files import File, get_custom_file_tools
-from app.utils.prompt_utils import escapar_llaves
+from app.utils.prompt_utils import escapar_llaves, construir_prompt_template_cacheado
 from app.utils.shell_safety import validar_comando
 from app.utils.skills_loader import cargar_skills_para_prompt
 from app.settings.settings import Settings
@@ -274,10 +273,9 @@ def agente_revisor(state: ProjectState) -> Command:
     if seccion_skills:
         prompt_sistema += "\n\n" + seccion_skills
 
-    prompt_template = ChatPromptTemplate.from_messages([
-        ("system", prompt_sistema),
-        MessagesPlaceholder(variable_name="messages")
-    ])
+    # Caché de template: reutiliza la instancia compilada si el prompt de sistema
+    # es idéntico al de la iteración anterior (ahorro de trabajo redundante).
+    prompt_template = construir_prompt_template_cacheado(prompt_sistema)
     
     # Optimización de contexto con SummarizationMiddleware
     msgs = state.get("messages", [])
