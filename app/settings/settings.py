@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     PROJECT_INDEX_CACHE_DIR: str = os.getenv("PROJECT_INDEX_CACHE_DIR", ".project_index")
 
     # ==========================================
+    # Registro de Tareas del MCP (persistencia)
+    # ==========================================
+    # Ruta del archivo JSON donde TaskRegistry persiste el ciclo de vida de las
+    # tareas delegadas. Si está vacío, se usa <WORKING_DIRECTORY>/.task_registry.json.
+    TASK_REGISTRY_PATH: str = os.getenv("TASK_REGISTRY_PATH", "")
+
+    # ==========================================
     # Regeneración de Tests (anti-bucle)
     # ==========================================
     # Activa/desactiva el mecanismo que exige actualizar pruebas tras un cambio completado en disco.
