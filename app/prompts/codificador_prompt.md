@@ -114,6 +114,21 @@ Durante la implementación dispones de estas herramientas de archivos. Antes de 
   - Parámetros: `source_path` (o `source`) y `destination_path` (o `destination` o `dest`).
 - `move_file`: Mueve un archivo a otra ubicación.
   - Parámetros: `source_path` (o `source`) y `destination_path` (o `destination` o `dest`).
+- `terminal`: Ejecuta comandos en el shell del proyecto (confinado al directorio del proyecto y con filtros de seguridad). Úsala para VERIFICAR tu código: `python -m py_compile <archivo>`, `python -c "import <modulo>"`, `python -m pytest tests/ -q`, `node --check <archivo>`, etc.
+  - Parámetros: `commands` (cadena o lista de cadenas) y `cwd` (opcional; por defecto el directorio del proyecto).
+
+---
+
+## 🧪 VERIFICACIÓN CON TERMINAL (AUTO-CORRECCIÓN)
+
+Tienes la herramienta `terminal` para VERIFICAR tu propio código antes de entregar. Úsala SIEMPRE que tengas dudas de sintaxis, imports, tipos o tests:
+
+1. **Sintaxis:** `python -m py_compile <archivo>` (Python), `node --check <archivo>` (JS/TS), etc.
+2. **Imports:** `python -c "import <modulo>"` para detectar errores de importación.
+3. **Tests:** `python -m pytest tests/ -q` (o `pytest`) para validar que las pruebas pasan.
+4. **Errores de QA:** cuando el prompt incluya «ATENCIÓN: Tu código anterior falló las pruebas...», ejecuta PRIMERO `terminal` para reproducir el error, analiza la causa raíz (sintaxis, lógica, tipos, imports, excepciones), corrige con `edit_file`/`write_file` y vuelve a verificar con `terminal` hasta que pase. Solo entonces llama a `CodigoCompletado`.
+
+**Regla:** si `terminal` devuelve un error, NO llames `CodigoCompletado`. Corrige el código y re-verifica. Si el comando se bloquea por seguridad, usa una alternativa equivalente dentro del proyecto.
 
 ---
 
@@ -155,9 +170,11 @@ Si tu prompt de sistema incluye la sección «ATENCIÓN: Tu código anterior fal
 
 1. **ERRORES DE PRUEBAS (QA):** fallos de tests reportados por el Revisor. Procede según los pasos existentes (analizar causa raíz, corregir de fondo, re-entregar con CodigoCompletado):
    1. Revisa minuciosamente los errores reportados.
-   2. Analiza la **causa raíz** (sintaxis, lógica, tipos, importaciones faltantes, excepciones no capturadas) antes de escribir la corrección.
-   3. No hagas cambios superficiales; resuelve el problema de fondo asegurando que todas las dependencias y caminos de ejecución funcionen correctamente.
-   4. Aplica el mismo bucle de trabajo por paso: contextualiza, corrige en disco, verifica y vuelve a entregar con `CodigoCompletado`.
+   2. **Reproduce el error con `terminal`** (p.ej. `python -m pytest tests/ -q` o `python -m py_compile <archivo>`) para ver el fallo real antes de corregir.
+   3. Analiza la **causa raíz** (sintaxis, lógica, tipos, importaciones faltantes, excepciones no capturadas) antes de escribir la corrección.
+   4. No hagas cambios superficiales; resuelve el problema de fondo asegurando que todas las dependencias y caminos de ejecución funcionen correctamente.
+   5. **Re-verifica con `terminal`** tras corregir: ejecuta de nuevo los tests o la comprobación de sintaxis hasta que pasen. Solo entonces entrega con `CodigoCompletado`.
+   6. Aplica el mismo bucle de trabajo por paso: contextualiza, corrige en disco, verifica y vuelve a entregar con `CodigoCompletado`.
 
 2. **RECHAZO DEL USUARIO:** si el texto comienza con «El usuario rechazó el código con este feedback:», NO son fallos de tests sino observaciones directas del usuario sobre el código entregado. En este caso: (a) interpreta y aplica el feedback del usuario de forma estricta y literal; (b) NO busques ni «corrijas» fallos de pruebas que no fueron reportados; (c) respeta el alcance mínimo YAGNI: solo cambia lo que el feedback pide; (d) re-entrega con CodigoCompletado describiendo en resumen_cambios cómo atendiste cada observación.
 

@@ -1,4 +1,5 @@
 import json
+import os
 from pydantic import BaseModel, Field
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 from langgraph.types import Command
@@ -16,6 +17,12 @@ from app.utils.test_regenerator import evaluar_regeneracion_tests
 from app.utils.skills_loader import cargar_skills_para_prompt
 from functools import lru_cache
 from app.utils.args_utils import _get_args
+# La tool 'terminal' se comparte con el Revisor: permite al Codificador ejecutar
+# comandos en el shell (pytest, py_compile, imports) para diagnosticar y corregir
+# sus propios errores de código. No hay dependencia circular (el Revisor no
+# importa el Codificador).
+from app.agents.agente_revisor import terminal as terminal_tool
+import app.agents.agente_revisor as _modulo_revisor
 
 fileSystem = File(directory="prompts")
 
@@ -46,6 +53,28 @@ _confirmaciones_exito = (
     "Copiado de",
     "Movido de",
 )
+
+
+def _ya_hay_escritura_exitosa(msgs) -> bool:
+    """
+    Determina si ya se ha realizado una escritura exitosa en el historial.
+
+    Recorre los ToolMessages del historial buscando confirmaciones de éxito en
+    disco ('escrito exitosamente', 'editado exitosamente', 'eliminado
+    exitosamente', 'Copiado de', 'Movido de').
+
+    Args:
+        msgs: Lista de mensajes del historial (AIMessage/ToolMessage/HumanMessage).
+
+    Returns:
+        bool: True si existe al menos una confirmación de escritura exitosa.
+    """
+    for m in msgs:
+        if isinstance(m, ToolMessage):
+            content = str(m.content or "")
+            if any(kw in content for kw in _confirmaciones_exito):
+                return True
+    return False
 
 
 def _hubo_escritura_exitosa(msgs, respuesta) -> bool:
@@ -102,15 +131,25 @@ def _hubo_escritura_exitosa(msgs, respuesta) -> bool:
 @lru_cache(maxsize=10)
 def _get_tools(directorio: str):
     """
-    Lista (con caché) las herramientas de manejo de archivos del directorio dado.
+    Lista (con caché) las herramientas del codificador para el directorio dado.
+
+    Incluye las herramientas de manejo de archivos (write_file, edit_file, ...)
+    más la tool `terminal` (compartida con el Revisor) para que el Codificador
+    pueda ejecutar comandos en el shell (pytest, py_compile, imports) y corregir
+    sus propios errores de código.
 
     Args:
         directorio: Ruta del directorio del proyecto (str).
 
     Returns:
-        list: Herramientas de archivo configuradas para el directorio.
+        list: Herramientas de archivo + terminal configuradas para el directorio.
     """
-    return get_custom_file_tools(directorio)
+    herramientas = get_custom_file_tools(directorio)
+    # Actualizar el directorio global de la tool terminal (compartida con el Revisor)
+    # para que los comandos se ejecuten confinados al proyecto actual.
+    if directorio and os.path.isdir(directorio):
+        _modulo_revisor._ACTUAL_DIRECTORIO_PROYECTO = directorio
+    return herramientas + [terminal_tool]
 
 def agente_codificador(state: ProjectState) -> Command:
     """
@@ -136,14 +175,25 @@ def agente_codificador(state: ProjectState) -> Command:
 
     directorio = state.get("directorio_proyecto", "./")
     herramientas_codigo = _get_tools(directorio)
-    
+    errores = state.get("errores_terminal", "")
+    revision_count = state.get("revision_count", 0)
+
     llm = get_coder_llm(temperature=0.0)
     llm_con_herramientas = llm.bind_tools(herramientas_codigo + [CodigoCompletado])
-    if loop_counter >= UMBRAL_FORZAR_ESCRITURA:
-        # Anti-bucle: en iteraciones tardías se fuerza tool_choice hacia una
-        # herramienta de escritura (write_file) para que el modelo no responda
-        # solo con texto plano. Si el proveedor no soporta tool_choice, se
-        # degrada sin error al binding normal.
+    # Anti-bucle: en iteraciones tardías se fuerza tool_choice hacia una
+    # herramienta de escritura (write_file) para que el modelo no responda
+    # solo con texto plano. EXCEPCIONES (NO se fuerza write_file):
+    #   (a) si hay errores de QA pendientes, el Codificador necesita poder llamar
+    #       a `terminal` (pytest, py_compile, imports) para diagnosticar/corregir;
+    #   (b) si YA hay una escritura exitosa en el historial, el LLM debe poder
+    #       finalizar con `CodigoCompletado` en lugar de quedar atrapado
+    #       reescribiendo archivos hasta agotar el presupuesto de iteraciones.
+    # Si el proveedor no soporta tool_choice, se degrada sin error al binding normal.
+    if (
+        loop_counter >= UMBRAL_FORZAR_ESCRITURA
+        and not errores
+        and not _ya_hay_escritura_exitosa(state.get("messages", []))
+    ):
         try:
             llm_con_herramientas = llm.bind_tools(
                 herramientas_codigo + [CodigoCompletado],
@@ -151,9 +201,6 @@ def agente_codificador(state: ProjectState) -> Command:
             )
         except Exception:
             pass
-    
-    errores = state.get("errores_terminal", "")
-    revision_count = state.get("revision_count", 0)
     prompt_sistema = fileSystem.get_file_content(file_name="codificador_prompt.md")
     
     # Inyectar el índice del proyecto si está disponible en el estado (optimización de tokens)
@@ -202,6 +249,28 @@ def agente_codificador(state: ProjectState) -> Command:
     respuesta = llm_con_herramientas.invoke(prompt)
     
     if respuesta.tool_calls:
+        # Si la respuesta mezcla CodigoCompletado con otras herramientas (p.ej.
+        # terminal para verificar sintaxis/imports/tests), ejecuta PRIMERO las
+        # herramientas y deja la finalización para la siguiente iteración. Así el
+        # Codificador puede diagnosticar y corregir sus errores antes de entregar.
+        # Se filtra CodigoCompletado del AIMessage para que el ToolNode solo
+        # ejecute herramientas reales (terminal, write_file, ...).
+        if any(tc["name"] != "CodigoCompletado" for tc in respuesta.tool_calls):
+            tool_calls_filtradas = [
+                tc for tc in respuesta.tool_calls if tc["name"] != "CodigoCompletado"
+            ]
+            mensaje_herramientas = AIMessage(
+                content=respuesta.content,
+                tool_calls=tool_calls_filtradas,
+            )
+            return Command(
+                update={
+                    "messages": [mensaje_herramientas],
+                    "loop_counter": loop_counter
+                },
+                goto="nodo_herramientas_codificador"
+            )
+
         # Verificar si se ha realizado una escritura física en disco (herramienta de
         # modificación invocada o confirmación de éxito en un ToolMessage del historial).
         has_written_files = _hubo_escritura_exitosa(msgs, respuesta)
