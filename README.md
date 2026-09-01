@@ -41,15 +41,18 @@ graph TD
 
 - Los rechazos regresan al agente anterior (Pausa 1 → Planificador; Pausa 2 → Codificador); el Revisor reenvía errores al Codificador con máx. 3 revisiones.
 - **Estado**: `ProjectState` (hereda de `MessagesState`) mantiene historial, plan, contadores e índice.
-- **Resumen de contexto** ([`app/utils/summarization.py`](app/utils/summarization.py)): `SummarizationMiddleware` con trigger de 15 mensajes, conserva 8.
+- **Anti-bucle**: el Planificador aborta tras 4 reintentos consecutivos (umbral anti-bucle) y el Codificador regenera tests ante bucles; el aborto por bucle infinito se registra en `errores_terminal`.
+- **Timeouts**: llamadas LLM con timeout de 900s (10 min); timeout de tareas MCP corregido en unidades.
+- **Resumen de contexto** ([`app/utils/summarization.py`](app/utils/summarization.py)): `SummarizationMiddleware` con trigger de 15 mensajes, conserva 8; aplica ahorro de tokens, preserva pares `tool_calls`/`ToolMessage` y cachea plantillas de prompt.
+- **Rechazo y aprobación**: el rechazo de planes/código usa `aupdate_state` con `StructuredTool` en la búsqueda web; el Agente Revisor aprueba con fallback agnóstico al idioma.
 - **Índice de proyecto** ([`app/utils/project_index.py`](app/utils/project_index.py)): caché incremental invalidada por `mtime_ns` + tamaño + `sha256`.
 
 ## Agentes
 
 | Agente | Rol | Herramientas | Límites |
 |--------|-----|--------------|---------|
-| Planificador | Arquitecto | Búsqueda web DuckDuckGo | Máx. 15 iteraciones |
-| Codificador | Programador senior | Escribe código, aplica feedback | Máx. 15 iteraciones |
+| Planificador | Arquitecto | Búsqueda web DuckDuckGo | Máx. 15 iteraciones; umbral de reintentos anti-bucle = 4 |
+| Codificador | Programador senior | Escribe código, aplica feedback | Máx. 15 iteraciones; regeneración de tests anti-bucle ([`app/utils/test_regenerator.py`](app/utils/test_regenerator.py)) |
 | Revisor | QA/DevOps | Ejecuta tests vía shell | Máx. 3 revisiones; aprueba auto si no hay tests requeridos |
 
 ## Modelos LLM
@@ -257,6 +260,8 @@ PROJECT_INDEX_CACHE_DIR=".project_index"
 
 El servidor expone 4 herramientas para delegar, supervisar y controlar tareas del equipo de agentes.
 
+El registro de tareas (`TaskRegistry`, [`app/utils/task_registry.py`](app/utils/task_registry.py)) persiste en disco en una base SQLite de ruta fija `tasks.db` (en la raíz del proyecto), reemplazando la persistencia previa en JSON; los errores de persistencia se registran mediante logging. El timeout de tareas MCP (`MCP_TASK_TIMEOUT_SECONDS`) se aplica en segundos y el reporte de pausa se devuelve con formato de iconos y prosa neutralizada (sin texto fijo en español).
+
 ### `delegar_tarea_a_equipo_ia`
 
 Delega una tarea al equipo de 3 agentes (Planificador → Codificador → Revisor).
@@ -328,7 +333,17 @@ Compatible con Zoo Code ([`tech-lead-export.yaml`](tech-lead-export.yaml)) y Cla
 ./run_tests.sh --e2e    # incluye End-to-End
 ```
 
-Módulos en `tests/`: `test_agents`, `test_e2e`, `test_files`, `test_integration`, `test_llm_factory`, `test_mcp_server`, `test_project_index`, `test_summarization`, `test_tool_nodes`.
+Módulos en `tests/`: `test_agents`, `test_e2e`, `test_files`, `test_integration`, `test_llm_factory`, `test_mcp_server`, `test_project_index`, `test_summarization`, `test_tool_nodes`, `test_task_registry`, `test_test_regenerator`, `test_mcp_fixes`, `test_contexto_largo`, `test_revisor_fallback`.
+
+## Nota de actualización
+
+- **2026-01-28**: Persistencia SQLite del `TaskRegistry` en `tasks.db` (reemplaza la persistencia previa en JSON) con logging de errores de persistencia.
+- **2026-01-26**: Anti-bucle reforzado: umbral de reintentos del Planificador = 4 y regeneración de tests del Codificador; el aborto por bucle infinito se registra en `errores_terminal`.
+- **2026-01-24**: Timeouts LLM de 900s (10 min) y corrección de unidades del timeout de tareas MCP.
+- **2026-01-22**: Resumen de contexto mejorado: ahorro de tokens, preservación de pares `tool_calls`/`ToolMessage` y caché de plantillas de prompt.
+- **2026-01-20**: Mecanismo de rechazo con `aupdate_state`/`StructuredTool` en búsqueda web y fallback de aprobación del Revisor agnóstico al idioma.
+- **2026-01-18**: Reporte de pausa del MCP con formato de iconos y prosa neutralizada (sin texto fijo en español).
+- **2026-01-15**: Nuevos módulos de tests: `test_task_registry`, `test_test_regenerator`, `test_mcp_fixes`, `test_contexto_largo`, `test_revisor_fallback`.
 
 ## Términos de uso
 
