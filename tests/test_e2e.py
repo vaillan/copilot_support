@@ -1,25 +1,9 @@
 import os
 import pytest
 import uuid
-from unittest.mock import patch
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from app.main import crear_grafo
-
-
-@pytest.fixture(autouse=True)
-def _sin_regeneracion_tests():
-    """Neutraliza el hook de regeneración de tests en este E2E.
-
-    El hook es comportamiento válido (el archivo creado es un cambio real), pero
-    este test valida el flujo planificador->codificador->revisor sin la fase
-    extra de regeneración de pruebas. El hook se valida en tests/test_test_regenerator.py.
-    """
-    with patch('app.agents.agente_codificador.evaluar_regeneracion_tests',
-               return_value={"disparar": False, "archivos_modificados": [], "razon": "test",
-                             "hashes_actualizados": {}, "last_ts": 0.0}):
-        yield
-
 
 @pytest.mark.e2e
 def test_flujo_completo_e2e():
@@ -59,10 +43,7 @@ def test_flujo_completo_e2e():
         graph.invoke(None, config)
         estado_actual = graph.get_state(config)
         
-        # Margen ampliado: el Codificador ahora puede verificar su código con la
-        # tool `terminal` (pytest, py_compile, imports) antes de entregar, por lo
-        # que el flujo hasta el Revisor puede requerir más iteraciones.
-        max_intentos = 10
+        max_intentos = 5
         intentos = 0
         while len(estado_actual.next) > 0 and estado_actual.next[0] != "agente_revisor" and intentos < max_intentos:
             graph.invoke(None, config)
@@ -85,8 +66,7 @@ def test_flujo_completo_e2e():
             contenido = f.read().strip()
             
         assert test_content in contenido, f"El contenido del archivo no es el esperado. Esperado: '{test_content}', Obtenido: '{contenido}'"
-
+        
     finally:
-        # NOTA: el artefacto NO se elimina aquí: tests/test_e2e_output.py lo verifica
-        # y lo limpia al final de su ejecución (se ejecuta después por orden alfabético).
-        pass
+        if os.path.exists(test_file):
+            os.remove(test_file)

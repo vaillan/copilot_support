@@ -2,11 +2,11 @@ import sys
 import os
 import subprocess
 import json
-import re
 from contextlib import redirect_stdout
 from langgraph.graph import END
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 from langgraph.types import Command
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from app.models.llm_factory import get_reviewer_llm
 from app.utils.summarization import aplicar_resumen_middleware
 
@@ -15,12 +15,13 @@ from langgraph.prebuilt import ToolNode
 from app.models.models import ProjectState
 from langchain_core.runnables import RunnableConfig
 from app.utils.files import File, get_custom_file_tools
-from app.utils.prompt_utils import escapar_llaves, construir_prompt_template_cacheado
+from app.utils.prompt_utils import escapar_llaves
 from app.utils.shell_safety import validar_comando
 from app.utils.skills_loader import cargar_skills_para_prompt
 from app.settings.settings import Settings
 from functools import lru_cache
 from app.utils.args_utils import _get_args
+from app.utils.plan_progress import construir_plan_pruebas
 
 settings = Settings()
 fileSystem = File(directory="prompts")
@@ -176,60 +177,6 @@ def _get_tools(directorio: str):
     herramientas = [terminal, finalizar_revision] + herramientas_lectura
     return herramientas
 
-_PATRONES_APROBACION: list[str] = [
-    r"\baprobado\b",
-    r"\baprobada\b",
-    r"\bcorrecto\b",
-    r"\bcorrecta\b",
-    r"\bsin errores\b",
-    r"\bexitoso\b",
-    r"\bexitosa\b",
-    r"\bno requiere\b",
-    r"\bpaso las pruebas\b",
-    r"\bpasó las pruebas\b",
-    r"\bapproved\b",
-    r"\bcorrect\b",
-    r"\bno errors\b",
-    r"\bsuccessful\b",
-    r"\bno tests required\b",
-    r"\bpassed the tests\b",
-    r"\ball tests pass\b",
-]
-
-_PATRONES_NEGACION: list[str] = [
-    r"\bno aprobado\b",
-    r"\bno está aprobado\b",
-    r"\bno esta aprobado\b",
-    r"\bno fue aprobado\b",
-    r"\bnot approved\b",
-    r"\bno correcto\b",
-    r"\bnot correct\b",
-    r"\bincorrect\b",
-    r"\bincorrecto\b",
-    r"\bfailed\b",
-    r"\bfalló\b",
-    r"\bfallo\b",
-    r"\bno exitoso\b",
-    r"\bnot successful\b",
-    r"\bunsuccessful\b",
-]
-
-
-def _texto_indica_aprobacion(texto: str) -> bool:
-    """Determina si el texto del revisor expresa aprobación (español o inglés).
-
-    Args:
-        texto (str): Contenido textual de la respuesta del revisor.
-
-    Returns:
-        bool: True si el texto expresa aprobación; False en caso contrario.
-    """
-    contenido = texto.lower()
-    if any(re.search(p, contenido) for p in _PATRONES_NEGACION):
-        return False
-    return any(re.search(p, contenido) for p in _PATRONES_APROBACION)
-
-
 def agente_revisor(state: ProjectState) -> Command:
     """Ejecuta la revisión del código probándolo en la terminal y decide el flujo.
 
@@ -328,9 +275,10 @@ def agente_revisor(state: ProjectState) -> Command:
     if seccion_skills:
         prompt_sistema += "\n\n" + seccion_skills
 
-    # Caché de template: reutiliza la instancia compilada si el prompt de sistema
-    # es idéntico al de la iteración anterior (ahorro de trabajo redundante).
-    prompt_template = construir_prompt_template_cacheado(prompt_sistema)
+    prompt_template = ChatPromptTemplate.from_messages([
+        ("system", prompt_sistema),
+        MessagesPlaceholder(variable_name="messages")
+    ])
     
     # Optimización de contexto con SummarizationMiddleware
     msgs = state.get("messages", [])
@@ -343,7 +291,7 @@ def agente_revisor(state: ProjectState) -> Command:
         "messages": mensajes_contexto,
         "directorio": directorio,
         "codigo_escrito": state.get("codigo_escrito", "Sin reporte."),
-        "plan": state.get("plan_de_accion", "Sin plan.")
+        "plan": construir_plan_pruebas(state.get("plan_de_accion"))
     })
     
     respuesta = llm_con_herramientas.invoke(prompt)
@@ -443,7 +391,9 @@ def agente_revisor(state: ProjectState) -> Command:
         )
     else:
         # Si la respuesta en texto sugiere aprobación o no requiere pruebas
-        if _texto_indica_aprobacion(str(respuesta.content)):
+        contenido_texto = str(respuesta.content).lower()
+        palabras_aprobacion = ["aprobado", "correcto", "sin errores", "exitoso", "no requiere", "paso las pruebas", "pasó las pruebas"]
+        if any(p in contenido_texto for p in palabras_aprobacion):
             return Command(
                 update={
                     "errores_terminal": "Ninguno. Código aprobado en revisión.",

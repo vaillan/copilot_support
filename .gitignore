@@ -9,9 +9,6 @@ media/
 .project_index.json
 .project_index/
 checkpoints.sqlite*
-.taks/
-.task_registry.json
-.task_registry.json.*.tmp
 
 # Carpetas de skills locales de agentes IA (no versionar)
 .skills/
@@ -34,4 +31,3 @@ checkpoints.sqlite*
 .tabnine/skills/
 .warp/skills/
 **/.skills/
-tasks.db* 

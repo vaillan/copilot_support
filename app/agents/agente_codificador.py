@@ -1,5 +1,5 @@
 import json
-import os
+from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 from langgraph.types import Command
@@ -12,17 +12,11 @@ from app.utils.files import File, get_custom_file_tools
 from app.models.models import ProjectState
 from app.models.llm_factory import get_coder_llm
 from app.utils.summarization import aplicar_resumen_middleware
-from app.utils.prompt_utils import escapar_llaves, construir_prompt_template_cacheado
-from app.utils.test_regenerator import evaluar_regeneracion_tests
+from app.utils.prompt_utils import escapar_llaves
 from app.utils.skills_loader import cargar_skills_para_prompt
 from functools import lru_cache
 from app.utils.args_utils import _get_args
-# La tool 'terminal' se comparte con el Revisor: permite al Codificador ejecutar
-# comandos en el shell (pytest, py_compile, imports) para diagnosticar y corregir
-# sus propios errores de código. No hay dependencia circular (el Revisor no
-# importa el Codificador).
-from app.agents.agente_revisor import terminal as terminal_tool
-import app.agents.agente_revisor as _modulo_revisor
+from app.utils.plan_progress import avanzar_progreso, construir_contexto_compacto, construir_ledger, parsear_pasos_plan
 
 fileSystem = File(directory="prompts")
 
@@ -30,20 +24,12 @@ class CodigoCompletado(BaseModel):
     """Llama a esta herramienta EXCLUSIVAMENTE cuando hayas terminado de programar todos los pasos del plan."""
     resumen_cambios: str = Field(description="Resumen detallado de los archivos que creaste o modificaste.")
 
+class MarcarPasoCompletado(BaseModel):
+    """Registra que el paso actual del plan quedó implementado y verificado."""
+    numero_paso: int = Field(description="Número del paso del plan que quedó completo.")
+
 # Conjunto de herramientas que realizan una escritura física en disco.
 herramientas_modificacion = {"write_file", "edit_file", "copy_file", "move_file", "file_delete"}
-
-# --- Umbrales anti-bucle del Codificador ---
-# Tope máximo de iteraciones completas del Codificador. Se bajó de 15 a 10
-# para converger antes con modelos de tool-calling poco fiables.
-UMBRAL_MAX_ITERACIONES = 10
-# Iteración desde la cual se fuerza tool_choice hacia una herramienta de
-# escritura (write_file) para evitar que el modelo responda solo con texto.
-UMBRAL_FORZAR_ESCRITURA = 3
-# Iteración desde la cual, si el modelo responde texto plano sin tool_calls,
-# se deriva una llamada write_file desde el contenido generado (evita agotar
-# el presupuesto en reintentos sin escribir nada en disco).
-UMBRAL_DERIVAR_ESCRITURA = 4
 
 # Cadenas de confirmación de éxito que devuelven las herramientas de escritura en disco.
 _confirmaciones_exito = (
@@ -55,73 +41,29 @@ _confirmaciones_exito = (
 )
 
 
-def _ya_hay_escritura_exitosa(msgs) -> bool:
-    """
-    Determina si ya se ha realizado una escritura exitosa en el historial.
-
-    Recorre los ToolMessages del historial buscando confirmaciones de éxito en
-    disco ('escrito exitosamente', 'editado exitosamente', 'eliminado
-    exitosamente', 'Copiado de', 'Movido de').
-
-    Args:
-        msgs: Lista de mensajes del historial (AIMessage/ToolMessage/HumanMessage).
-
-    Returns:
-        bool: True si existe al menos una confirmación de escritura exitosa.
-    """
-    for m in msgs:
-        if isinstance(m, ToolMessage):
-            content = str(m.content or "")
-            if any(kw in content for kw in _confirmaciones_exito):
-                return True
-    return False
-
-
 def _hubo_escritura_exitosa(msgs, respuesta) -> bool:
     """
     Determina si se ha realizado (o al menos invocado) una escritura física en disco.
 
     Retorna True si:
       (a) algún AIMessage en `msgs` o en `respuesta.tool_calls` invoca una herramienta
-          del conjunto `herramientas_modificacion` Y esa invocación NO tiene un
-          ToolMessage de error asociado (p.ej. 'Error al escribir el archivo'); O
+          del conjunto `herramientas_modificacion`; O
       (b) algún ToolMessage en `msgs` contiene una cadena de confirmación de éxito
           en disco (p.ej. 'escrito exitosamente', 'editado exitosamente', 'Copiado de').
-
-    El criterio (a) se refuerza con la resta de tool_call_ids con error: si el LLM
-    invocó write_file/edit_file pero la herramienta devolvió un error (argumentos
-    inválidos, ruta inexistente, etc.), esa invocación NO cuenta como escritura
-    exitosa y el nodo no debe avanzar a revisión.
     """
-    # Recopilar tool_call_ids de herramientas de modificación invocadas.
-    ids_modificacion = set()
+    # (a) Herramienta de modificación invocada en el historial o en la respuesta actual
     for m in msgs:
         if isinstance(m, AIMessage) and m.tool_calls:
-            for tc in m.tool_calls:
-                if tc.get("name") in herramientas_modificacion:
-                    ids_modificacion.add(tc.get("id"))
+            if any(tc.get("name") in herramientas_modificacion for tc in m.tool_calls):
+                return True
     if respuesta.tool_calls:
-        for tc in respuesta.tool_calls:
-            if tc.get("name") in herramientas_modificacion:
-                ids_modificacion.add(tc.get("id"))
+        if any(tc.get("name") in herramientas_modificacion for tc in respuesta.tool_calls):
+            return True
 
-    # Recopilar tool_call_ids de ToolMessages con error (las herramientas de
-    # escritura devuelven mensajes que empiezan por 'Error').
-    ids_error = set()
+    # (b) Confirmación de éxito en disco en ToolMessages del historial
     for m in msgs:
         if isinstance(m, ToolMessage):
-            content = str(m.content or "")
-            if content.lower().startswith("error"):
-                ids_error.add(m.tool_call_id)
-
-    # (a) Herramienta de modificación invocada sin error asociado.
-    if ids_modificacion - ids_error:
-        return True
-
-    # (b) Confirmación de éxito en disco en ToolMessages del historial.
-    for m in msgs:
-        if isinstance(m, ToolMessage):
-            content = str(m.content or "")
+            content = m.content or ""
             if any(kw in content for kw in _confirmaciones_exito):
                 return True
 
@@ -131,25 +73,15 @@ def _hubo_escritura_exitosa(msgs, respuesta) -> bool:
 @lru_cache(maxsize=10)
 def _get_tools(directorio: str):
     """
-    Lista (con caché) las herramientas del codificador para el directorio dado.
-
-    Incluye las herramientas de manejo de archivos (write_file, edit_file, ...)
-    más la tool `terminal` (compartida con el Revisor) para que el Codificador
-    pueda ejecutar comandos en el shell (pytest, py_compile, imports) y corregir
-    sus propios errores de código.
+    Lista (con caché) las herramientas de manejo de archivos del directorio dado.
 
     Args:
         directorio: Ruta del directorio del proyecto (str).
 
     Returns:
-        list: Herramientas de archivo + terminal configuradas para el directorio.
+        list: Herramientas de archivo configuradas para el directorio.
     """
-    herramientas = get_custom_file_tools(directorio)
-    # Actualizar el directorio global de la tool terminal (compartida con el Revisor)
-    # para que los comandos se ejecuten confinados al proyecto actual.
-    if directorio and os.path.isdir(directorio):
-        _modulo_revisor._ACTUAL_DIRECTORIO_PROYECTO = directorio
-    return herramientas + [terminal_tool]
+    return get_custom_file_tools(directorio)
 
 def agente_codificador(state: ProjectState) -> Command:
     """
@@ -162,45 +94,22 @@ def agente_codificador(state: ProjectState) -> Command:
         Command: Comando de LangGraph con la actualización de estado y el nodo destino.
     """
     loop_counter = state.get("loop_counter", 0) + 1
-    if loop_counter > UMBRAL_MAX_ITERACIONES:
-        # Registrar el aborto en errores_terminal: sin esto, el reporte final
-        # del MCP mostraría "Sin errores" pese a que el flujo abortó por bucle.
+    if loop_counter > 15:
         return Command(
             update={
-                "errores_terminal": f"Abortado: el Agente Codificador excedió el límite máximo de {UMBRAL_MAX_ITERACIONES} iteraciones sin completar el plan (posible bucle). Revisar el plan y los errores previos.",
-                "messages": [HumanMessage(content=f"Error: Se ha excedido el límite máximo de iteraciones ({UMBRAL_MAX_ITERACIONES}) en el Agente Codificador. El proceso se detiene para evitar un bucle infinito.")]
+                "messages": [HumanMessage(content="Error: Se ha excedido el límite máximo de iteraciones (15) en el Agente Codificador. El proceso se detiene para evitar un bucle infinito.")]
             },
             goto=END
         )
 
     directorio = state.get("directorio_proyecto", "./")
     herramientas_codigo = _get_tools(directorio)
+    
+    llm = get_coder_llm(temperature=0.0)
+    llm_con_herramientas = llm.bind_tools(herramientas_codigo + [CodigoCompletado, MarcarPasoCompletado])
+    
     errores = state.get("errores_terminal", "")
     revision_count = state.get("revision_count", 0)
-
-    llm = get_coder_llm(temperature=0.0)
-    llm_con_herramientas = llm.bind_tools(herramientas_codigo + [CodigoCompletado])
-    # Anti-bucle: en iteraciones tardías se fuerza tool_choice hacia una
-    # herramienta de escritura (write_file) para que el modelo no responda
-    # solo con texto plano. EXCEPCIONES (NO se fuerza write_file):
-    #   (a) si hay errores de QA pendientes, el Codificador necesita poder llamar
-    #       a `terminal` (pytest, py_compile, imports) para diagnosticar/corregir;
-    #   (b) si YA hay una escritura exitosa en el historial, el LLM debe poder
-    #       finalizar con `CodigoCompletado` en lugar de quedar atrapado
-    #       reescribiendo archivos hasta agotar el presupuesto de iteraciones.
-    # Si el proveedor no soporta tool_choice, se degrada sin error al binding normal.
-    if (
-        loop_counter >= UMBRAL_FORZAR_ESCRITURA
-        and not errores
-        and not _ya_hay_escritura_exitosa(state.get("messages", []))
-    ):
-        try:
-            llm_con_herramientas = llm.bind_tools(
-                herramientas_codigo + [CodigoCompletado],
-                tool_choice="write_file",
-            )
-        except Exception:
-            pass
     prompt_sistema = fileSystem.get_file_content(file_name="codificador_prompt.md")
     
     # Inyectar el índice del proyecto si está disponible en el estado (optimización de tokens)
@@ -229,12 +138,18 @@ def agente_codificador(state: ProjectState) -> Command:
             f"Corrige los siguientes errores:\n{escapar_llaves(errores)}"
         )
         
-    # Caché de template: si el prompt de sistema es idéntico al de la iteración
-    # anterior, se reutiliza la instancia compilada (ahorro de trabajo redundante).
-    prompt_template = construir_prompt_template_cacheado(prompt_sistema)
+    prompt_template = ChatPromptTemplate.from_messages([
+        ("system", prompt_sistema),
+        MessagesPlaceholder(variable_name="messages")
+    ])
     
     plan = state.get("plan_de_accion", "Sin plan.")
-    
+
+    # Ledger de progreso + cuerpo del paso actual inyectados como contexto compacto,
+    # regenerado en cada iteración desde el estado (sobrevive a la sumarización).
+    contexto_compacto = construir_contexto_compacto(plan, state.get("progreso_plan"))
+    plan_para_prompt = contexto_compacto if contexto_compacto is not None else plan
+
     # Optimización de contexto con SummarizationMiddleware
     msgs = state.get("messages", [])
     mensajes_contexto = aplicar_resumen_middleware(msgs, llm)
@@ -244,33 +159,11 @@ def agente_codificador(state: ProjectState) -> Command:
     prompt = prompt_template.invoke({
         "messages": mensajes_contexto,
         "directorio": directorio,
-        "plan": plan
+        "plan": plan_para_prompt
     })
     respuesta = llm_con_herramientas.invoke(prompt)
     
     if respuesta.tool_calls:
-        # Si la respuesta mezcla CodigoCompletado con otras herramientas (p.ej.
-        # terminal para verificar sintaxis/imports/tests), ejecuta PRIMERO las
-        # herramientas y deja la finalización para la siguiente iteración. Así el
-        # Codificador puede diagnosticar y corregir sus errores antes de entregar.
-        # Se filtra CodigoCompletado del AIMessage para que el ToolNode solo
-        # ejecute herramientas reales (terminal, write_file, ...).
-        if any(tc["name"] != "CodigoCompletado" for tc in respuesta.tool_calls):
-            tool_calls_filtradas = [
-                tc for tc in respuesta.tool_calls if tc["name"] != "CodigoCompletado"
-            ]
-            mensaje_herramientas = AIMessage(
-                content=respuesta.content,
-                tool_calls=tool_calls_filtradas,
-            )
-            return Command(
-                update={
-                    "messages": [mensaje_herramientas],
-                    "loop_counter": loop_counter
-                },
-                goto="nodo_herramientas_codificador"
-            )
-
         # Verificar si se ha realizado una escritura física en disco (herramienta de
         # modificación invocada o confirmación de éxito en un ToolMessage del historial).
         has_written_files = _hubo_escritura_exitosa(msgs, respuesta)
@@ -303,32 +196,6 @@ def agente_codificador(state: ProjectState) -> Command:
                         )
                     )
                 
-                # --- Hook de regeneración de pruebas (anti-bucle) ---
-                # Tras un cambio COMPLETADO en disco, evalúa si deben exigirse
-                # pruebas actualizadas. Los archivos bajo tests/ y los contenidos
-                # sin cambios reales (hash SHA-256) nunca re-disparan el mecanismo;
-                # el cooldown y el tope de iteraciones impiden bucles infinitos.
-                evaluacion = evaluar_regeneracion_tests(directorio, msgs, respuesta, state)
-                if evaluacion["disparar"]:
-                    archivos = ", ".join(evaluacion["archivos_modificados"])
-                    msg_regeneracion = (
-                        "Acción requerida: actualiza o crea las pruebas unitarias (pytest) para los "
-                        f"siguientes archivos modificados: {archivos}. Escribe los tests en el directorio "
-                        "'tests/' y verifica que pasan con pytest antes de llamar a CodigoCompletado de nuevo."
-                    )
-                    return Command(
-                        update={
-                            "codigo_escrito": resumen,
-                            "errores_terminal": "",
-                            "messages": [respuesta] + tool_messages + [HumanMessage(content=msg_regeneracion)],
-                            "loop_counter": loop_counter,
-                            "test_regeneration_count": int(state.get("test_regeneration_count") or 0) + 1,
-                            "test_regeneration_hashes": evaluacion["hashes_actualizados"],
-                            "test_regeneration_last_ts": evaluacion["last_ts"],
-                        },
-                        goto="agente_codificador"
-                    )
-
                 return Command(
                     update={
                         "codigo_escrito": resumen,
@@ -347,34 +214,8 @@ def agente_codificador(state: ProjectState) -> Command:
             goto="nodo_herramientas_codificador"
         )
     else:
-        # Respuesta de texto sin tool_calls. En iteraciones tempranas se reintenta
-        # (nunca avanzar a revisión sin haber escrito archivos en disco). En
-        # iteraciones tardías (UMBRAL_DERIVAR_ESCRITURA) se deriva una llamada
-        # write_file desde el contenido generado para no agotar el presupuesto
-        # en reintentos sin escribir nada en disco.
-        contenido_texto = str(respuesta.content or "").strip()
-        if loop_counter >= UMBRAL_DERIVAR_ESCRITURA and contenido_texto:
-            # El texto del LLM es el mejor material disponible: se usa como
-            # contenido del archivo principal del plan. Se deriva write_file
-            # para que la escritura se ejecute físicamente en disco.
-            plan_estado = state.get("plan_de_accion") or {}
-            pasos = plan_estado.get("pasos") if isinstance(plan_estado, dict) else None
-            archivo_objetivo = "main.py"
-            if isinstance(pasos, list) and pasos:
-                archivo_objetivo = pasos[0].get("archivo", "main.py") if isinstance(pasos[0], dict) else "main.py"
-            tool_call_derivado = {
-                "name": "write_file",
-                "args": {"file_path": archivo_objetivo, "text": contenido_texto},
-                "id": f"call_derivado_{loop_counter}",
-            }
-            return Command(
-                update={
-                    "messages": [respuesta, AIMessage(content="", tool_calls=[tool_call_derivado])],
-                    "loop_counter": loop_counter
-                },
-                goto="nodo_herramientas_codificador"
-            )
-
+        # Respuesta de texto sin tool_calls: SIEMPRE reintentar. Nunca avanzar a revisión
+        # sin haber escrito archivos en disco (evita el bug de "revisión sin código").
         msg = (
             "No has llamado a ninguna herramienta. DEBES llamar a una herramienta de escritura "
             "de archivos (write_file, edit_file, etc.) para implementar el plan, o llamar a "
@@ -388,11 +229,57 @@ def agente_codificador(state: ProjectState) -> Command:
             goto="agente_codificador"
         )
 
+def _procesar_llamadas_progreso(state: ProjectState, llamadas: List[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], List[ToolMessage]]:
+    """
+    Actualiza progreso_plan de forma determinista y genera los ToolMessage de las llamadas de progreso.
+    """
+    total = len(parsear_pasos_plan(state.get("plan_de_accion")))
+    progreso = state.get("progreso_plan")
+    tool_msgs: List[ToolMessage] = []
+
+    for tc in llamadas:
+        numero_paso = _get_args(tc).get("numero_paso")
+        if total <= 0:
+            tool_msgs.append(ToolMessage(
+                tool_call_id=tc["id"],
+                content="No se pudo parsear el plan de acción; el progreso no se registra.",
+            ))
+        elif not isinstance(numero_paso, int) or not (1 <= numero_paso <= total):
+            tool_msgs.append(ToolMessage(
+                tool_call_id=tc["id"],
+                content=f"Paso {numero_paso} fuera de rango (1-{total}); no se registró progreso.",
+            ))
+        else:
+            progreso = avanzar_progreso(progreso, numero_paso, total)
+            tool_msgs.append(ToolMessage(
+                tool_call_id=tc["id"],
+                content=f"Paso {numero_paso} registrado como completado. {construir_ledger(progreso)}",
+            ))
+
+    return progreso, tool_msgs
+
+
+def _refrescar_indice(resultado: Dict[str, Any], directorio: str, state: ProjectState) -> Dict[str, Any]:
+    """
+    Refresca project_index tras escritura en disco si PROJECT_INDEX_ENABLED está activo; silencia errores.
+    """
+    try:
+        import os
+        from app.settings.settings import Settings
+        from app.utils.project_index import actualizar_indice_incremental
+
+        if Settings().PROJECT_INDEX_ENABLED and os.path.isdir(directorio):
+            indice_actualizado = actualizar_indice_incremental(directorio, state.get("project_index"))
+            return {**resultado, "project_index": indice_actualizado}
+    except Exception:
+        pass
+
+    return resultado
+
+
 def nodo_herramientas_codificador(state: ProjectState, config: RunnableConfig):
     """
-    Ejecuta las herramientas de manejo de archivos mediante ToolNode de LangGraph.
-
-    Tras la ejecución de las herramientas (que pueden escribir archivos en disco), refresca automáticamente el índice del proyecto si está habilitado (PROJECT_INDEX_ENABLED=true), actualizando la clave 'project_index' del estado para que los agentes posteriores trabajen con un índice coherente.
+    Ejecuta las herramientas del codificador, registra el progreso del plan y actualiza el índice del proyecto.
 
     Args:
         state: Estado global del proyecto (ProjectState).
@@ -404,20 +291,39 @@ def nodo_herramientas_codificador(state: ProjectState, config: RunnableConfig):
     directorio = state.get("directorio_proyecto", "./")
     herramientas = _get_tools(directorio)
     nodo = ToolNode(herramientas)
-    resultado = nodo.invoke(state, config=config)
 
-    try:
-        import os
-        from app.settings.settings import Settings
-        from app.utils.project_index import actualizar_indice_incremental
+    # Separar las tool_calls de progreso: nunca llegan al ToolNode (no escriben en disco).
+    ultimo_ai = None
+    for m in reversed(state.get("messages", [])):
+        if isinstance(m, AIMessage) and m.tool_calls:
+            ultimo_ai = m
+            break
 
-        if Settings().PROJECT_INDEX_ENABLED and os.path.isdir(directorio):
-            indice_actualizado = actualizar_indice_incremental(directorio, state.get("project_index"))
-            if isinstance(resultado, dict):
-                return {**resultado, "project_index": indice_actualizado}
-    except Exception:
-        # Si el refresco del índice falla, devolvemos el resultado original sin
-        # interrumpir el flujo normal de ejecución de las herramientas.
-        pass
+    tool_calls = ultimo_ai.tool_calls if ultimo_ai is not None else []
+    llamadas_progreso = [tc for tc in tool_calls if isinstance(tc, dict) and tc.get("name") == "MarcarPasoCompletado"]
+    llamadas_archivo = [tc for tc in tool_calls if not (isinstance(tc, dict) and tc.get("name") == "MarcarPasoCompletado")]
 
-    return resultado
+    # Flujo normal sin llamadas de progreso: comportamiento idéntico al original.
+    if not llamadas_progreso:
+        return _refrescar_indice(nodo.invoke(state, config=config), directorio, state)
+
+    progreso_final, tool_msgs = _procesar_llamadas_progreso(state, llamadas_progreso)
+
+    if llamadas_archivo:
+        # Reconstruir la última AIMessage solo con las llamadas que sí escriben en disco.
+        estado_filtrado = {
+            **{k: v for k, v in state.items() if k != "messages"},
+            "messages": [
+                m if m is not ultimo_ai else AIMessage(content=ultimo_ai.content, tool_calls=llamadas_archivo, id=ultimo_ai.id)
+                for m in state.get("messages", [])
+            ],
+        }
+        resultado = _refrescar_indice(nodo.invoke(estado_filtrado, config=config), directorio, state)
+        return {
+            **resultado,
+            "messages": list(resultado.get("messages", [])) + tool_msgs,
+            "progreso_plan": progreso_final,
+        }
+
+    # Solo llamadas de progreso: sin escritura en disco, sin refresco de índice.
+    return {"messages": tool_msgs, "progreso_plan": progreso_final}

@@ -1,18 +1,10 @@
 """
-Registro de tareas persistente en SQLite (thread-safe) para el servidor MCP.
+Registro de tareas en memoria (thread-safe) para el servidor MCP.
 
 Este módulo actúa como una capa de estado ligera que permite rastrear el ciclo
 de vida de las tareas delegadas al equipo de agentes LangGraph sin depender del
 estado interno del grafo. Expone operaciones de registro, actualización,
 consulta, listado y cancelación de tareas.
-
-A diferencia del checkpointer del grafo (SQLite persistente en checkpoints.sqlite),
-el registro era originalmente volátil: al reiniciarse el proceso del servidor MCP
-se perdían las tareas registradas mientras el grafo conservaba su estado pausado,
-produciendo la inconsistencia 'tarea no registrada' + 'grafo pausado'. Ahora el
-registro se persiste en una base SQLite dedicada (tasks.db) con journal_mode WAL,
-siguiendo el mismo patrón de persistencia que los checkpointers de LangGraph, de
-modo que el ciclo de vida de las tareas sobrevive a reinicios del servidor.
 
 Los estados válidos son:
     - 'running':          La tarea está en ejecución activa.
@@ -24,25 +16,9 @@ Los estados válidos son:
     - 'error':            La tarea falló con un error interno.
 """
 
-import json
-import logging
-import sqlite3
 import threading
 import time
-from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-from app.settings.settings import Settings
-
-logger = logging.getLogger(__name__)
-
-# Ruta fija de la base de tareas, relativa a la raíz del proyecto (mismo patrón
-# que el checkpointer del grafo en checkpoints.sqlite). NO depende del directorio
-# de trabajo del proceso (cwd): si el servidor MCP se inicia desde otro directorio,
-# la base se crearía en una ubicación distinta a la que consultan listar_tareas /
-# consultar_estado_tarea, produciendo el síntoma 'task_id no encontrado'.
-_RUTA_PROYECTO = Path(__file__).resolve().parent.parent.parent
-_RUTA_TASKS_DB = _RUTA_PROYECTO / "tasks.db"
 
 # Estados válidos del ciclo de vida de una tarea.
 ESTADOS_VALIDOS = {
@@ -58,146 +34,16 @@ ESTADOS_VALIDOS = {
 
 class TaskRegistry:
     """
-    Registro de tareas persistente en SQLite con seguridad para entornos asíncronos.
+    Registro de tareas en memoria con seguridad para entornos asíncronos.
 
-    Utiliza una única conexión sqlite3 con ``check_same_thread=False`` protegida
-    por un ``threading.Lock`` para garantizar que las operaciones de
-    lectura/escritura sean atómicas incluso si múltiples hilos o corrutinas
-    acceden simultáneamente. La base se abre con ``journal_mode=WAL`` (mismo
-    patrón que los checkpointers de LangGraph); ante cualquier fallo de E/S se
-    degrada a una base en memoria (``:memory:``) sin lanzar excepciones, de modo
-    que la persistencia nunca rompe el flujo del servidor.
+    Utiliza un ``threading.Lock`` para garantizar que las operaciones de
+    lectura/escritura sobre el diccionario interno sean atómicas incluso si
+    múltiples hilos o corrutinas acceden simultáneamente.
     """
 
-    def __init__(self, ruta_persistencia: Optional[str] = None) -> None:
-        """
-        Inicializa el registro y abre/crea la base SQLite de persistencia.
-
-        Args:
-            ruta_persistencia: Ruta del archivo SQLite de persistencia. Si es None,
-                se usa el setting TASK_REGISTRY_PATH; si este está vacío, se usa
-                <raíz del proyecto>/tasks.db (ruta fija, independiente del cwd).
-        """
+    def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._conn: Optional[sqlite3.Connection] = None
-        if ruta_persistencia is None:
-            try:
-                settings = Settings()
-                ruta_persistencia = getattr(settings, "TASK_REGISTRY_PATH", "") or str(
-                    _RUTA_TASKS_DB
-                )
-            except Exception:
-                ruta_persistencia = str(_RUTA_TASKS_DB)
-        self._ruta_persistencia = Path(ruta_persistencia)
-        self._conectar()
-
-    # ------------------------------------------------------------------
-    # Conexión SQLite (WAL, tolerante a fallos)
-    # ------------------------------------------------------------------
-
-    def _conectar(self) -> None:
-        """Abre la conexión SQLite y crea el esquema si no existe.
-
-        Ante cualquier fallo (ruta no escribible, permisos, base corrupta)
-        degrada a una base en memoria (``:memory:``) sin lanzar excepción.
-        """
-        try:
-            self._ruta_persistencia.parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(str(self._ruta_persistencia), check_same_thread=False)
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS tasks (
-                    tarea_id TEXT PRIMARY KEY,
-                    datos TEXT NOT NULL,
-                    timestamp REAL NOT NULL
-                )
-                """
-            )
-            conn.commit()
-            self._conn = conn
-        except Exception as e:
-            # Degradación controlada: base en memoria. Se registra el motivo para
-            # no ocultar fallos de persistencia (síntoma 'task_id no encontrado').
-            logger.warning("TaskRegistry: no se pudo abrir %s, degradando a memoria: %s", self._ruta_persistencia, e)
-            try:
-                conn = sqlite3.connect(":memory:", check_same_thread=False)
-                conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS tasks (
-                        tarea_id TEXT PRIMARY KEY,
-                        datos TEXT NOT NULL,
-                        timestamp REAL NOT NULL
-                    )
-                    """
-                )
-                conn.commit()
-                self._conn = conn
-            except Exception as e2:
-                logger.error("TaskRegistry: fallo total al conectar (memoria): %s", e2)
-                self._conn = None
-
-    def _persistir(self, tarea_id: str, tarea: Dict[str, Any], timestamp: float) -> None:
-        """Inserta o reemplaza la fila de una tarea (requiere el lock adquirido)."""
-        if self._conn is None:
-            return
-        try:
-            self._conn.execute(
-                "INSERT OR REPLACE INTO tasks (tarea_id, datos, timestamp) VALUES (?, ?, ?)",
-                (tarea_id, json.dumps(tarea, ensure_ascii=False), timestamp),
-            )
-            self._conn.commit()
-        except Exception as e:
-            logger.error("TaskRegistry: fallo al persistir tarea '%s': %s", tarea_id, e)
-
-    def _eliminar(self, tarea_id: str) -> None:
-        """Elimina la fila de una tarea (requiere el lock adquirido)."""
-        if self._conn is None:
-            return
-        try:
-            self._conn.execute("DELETE FROM tasks WHERE tarea_id = ?", (tarea_id,))
-            self._conn.commit()
-        except Exception as e:
-            logger.error("TaskRegistry: fallo al eliminar tarea '%s': %s", tarea_id, e)
-
-    def _get_tarea(self, tarea_id: str) -> Optional[Dict[str, Any]]:
-        """Devuelve la tarea con el id dado o None (requiere el lock adquirido)."""
-        if self._conn is None:
-            return None
-        try:
-            fila = self._conn.execute(
-                "SELECT datos FROM tasks WHERE tarea_id = ?", (tarea_id,)
-            ).fetchone()
-            if fila is None:
-                return None
-            tarea = json.loads(fila[0])
-            return tarea if isinstance(tarea, dict) else None
-        except Exception as e:
-            logger.error("TaskRegistry: fallo al leer tarea '%s': %s", tarea_id, e)
-            return None
-
-    def _cargar_todas(self) -> Dict[str, Dict[str, Any]]:
-        """Carga todas las tareas desde la base (requiere el lock adquirido)."""
-        tareas: Dict[str, Dict[str, Any]] = {}
-        if self._conn is None:
-            return tareas
-        try:
-            cursor = self._conn.execute("SELECT tarea_id, datos FROM tasks")
-            for tarea_id, datos_json in cursor.fetchall():
-                try:
-                    tarea = json.loads(datos_json)
-                    if isinstance(tarea, dict) and tarea.get("tarea_id"):
-                        tareas[str(tarea_id)] = tarea
-                except Exception as e:
-                    logger.warning("TaskRegistry: fila corrupta para '%s': %s", tarea_id, e)
-                    continue
-        except Exception as e:
-            logger.error("TaskRegistry: fallo al cargar tareas: %s", e)
-        return tareas
-
-    # ------------------------------------------------------------------
-    # API pública (sin cambios de firma respecto a la versión JSON)
-    # ------------------------------------------------------------------
+        self._tareas: Dict[str, Dict[str, Any]] = {}
 
     def register_task(
         self,
@@ -209,7 +55,7 @@ class TaskRegistry:
         **extra: Any,
     ) -> Dict[str, Any]:
         """
-        Registra una nueva tarea en el registro (y la persiste en SQLite).
+        Registra una nueva tarea en el registro.
 
         Args:
             tarea_id: Identificador único de la tarea.
@@ -217,7 +63,7 @@ class TaskRegistry:
             instruccion: Instrucción original proporcionada por el usuario.
             thread_id: Identificador del hilo/grafo LangGraph asociado.
             estado: Estado inicial de la tarea (por defecto 'running').
-            **extra: Campos adicionales opcionales (p. ej. 'detalle').
+            **extra: Campos adicionales opcionales (p.ej. 'detalle').
 
         Returns:
             El diccionario completo de la tarea recién registrada.
@@ -234,13 +80,13 @@ class TaskRegistry:
             "timestamp_actualizacion": timestamp,
             "detalle": extra.get("detalle", ""),
         }
-        # Permitir campos extra arbitrarios (p. ej. asyncio.Task para cancelación).
+        # Permitir campos extra arbitrarios (p.ej. asyncio.Task para cancelación).
         for clave, valor in extra.items():
             if clave != "detalle":
                 tarea[clave] = valor
 
         with self._lock:
-            self._persistir(tarea_id, tarea, timestamp)
+            self._tareas[tarea_id] = tarea
         return dict(tarea)
 
     def update_status(
@@ -250,12 +96,12 @@ class TaskRegistry:
         **extra: Any,
     ) -> bool:
         """
-        Actualiza el estado de una tarea existente (y persiste el cambio en SQLite).
+        Actualiza el estado de una tarea existente.
 
         Args:
             tarea_id: Identificador de la tarea a actualizar.
             estado: Nuevo estado (debe ser uno de los estados válidos).
-            **extra: Campos adicionales a actualizar (p. ej. 'detalle').
+            **extra: Campos adicionales a actualizar (p.ej. 'detalle').
 
         Returns:
             True si la tarea existía y se actualizó; False en caso contrario.
@@ -264,14 +110,13 @@ class TaskRegistry:
             return False
 
         with self._lock:
-            tarea = self._get_tarea(tarea_id)
+            tarea = self._tareas.get(tarea_id)
             if tarea is None:
                 return False
             tarea["estado"] = estado
             tarea["timestamp_actualizacion"] = time.time()
             for clave, valor in extra.items():
                 tarea[clave] = valor
-            self._persistir(tarea_id, tarea, tarea["timestamp_actualizacion"])
         return True
 
     def get_task(self, tarea_id: str) -> Optional[Dict[str, Any]]:
@@ -285,28 +130,28 @@ class TaskRegistry:
             Diccionario con los datos de la tarea o None.
         """
         with self._lock:
-            tarea = self._get_tarea(tarea_id)
+            tarea = self._tareas.get(tarea_id)
             return dict(tarea) if tarea is not None else None
 
-    def list_tasks(self, estado: str = "") -> List[Dict[str, Any]]:
+    def list_tasks(self, estado: str = "") -> list:
         """
         Lista las tareas registradas, opcionalmente filtradas por estado.
 
         Args:
-            estado: Si se proporciona, filtra por ese estado (p. ej. 'running').
+            estado: Si se proporciona, filtra por ese estado (p.ej. 'running').
 
         Returns:
             Lista de diccionarios con los datos de las tareas.
         """
         with self._lock:
-            tareas = list(self._cargar_todas().values())
+            tareas = list(self._tareas.values())
         if estado:
             tareas = [t for t in tareas if t.get("estado") == estado]
         return [dict(t) for t in tareas]
 
     def remove_task(self, tarea_id: str) -> bool:
         """
-        Elimina una tarea del registro (y persiste el cambio en SQLite).
+        Elimina una tarea del registro.
 
         Args:
             tarea_id: Identificador de la tarea a eliminar.
@@ -315,20 +160,15 @@ class TaskRegistry:
             True si la tarea existía y fue eliminada; False en caso contrario.
         """
         with self._lock:
-            if self._get_tarea(tarea_id) is None:
-                return False
-            self._eliminar(tarea_id)
-            return True
+            if tarea_id in self._tareas:
+                del self._tareas[tarea_id]
+                return True
+        return False
 
     def clear(self) -> None:
-        """Elimina todas las tareas del registro (útil en pruebas) y persiste el vaciado."""
+        """Elimina todas las tareas del registro (útil en pruebas)."""
         with self._lock:
-            if self._conn is not None:
-                try:
-                    self._conn.execute("DELETE FROM tasks")
-                    self._conn.commit()
-                except Exception as e:
-                    logger.error("TaskRegistry: fallo al vaciar el registro: %s", e)
+            self._tareas.clear()
 
 
 # Instancia singleton compartida por todo el servidor MCP.

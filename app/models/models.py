@@ -17,14 +17,6 @@ class ProjectState(MessagesState):
     errores_terminal: Optional[str]
     revision_count: int
     loop_counter: int
-    # Contador de respuestas vacías consecutivas del Planificador (anti-bucle).
-    empty_response_count: int = 0
     project_index: Optional[Dict[str, Any]] = None
     analisis_final: Optional[str] = None
-    # --- Mecanismo de regeneración de tests (anti-bucle) ---
-    # Número de regeneraciones de tests disparadas en la tarea actual.
-    test_regeneration_count: int = 0
-    # Hashes SHA-256 conocidos de los archivos modificados (detección de cambios reales).
-    test_regeneration_hashes: Optional[Dict[str, str]] = None
-    # Timestamp (time.time()) de la última regeneración disparada (cooldown/debounce).
-    test_regeneration_last_ts: float = 0.0
+    progreso_plan: Optional[Dict[str, Any]] = None

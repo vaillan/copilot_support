@@ -373,7 +373,7 @@ def test_get_project_index_usa_incremental_con_cache(mock_cargar, mock_actualiza
     res = tools["get_project_index"].invoke({})
 
     mock_construir.assert_not_called()
-    mock_actualizar.assert_called_once_with(str(tmp_path), indice_falso)
+    mock_actualizar.assert_called_once_with(str(tmp_path), indice_falso, idioma="es")
     assert "ESTRUCTURA DEL PROYECTO" in res
     assert "### b.py" in res
 
@@ -393,7 +393,7 @@ def test_get_project_index_fallback_construir_sin_cache(mock_cargar, mock_actual
     tools = {t.name: t for t in get_custom_file_tools(str(tmp_path))}
     res = tools["get_project_index"].invoke({})
 
-    mock_construir.assert_called_once_with(str(tmp_path))
+    mock_construir.assert_called_once_with(str(tmp_path), idioma="es")
     mock_actualizar.assert_not_called()
     assert "### a.py" in res
 

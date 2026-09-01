@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.settings.settings import Settings
+from app.utils.i18n import obtener_mensaje
 
 settings = Settings()
 
@@ -63,8 +64,6 @@ EXCLUDED_FILES: Set[str] = {
     "Gemfile.lock",
     "composer.lock",
     INDEX_FILENAME,
-    # Base SQLite del registro de tareas del MCP (persistencia propia, nunca indexar)
-    "tasks.db",
 }
 
 # Extensiones de archivos binarios o no textuales que se omiten
@@ -496,6 +495,7 @@ def construir_indice(
     directorio: str,
     max_tokens_por_archivo: Optional[int] = None,
     usar_cache: bool = True,
+    idioma: str = "es",
 ) -> Dict[str, Any]:
     """
     Construye (o carga de caché) el índice del proyecto.
@@ -504,6 +504,7 @@ def construir_indice(
         directorio: Ruta del proyecto a indexar.
         max_tokens_por_archivo: Límite de tokens por resumen de archivo.
         usar_cache: Si True, reutiliza el índice en disco cuando es válido.
+        idioma: Idioma de los mensajes de error ('es' o 'en').
 
     Returns:
         Dict con la estructura del índice.
@@ -519,7 +520,7 @@ def construir_indice(
             "generado_en": "",
             "arbol": {},
             "resumenes": {},
-            "error": f"El directorio '{directorio}' no existe.",
+            "error": obtener_mensaje("index.directorio_no_existe", idioma, directorio=directorio),
         }
 
     indice_existente = cargar_indice(dir_resuelto) if usar_cache else None
@@ -571,17 +572,17 @@ def indice_es_valido(directorio: str, indice: Optional[Dict[str, Any]]) -> bool:
     return True
 
 
-def actualizar_indice_incremental(directorio: str, indice: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def actualizar_indice_incremental(directorio: str, indice: Optional[Dict[str, Any]], idioma: str = "es") -> Dict[str, Any]:
     """
     Actualiza el índice de forma incremental: solo recalcula los archivos
     cuyo hash/mtime cambió. Si el índice no existe, lo construye completo.
     """
     if not indice or not isinstance(indice, dict):
-        return construir_indice(directorio)
+        return construir_indice(directorio, idioma=idioma)
 
     dir_resuelto = str(Path(directorio).resolve())
     if indice.get("directorio") != dir_resuelto:
-        return construir_indice(directorio)
+        return construir_indice(directorio, idioma=idioma)
 
     max_tokens = int(getattr(settings, "PROJECT_INDEX_MAX_TOKENS_PER_FILE", 400))
     datos = _recorrer_arbol(Path(dir_resuelto), max_tokens, indice)
@@ -601,6 +602,7 @@ def obtener_resumen_archivo(
     directorio: str,
     ruta_relativa: str,
     indice: Optional[Dict[str, Any]] = None,
+    idioma: str = "es",
 ) -> Dict[str, Any]:
     """
     Obtiene el resumen de un archivo concreto desde el índice.
@@ -610,6 +612,7 @@ def obtener_resumen_archivo(
         directorio: Ruta del proyecto.
         ruta_relativa: Ruta relativa del archivo (ej. 'app/main.py').
         indice: Índice actual (opcional). Si no se pasa, se carga de caché.
+        idioma: Idioma de los mensajes de error ('es' o 'en').
 
     Returns:
         Dict con el resumen del archivo o un mensaje de error.
@@ -621,12 +624,12 @@ def obtener_resumen_archivo(
     # Se usa Path.is_relative_to (el antiguo startswith fallaba con directorios
     # hermanos cuyo nombre es prefijo del proyecto, p.ej. 'proyecto' vs 'proyecto_hermano').
     if ruta_completa == Path(dir_resuelto):
-        return {"resumen": f"Error: La ruta '{ruta_relativa}' apunta al propio directorio del proyecto.", "error": True}
+        return {"resumen": obtener_mensaje("index.ruta_directorio_propio", idioma, ruta=ruta_relativa), "error": True}
     if not ruta_completa.is_relative_to(Path(dir_resuelto)):
-        return {"resumen": f"Error: La ruta '{ruta_relativa}' está fuera del directorio del proyecto.", "error": True}
+        return {"resumen": obtener_mensaje("index.ruta_fuera_proyecto", idioma, ruta=ruta_relativa), "error": True}
 
     if not ruta_completa.exists() or not ruta_completa.is_file():
-        return {"resumen": f"Error: El archivo '{ruta_relativa}' no existe.", "error": True}
+        return {"resumen": obtener_mensaje("index.archivo_no_existe", idioma, ruta=ruta_relativa), "error": True}
 
     if indice is None:
         indice = cargar_indice(dir_resuelto)

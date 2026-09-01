@@ -20,18 +20,6 @@ from app.main import crear_grafo
 RUTA_CHECKPOINTS = "checkpoints.sqlite"
 
 
-@pytest.fixture(autouse=True)
-def _sin_regeneracion_tests():
-    """Neutraliza el hook de regeneración de tests en las pruebas de checkpointer.
-
-    El comportamiento del hook se valida en tests/test_test_regenerator.py.
-    """
-    with patch('app.agents.agente_codificador.evaluar_regeneracion_tests',
-               return_value={"disparar": False, "archivos_modificados": [], "razon": "test",
-                             "hashes_actualizados": {}, "last_ts": 0.0}):
-        yield
-
-
 @pytest.fixture
 def mock_llm():
     with patch('app.agents.agente_planificador.get_planner_llm') as mock_plan, \
@@ -63,7 +51,7 @@ def test_persistencia_tras_invocacion(mock_llm, mock_file_system):
     mock_plan.return_value = mock_llm_plan
     mock_llm_plan.bind_tools.return_value.invoke.return_value = AIMessage(
         content="",
-        tool_calls=[{"name": "entregar_plan_de_accion", "args": {"explicacion_arquitectura": "test", "pasos": [{"archivo": "test.py", "tarea": "implementar", "requiere_test": True}]}, "id": "1"}]
+        tool_calls=[{"name": "entregar_plan_de_accion", "args": {"explicacion_arquitectura": "test", "pasos": []}, "id": "1"}]
     )
 
     mock_llm_cod = MagicMock()

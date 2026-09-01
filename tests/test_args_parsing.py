@@ -9,7 +9,7 @@ en lugar de un dict. Estos tests verifican que los 3 agentes no lanzan
 import json
 import pytest
 from unittest.mock import MagicMock, patch
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import Command
 
 from app.utils.args_utils import _get_args
@@ -105,10 +105,7 @@ def test_planificador_args_string_json(mock_get_file, mock_get_llm, mock_state):
 
     tool_call = {
         "name": "entregar_plan_de_accion",
-        "args": {
-            "explicacion_arquitectura": "plan desde string",
-            "pasos": [{"archivo": "app.py", "tarea": "implementar", "requiere_test": False}],
-        },
+        "args": {"explicacion_arquitectura": "plan desde string", "pasos": []},
         "id": "call_str_1"
     }
     mock_llm.bind_tools.return_value.invoke.return_value = _ai_message_con_args_string(tool_call)
@@ -198,8 +195,7 @@ def test_revisor_args_string_json_rechazo(mock_get_file, mock_get_llm, mock_stat
 @patch('app.agents.agente_planificador.get_planner_llm')
 @patch('app.agents.agente_planificador.fileSystem.get_file_content')
 def test_planificador_args_string_json_invalido(mock_get_file, mock_get_llm, mock_state):
-    """Anti-bucle: con args string inválido (parsea a {}) NO se lanza excepción
-    ni se acepta un plan vacío; se pide reintento con error de herramienta."""
+    """El planificador no lanza excepción con args string inválido (usa defaults)."""
     mock_llm = MagicMock()
     mock_get_llm.return_value = mock_llm
     mock_get_file.return_value = "system prompt"
@@ -217,11 +213,6 @@ def test_planificador_args_string_json_invalido(mock_get_file, mock_get_llm, moc
     result = agente_planificador(mock_state)
 
     assert isinstance(result, Command)
-    assert result.goto == "agente_planificador"
+    assert result.goto == "agente_codificador"
     update = result.update or {}
-    assert "plan_de_accion" not in update
-    messages = update["messages"]
-    assert len(messages) == 2
-    assert isinstance(messages[1], ToolMessage)
-    assert messages[1].tool_call_id == "call_str_5"
-    assert "ERROR" in messages[1].content
+    assert update["plan_de_accion"] == {}

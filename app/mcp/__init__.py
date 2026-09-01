@@ -1,1 +1,0 @@
-"""Paquete de acceso al estado de tareas del servidor MCP."""
