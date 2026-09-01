@@ -12,6 +12,7 @@ import sqlite3
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 
@@ -215,3 +216,49 @@ def test_remove_task_y_clear_persisten_cambios(tmp_path):
     total = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
     conn.close()
     assert total == 0
+
+
+def test_ruta_por_defecto_es_fija_relativa_al_proyecto():
+    """La ruta por defecto de tasks.db debe ser fija (raíz del proyecto), NO
+    depender del directorio de trabajo del proceso (cwd). Esto evita el síntoma
+    'task_id no encontrado' cuando el servidor MCP se inicia desde otro cwd."""
+    from app.utils.task_registry import _RUTA_TASKS_DB
+
+    assert _RUTA_TASKS_DB.name == "tasks.db"
+    # La ruta debe apuntar a la raíz del proyecto (donde vive app/), no al cwd.
+    assert (_RUTA_TASKS_DB.parent / "app").is_dir()
+
+
+def test_registro_sin_ruta_explicita_usa_ruta_fija(tmp_path, monkeypatch):
+    """TaskRegistry() sin ruta_persistencia debe persistir en la ruta fija del
+    proyecto, incluso si el cwd es otro directorio."""
+    from app.utils.task_registry import _RUTA_TASKS_DB
+
+    # Simular que el proceso se inicia desde un directorio distinto al proyecto.
+    monkeypatch.chdir(tmp_path)
+    registro = TaskRegistry()
+    tarea = registro.register_task(tarea_id="task_ruta_fija")
+    assert tarea["tarea_id"] == "task_ruta_fija"
+    assert registro.get_task("task_ruta_fija") is not None
+    # La base debe existir en la ruta fija del proyecto, no en el cwd temporal.
+    assert _RUTA_TASKS_DB.exists()
+    assert not (tmp_path / "tasks.db").exists()
+    # Limpieza: no dejar la tarea de prueba en la base real del proyecto.
+    registro.remove_task("task_ruta_fija")
+
+
+def test_fallo_persistencia_se_registra_en_log(caplog):
+    """Un fallo de persistencia debe quedar registrado en el log (no silencioso)."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="app.utils.task_registry"):
+        # Forzar un fallo de escritura: ruta cuyo padre es un archivo.
+        archivo_bloqueo = Path(".") / "archivo_bloqueo_log"
+        archivo_bloqueo.write_text("x", encoding="utf-8")
+        try:
+            ruta_invalida = archivo_bloqueo / "sub" / "tasks.db"
+            registro = TaskRegistry(ruta_persistencia=str(ruta_invalida))
+            registro.register_task(tarea_id="task_log")
+            assert any("TaskRegistry" in r.message for r in caplog.records)
+        finally:
+            archivo_bloqueo.unlink(missing_ok=True)

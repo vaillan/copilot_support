@@ -366,8 +366,8 @@ async def delegar_tarea_a_equipo_ia(
                 instruccion=instruccion,
                 estado="running",
             )
-    except Exception:
-        pass
+    except Exception as e:
+        _log_stderr(f"[MCP] ERROR al registrar tarea '{tarea_id}': {e}")
 
     # Notificación inicial
     await notificar_progreso(ctx, f"🚀 Iniciando procesamiento para tarea '{tarea_id}'...", 10, 100)
@@ -547,8 +547,8 @@ async def delegar_tarea_a_equipo_ia(
                 _log_stderr(f"[MCP] PAUSA 1 - tarea '{tarea_id}' esperando aprobación de plan")
                 try:
                     task_store.update_status(tarea_id, "paused_planning", detalle=explicacion)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log_stderr(f"[MCP] ERROR al marcar PAUSA_1 en tarea '{tarea_id}': {e}")
                 return markdown_pausa
                 
             elif siguiente_nodo == "agente_revisor":
@@ -567,8 +567,8 @@ async def delegar_tarea_a_equipo_ia(
                 _log_stderr(f"[MCP] PAUSA 2 - tarea '{tarea_id}' esperando aprobación de código")
                 try:
                     task_store.update_status(tarea_id, "paused_code", detalle=codigo_escrito)
-                except Exception:
-                    pass
+                except Exception as e:
+                    _log_stderr(f"[MCP] ERROR al marcar PAUSA_2 en tarea '{tarea_id}': {e}")
                 return markdown_pausa
 
         # Si no hay 'next', el grafo llegó a END
@@ -586,8 +586,8 @@ async def delegar_tarea_a_equipo_ia(
         _log_stderr(f"[MCP] Tarea '{tarea_id}' COMPLETADA")
         try:
             task_store.update_status(tarea_id, "completed", detalle=codigo_escrito)
-        except Exception:
-            pass
+        except Exception as e:
+            _log_stderr(f"[MCP] ERROR al marcar COMPLETADA la tarea '{tarea_id}': {e}")
         # Si el grafo terminó en un análisis puro (sin programación), el estado
         # contiene 'analisis_final'. Se extrae del estado o del resultado para
         # generar un reporte de análisis dedicado en lugar del reporte de tarea
@@ -614,8 +614,8 @@ async def delegar_tarea_a_equipo_ia(
         _log_stderr(f"[MCP] TIMEOUT tarea '{tarea_id}'")
         try:
             task_store.update_status(tarea_id, "timeout", detalle=msg_timeout)
-        except Exception:
-            pass
+        except Exception as e:
+            _log_stderr(f"[MCP] ERROR al marcar TIMEOUT en tarea '{tarea_id}': {e}")
         return msg_timeout
     except BaseException as e:
         err_msg = str(e)
@@ -624,8 +624,8 @@ async def delegar_tarea_a_equipo_ia(
         await notificar_progreso(ctx, msg_err, 100, 100)
         try:
             task_store.update_status(tarea_id, "error", detalle=err_msg)
-        except Exception:
-            pass
+        except Exception as e:
+            _log_stderr(f"[MCP] ERROR al marcar ERROR en tarea '{tarea_id}': {e}")
         return msg_err
 
 

@@ -25,13 +25,24 @@ Los estados válidos son:
 """
 
 import json
+import logging
 import sqlite3
 import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from app.settings.settings import Settings, WORKING_DIRECTORY
+from app.settings.settings import Settings
+
+logger = logging.getLogger(__name__)
+
+# Ruta fija de la base de tareas, relativa a la raíz del proyecto (mismo patrón
+# que el checkpointer del grafo en checkpoints.sqlite). NO depende del directorio
+# de trabajo del proceso (cwd): si el servidor MCP se inicia desde otro directorio,
+# la base se crearía en una ubicación distinta a la que consultan listar_tareas /
+# consultar_estado_tarea, produciendo el síntoma 'task_id no encontrado'.
+_RUTA_PROYECTO = Path(__file__).resolve().parent.parent.parent
+_RUTA_TASKS_DB = _RUTA_PROYECTO / "tasks.db"
 
 # Estados válidos del ciclo de vida de una tarea.
 ESTADOS_VALIDOS = {
@@ -65,7 +76,7 @@ class TaskRegistry:
         Args:
             ruta_persistencia: Ruta del archivo SQLite de persistencia. Si es None,
                 se usa el setting TASK_REGISTRY_PATH; si este está vacío, se usa
-                <WORKING_DIRECTORY>/tasks.db.
+                <raíz del proyecto>/tasks.db (ruta fija, independiente del cwd).
         """
         self._lock = threading.Lock()
         self._conn: Optional[sqlite3.Connection] = None
@@ -73,10 +84,10 @@ class TaskRegistry:
             try:
                 settings = Settings()
                 ruta_persistencia = getattr(settings, "TASK_REGISTRY_PATH", "") or str(
-                    WORKING_DIRECTORY / "tasks.db"
+                    _RUTA_TASKS_DB
                 )
             except Exception:
-                ruta_persistencia = "tasks.db"
+                ruta_persistencia = str(_RUTA_TASKS_DB)
         self._ruta_persistencia = Path(ruta_persistencia)
         self._conectar()
 
@@ -105,8 +116,10 @@ class TaskRegistry:
             )
             conn.commit()
             self._conn = conn
-        except Exception:
-            # Degradación controlada: base en memoria.
+        except Exception as e:
+            # Degradación controlada: base en memoria. Se registra el motivo para
+            # no ocultar fallos de persistencia (síntoma 'task_id no encontrado').
+            logger.warning("TaskRegistry: no se pudo abrir %s, degradando a memoria: %s", self._ruta_persistencia, e)
             try:
                 conn = sqlite3.connect(":memory:", check_same_thread=False)
                 conn.execute(
@@ -120,7 +133,8 @@ class TaskRegistry:
                 )
                 conn.commit()
                 self._conn = conn
-            except Exception:
+            except Exception as e2:
+                logger.error("TaskRegistry: fallo total al conectar (memoria): %s", e2)
                 self._conn = None
 
     def _persistir(self, tarea_id: str, tarea: Dict[str, Any], timestamp: float) -> None:
@@ -133,8 +147,8 @@ class TaskRegistry:
                 (tarea_id, json.dumps(tarea, ensure_ascii=False), timestamp),
             )
             self._conn.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error("TaskRegistry: fallo al persistir tarea '%s': %s", tarea_id, e)
 
     def _eliminar(self, tarea_id: str) -> None:
         """Elimina la fila de una tarea (requiere el lock adquirido)."""
@@ -143,8 +157,8 @@ class TaskRegistry:
         try:
             self._conn.execute("DELETE FROM tasks WHERE tarea_id = ?", (tarea_id,))
             self._conn.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error("TaskRegistry: fallo al eliminar tarea '%s': %s", tarea_id, e)
 
     def _get_tarea(self, tarea_id: str) -> Optional[Dict[str, Any]]:
         """Devuelve la tarea con el id dado o None (requiere el lock adquirido)."""
@@ -158,7 +172,8 @@ class TaskRegistry:
                 return None
             tarea = json.loads(fila[0])
             return tarea if isinstance(tarea, dict) else None
-        except Exception:
+        except Exception as e:
+            logger.error("TaskRegistry: fallo al leer tarea '%s': %s", tarea_id, e)
             return None
 
     def _cargar_todas(self) -> Dict[str, Dict[str, Any]]:
@@ -173,10 +188,11 @@ class TaskRegistry:
                     tarea = json.loads(datos_json)
                     if isinstance(tarea, dict) and tarea.get("tarea_id"):
                         tareas[str(tarea_id)] = tarea
-                except Exception:
+                except Exception as e:
+                    logger.warning("TaskRegistry: fila corrupta para '%s': %s", tarea_id, e)
                     continue
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error("TaskRegistry: fallo al cargar tareas: %s", e)
         return tareas
 
     # ------------------------------------------------------------------
@@ -311,8 +327,8 @@ class TaskRegistry:
                 try:
                     self._conn.execute("DELETE FROM tasks")
                     self._conn.commit()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error("TaskRegistry: fallo al vaciar el registro: %s", e)
 
 
 # Instancia singleton compartida por todo el servidor MCP.
