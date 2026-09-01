@@ -28,14 +28,14 @@ def test_timeout_default_mcp_es_1800():
     assert '"1800"' in lineas[0], f"El default de timeout debe ser 1800, se encontró: {lineas[0]}"
 
 
-def test_timeout_llm_es_900_segundos():
-    """El timeout base del LLM en llm_factory.py debe ser 900 segundos.
+def test_timeout_llm_es_180_segundos():
+    """El timeout base del LLM en llm_factory.py debe ser 180 segundos.
 
-    Para openrouter se convierte a milisegundos (900_000) porque
+    Para openrouter se convierte a milisegundos (180_000) porque
     langchain_openrouter interpreta `timeout` en ms (mapea a SDK timeout_ms).
     """
     fuente = (RAIZ / "app" / "models" / "llm_factory.py").read_text(encoding="utf-8")
-    assert "timeout_llm_segundos = 900" in fuente, "El timeout base del LLM debe ser 900 segundos"
+    assert "timeout_llm_segundos = 180" in fuente, "El timeout base del LLM debe ser 180 segundos"
     assert '* 1000' in fuente, "openrouter debe recibir el timeout en milisegundos"
 
 

@@ -4,7 +4,7 @@ import pytest
 import asyncio
 import anyio
 from unittest.mock import patch, MagicMock, AsyncMock
-from mcp_server import visualizar_cambios, delegar_tarea_a_equipo_ia, obtener_git_diff, notificar_progreso, generar_markdown_pausa, consultar_estado_tarea, listar_tareas, cancelar_tarea
+from mcp_server import visualizar_cambios, delegar_tarea_a_equipo_ia, obtener_git_diff, notificar_progreso, generar_markdown_pausa, consultar_estado_tarea, listar_tareas, cancelar_tarea, _es_error_real
 
 def test_visualizar_cambios_sin_parametros():
     resultado = asyncio.run(visualizar_cambios())
@@ -836,3 +836,200 @@ def test_rechazo_feedback_vacio_repausa_pausa_1(mock_aget_state, mock_ainvoke, m
     mock_aupdate_state.assert_not_awaited()
     mock_command.assert_not_called()
     mock_ainvoke.assert_not_awaited()
+
+
+# =============================================================================
+# Pruebas del fix: no marcar 'completed' sin evidencia de trabajo en disco
+# =============================================================================
+
+@pytest.mark.parametrize("texto,esperado", [
+    # Errores reales → True
+    ("Error: el archivo no existe", True),
+    ("Abortado: el Agente Codificador excedió el límite máximo", True),
+    ("Límite de revisiones alcanzado. Últimos errores: boom", True),
+    ("Traceback (most recent call last)", True),
+    ("fallo en la prueba test_x", True),
+    # Mensajes de éxito del Revisor → False
+    ("Ninguno. Código probado y aprobado.", False),
+    ("Ninguno. Verificación completada tras múltiples iteraciones sin errores.", False),
+    ("No se requirieron pruebas para este código. Aprobado automáticamente.", False),
+    ("No se requirieron pruebas para este plan. Aprobado automáticamente.", False),
+    ("Ninguno. Código aprobado en revisión.", False),
+    ("No se ejecutaron pruebas de terminal pero la revisión se concluyó sin errores reportados.", False),
+    ("0 errores", False),
+    ("0", False),
+    # Vacíos → False
+    ("", False),
+    ("-", False),
+    (None, False),
+])
+def test_es_error_real(texto, esperado):
+    """_es_error_real distingue errores reales de mensajes de éxito del Revisor."""
+    assert _es_error_real(texto) is esperado
+
+
+@patch("mcp_server.obtener_git_diff", return_value="")
+@patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+def test_delegar_tarea_sin_evidencia_no_marca_completed(mock_aget_state, mock_ainvoke, mock_git_diff):
+    """El grafo llega a END sin código escrito ni diff: NO debe marcarse 'completed'."""
+    from app.utils.task_registry import task_registry
+    task_registry.clear()
+    task_registry.register_task(
+        tarea_id="task_sin_trabajo",
+        directorio_proyecto="./",
+        estado="running",
+    )
+
+    mock_state_final = MagicMock()
+    mock_state_final.next = []
+    mock_state_final.values = {
+        "codigo_escrito": None,
+        "errores_terminal": "Ninguno. Código probado y aprobado.",
+    }
+    mock_aget_state.return_value = mock_state_final
+
+    resultado = asyncio.run(delegar_tarea_a_equipo_ia(
+        instruccion="Tarea sin trabajo",
+        directorio_proyecto="./",
+        tarea_id="task_sin_trabajo",
+    ))
+
+    tarea = task_registry.get_task("task_sin_trabajo")
+    assert tarea["estado"] == "error", f"Se esperaba 'error', se obtuvo '{tarea['estado']}'"
+    assert "working tree limpio" in tarea["detalle"]
+    assert "✅ task: task_sin_trabajo" in resultado
+    task_registry.clear()
+
+
+@patch("mcp_server.obtener_git_diff", return_value="")
+@patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+def test_delegar_tarea_con_codigo_escrito_marca_completed(mock_aget_state, mock_ainvoke, mock_git_diff):
+    """Con codigo_escrito presente, la tarea se marca 'completed'."""
+    from app.utils.task_registry import task_registry
+    task_registry.clear()
+    task_registry.register_task(
+        tarea_id="task_con_trabajo",
+        directorio_proyecto="./",
+        estado="running",
+    )
+
+    mock_state_final = MagicMock()
+    mock_state_final.next = []
+    mock_state_final.values = {
+        "codigo_escrito": "Se creó app/main.py con la lógica principal.",
+        "errores_terminal": "Ninguno. Código probado y aprobado.",
+    }
+    mock_aget_state.return_value = mock_state_final
+
+    resultado = asyncio.run(delegar_tarea_a_equipo_ia(
+        instruccion="Tarea con trabajo",
+        directorio_proyecto="./",
+        tarea_id="task_con_trabajo",
+    ))
+
+    tarea = task_registry.get_task("task_con_trabajo")
+    assert tarea["estado"] == "completed"
+    assert "Se creó app/main.py" in resultado
+    task_registry.clear()
+
+
+@patch("mcp_server.obtener_git_diff", return_value="")
+@patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+def test_delegar_tarea_con_diff_marca_completed(mock_aget_state, mock_ainvoke, mock_git_diff):
+    """Con diff git no vacío, la tarea se marca 'completed' aunque no haya resumen."""
+    from app.utils.task_registry import task_registry
+    task_registry.clear()
+    task_registry.register_task(
+        tarea_id="task_con_diff",
+        directorio_proyecto="./",
+        estado="running",
+    )
+
+    mock_state_final = MagicMock()
+    mock_state_final.next = []
+    mock_state_final.values = {
+        "codigo_escrito": None,
+        "errores_terminal": "Ninguno. Código probado y aprobado.",
+    }
+    mock_aget_state.return_value = mock_state_final
+    mock_git_diff.return_value = "diff --git a/app/main.py b/app/main.py\n+print('hola')"
+
+    resultado = asyncio.run(delegar_tarea_a_equipo_ia(
+        instruccion="Tarea con diff",
+        directorio_proyecto="./",
+        tarea_id="task_con_diff",
+    ))
+
+    tarea = task_registry.get_task("task_con_diff")
+    assert tarea["estado"] == "completed"
+    task_registry.clear()
+
+
+@patch("mcp_server.obtener_git_diff", return_value="")
+@patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+def test_delegar_tarea_analisis_puro_marca_completed(mock_aget_state, mock_ainvoke, mock_git_diff):
+    """Un análisis puro (analisis_final) llega a END sin código: se marca 'completed'."""
+    from app.utils.task_registry import task_registry
+    task_registry.clear()
+    task_registry.register_task(
+        tarea_id="task_analisis",
+        directorio_proyecto="./",
+        estado="running",
+    )
+
+    mock_state_final = MagicMock()
+    mock_state_final.next = []
+    mock_state_final.values = {
+        "codigo_escrito": None,
+        "errores_terminal": None,
+        "analisis_final": "Este proyecto implementa un flujo multi-agente.",
+    }
+    mock_aget_state.return_value = mock_state_final
+
+    resultado = asyncio.run(delegar_tarea_a_equipo_ia(
+        instruccion="analiza este proyecto",
+        directorio_proyecto="./",
+        tarea_id="task_analisis",
+    ))
+
+    tarea = task_registry.get_task("task_analisis")
+    assert tarea["estado"] == "completed"
+    assert "Este proyecto implementa un flujo multi-agente." in resultado
+    task_registry.clear()
+
+
+@patch("mcp_server.obtener_git_diff", return_value="")
+@patch("mcp_server.agentes_app.ainvoke", new_callable=AsyncMock)
+@patch("mcp_server.agentes_app.aget_state", new_callable=AsyncMock)
+def test_delegar_tarea_con_error_real_marca_error(mock_aget_state, mock_ainvoke, mock_git_diff):
+    """Con errores reales en errores_terminal, la tarea se marca 'error'."""
+    from app.utils.task_registry import task_registry
+    task_registry.clear()
+    task_registry.register_task(
+        tarea_id="task_error_real",
+        directorio_proyecto="./",
+        estado="running",
+    )
+
+    mock_state_final = MagicMock()
+    mock_state_final.next = []
+    mock_state_final.values = {
+        "codigo_escrito": "Se escribió algo",
+        "errores_terminal": "Abortado: el Agente Codificador excedió el límite máximo de 10 iteraciones",
+    }
+    mock_aget_state.return_value = mock_state_final
+
+    resultado = asyncio.run(delegar_tarea_a_equipo_ia(
+        instruccion="Tarea con error",
+        directorio_proyecto="./",
+        tarea_id="task_error_real",
+    ))
+
+    tarea = task_registry.get_task("task_error_real")
+    assert tarea["estado"] == "error"
+    assert "excedió el límite máximo" in tarea["detalle"]
+    task_registry.clear()

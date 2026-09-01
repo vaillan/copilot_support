@@ -188,6 +188,47 @@ def _detectar_intencion_rechazo(texto_usuario: str) -> bool:
     return False
 
 
+# Mensajes de ÉXITO que el Revisor escribe en 'errores_terminal' (no son errores).
+# El campo 'errores_terminal' se usa con dos significados: errores reales y
+# mensajes de éxito del Revisor (p. ej. 'Ninguno. Código probado y aprobado.').
+# Sin esta distinción, el servidor marcaría 'error' tareas legítimamente
+# completadas y, peor aún, marcaría 'completed' tareas sin evidencia de trabajo.
+_PATRONES_EXITO_REVISOR = (
+    "ninguno",
+    "no se requirieron pruebas",
+    "aprobado automáticamente",
+    "aprobado en revisión",
+    "código probado y aprobado",
+    "verificación completada",
+    "verificación finalizada",
+    "sin errores reportados",
+    "0 errores",
+    "0 fallos",
+)
+
+
+def _es_error_real(errores_qa: str) -> bool:
+    """Determina si el texto de 'errores_terminal' representa un error real.
+
+    El Revisor escribe mensajes de ÉXITO en 'errores_terminal' (p. ej.
+    'Ninguno. Código probado y aprobado.'), por lo que un valor truthy no
+    implica un fallo. Esta función distingue errores reales de esos mensajes.
+
+    Args:
+        errores_qa: Contenido de 'errores_terminal' del estado del grafo.
+
+    Returns:
+        bool: True si el texto representa un error real; False en caso contrario.
+    """
+    texto = (errores_qa or "").strip().lower()
+    if not texto or texto == "-":
+        return False
+    # '0' o '0 errores' → éxito (contador de errores en cero).
+    if texto.isdigit() and int(texto) == 0:
+        return False
+    return not any(patron in texto for patron in _PATRONES_EXITO_REVISOR)
+
+
 def generar_markdown_pausa(
     tarea_id: str,
     tipo_pausa: str,
@@ -582,24 +623,53 @@ async def delegar_tarea_a_equipo_ia(
             msg_fin += "\n\n⚠️ git diff: 0 changes"
         await notificar_progreso(ctx, msg_fin, 100, 100)
 
-        if errores_qa and errores_qa != "-":
+        # --- Determinación del estado final (anti 'completed' sin trabajo) ---
+        # El grafo puede llegar a END por caminos que NO implican escritura en
+        # disco (p. ej. el Revisor aprueba automáticamente planes sin tests, o
+        # el Codificador aborta por tope de iteraciones). Marcar 'completed' en
+        # esos casos produce el síntoma 'tarea completada sin código (working
+        # tree limpio)'. Solo se marca 'completed' si hay evidencia de trabajo:
+        # un resumen de cambios (codigo_escrito), un diff git no vacío, o un
+        # análisis final (tarea de análisis puro, que legítimamente no escribe
+        # código en disco).
+        analisis_final = values.get("analisis_final") or (resultado.get("analisis_final") if isinstance(resultado, dict) else None)
+        es_error_real = _es_error_real(errores_qa)
+        hay_evidencia_trabajo = bool(
+            (codigo_escrito and codigo_escrito != "-")
+            or diff_git
+            or analisis_final
+        )
+
+        if es_error_real:
             _log_stderr(f"[MCP] Tarea '{tarea_id}' TERMINÓ CON ERRORES TERMINALES")
             try:
                 task_store.update_status(tarea_id, "error", detalle=errores_qa)
             except Exception as e:
                 _log_stderr(f"[MCP] ERROR al marcar ERROR en tarea '{tarea_id}': {e}")
-        else:
+        elif hay_evidencia_trabajo:
             _log_stderr(f"[MCP] Tarea '{tarea_id}' COMPLETADA")
             try:
                 task_store.update_status(tarea_id, "completed", detalle=codigo_escrito)
             except Exception as e:
                 _log_stderr(f"[MCP] ERROR al marcar COMPLETADA la tarea '{tarea_id}': {e}")
-        # Si el grafo terminó en un análisis puro (sin programación), el estado
-        # contiene 'analisis_final'. Se extrae del estado o del resultado para
-        # generar un reporte de análisis dedicado en lugar del reporte de tarea
-        # de programación (codigo_escrito/errores_qa).
-        analisis_final = values.get("analisis_final") or (resultado.get("analisis_final") if isinstance(resultado, dict) else None)
+        else:
+            # El grafo terminó sin errores reales pero tampoco hay evidencia de
+            # que se haya escrito código: se marca 'error' con un mensaje claro
+            # en lugar de 'completed' (working tree limpio).
+            msg_sin_trabajo = (
+                "El grafo terminó sin errores pero no se detectó código escrito "
+                "(working tree limpio). Revisa el plan y reintenta."
+            )
+            _log_stderr(f"[MCP] Tarea '{tarea_id}' TERMINÓ SIN ESCRITURA EN DISCO")
+            try:
+                task_store.update_status(tarea_id, "error", detalle=msg_sin_trabajo)
+            except Exception as e:
+                _log_stderr(f"[MCP] ERROR al marcar ERROR en tarea '{tarea_id}': {e}")
 
+        # Si el grafo terminó en un análisis puro (sin programación), el estado
+        # contiene 'analisis_final' (ya calculado arriba para la determinación
+        # del estado final). Se genera un reporte de análisis dedicado en lugar
+        # del reporte de tarea de programación (codigo_escrito/errores_qa).
         if analisis_final:
             reporte_final = f"✅ task: {tarea_id}\n\n📋 {analisis_final}"
         else:
