@@ -10,11 +10,11 @@ from langgraph.graph import END
 from langchain_core.tools import StructuredTool, tool
 from langgraph.prebuilt import ToolNode
 from app.models.llm_factory import get_planner_llm
+from app.utils.prompt_utils import escapar_llaves, construir_prompt_template_cacheado
 from app.models.models import ProjectState
 from langchain_core.runnables import RunnableConfig
 from app.utils.files import File, get_custom_file_tools
 from app.utils.summarization import aplicar_resumen_middleware
-from app.utils.prompt_utils import escapar_llaves, construir_prompt_template_cacheado
 from app.utils.skills_loader import cargar_skills_para_prompt
 from functools import lru_cache
 from app.utils.args_utils import _get_args
@@ -64,10 +64,13 @@ _PATRON_ANALISIS = _construir_patron_palabras(PALABRAS_ANALISIS)
 _PATRON_CREACION = _construir_patron_palabras(PALABRAS_CREACION)
 
 # --- Umbrales anti-bucle del Planificador ---
+# Longitud máxima de la instrucción del usuario antes de resumirla para
+# evitar saturar la ventana de contexto y provocar bucles de exploración.
+UMBRAL_INSTRUCCION_LARGA = 2500
 # Iteración desde la cual se fuerza tool_choice hacia la entrega del plan.
-UMBRAL_FORZAR_PLAN = 10
+UMBRAL_FORZAR_PLAN = 6
 # Iteración desde la cual se usa salida estructurada como red de seguridad.
-UMBRAL_PLAN_ESTRUCTURADO = 13
+UMBRAL_PLAN_ESTRUCTURADO = 9
 # Máximo de respuestas vacías consecutivas toleradas antes de abortar.
 MAX_RESPUESTAS_VACIAS = 2
 
@@ -88,6 +91,46 @@ def _es_peticion_analisis(instruccion: str) -> bool:
     tiene_analisis = bool(_PATRON_ANALISIS.search(texto))
     tiene_creacion = bool(_PATRON_CREACION.search(texto))
     return tiene_analisis and not tiene_creacion
+
+
+def _resumir_instruccion_larga(instruccion: str) -> str:
+    """
+    Genera un resumen conciso de una instrucción de usuario muy extensa.
+
+    Se usa cuando ``len(instruccion) > UMBRAL_INSTRUCCION_LARGA`` para evitar
+    saturar la ventana de contexto del planificador (causa principal de bucles
+    de exploración sin convergencia). El resumen conserva el objetivo, el
+    alcance, los criterios de aceptación y las restricciones.
+
+    Degradación segura: ante cualquier fallo del LLM o resumen vacío se
+    devuelve la instrucción original sin modificar, de modo que la mitigación
+    nunca rompe el flujo del agente.
+
+    Args:
+        instruccion: Texto completo de la instrucción del usuario (str).
+
+    Returns:
+        str: Resumen conciso, o la instrucción original si falla el resumen.
+    """
+    try:
+        llm_resumen = get_planner_llm(temperature=0.0)
+        prompt_resumen = ChatPromptTemplate.from_messages([
+            ("system", (
+                "Eres un asistente que resume instrucciones de desarrollo de software. "
+                "Genera un resumen CONCISO (máximo 400 palabras) que conserve OBLIGATORIAMENTE: "
+                "el objetivo principal, el alcance (incluir/excluir), los criterios de aceptación "
+                "y las restricciones. Omite detalles redundantes, ejemplos y justificaciones extensas. "
+                "Responde solo con el resumen, sin comentarios adicionales."
+            )),
+            ("human", "Instrucción a resumir:\n{instruccion}"),
+        ])
+        respuesta = llm_resumen.invoke(prompt_resumen.format_messages(instruccion=instruccion))
+        texto = str(respuesta.content) if hasattr(respuesta, "content") else str(respuesta)
+        if texto and texto.strip():
+            return texto.strip()
+        return instruccion
+    except Exception:
+        return instruccion
 
 
 class Paso(BaseModel):
@@ -169,9 +212,9 @@ def agente_planificador(state: ProjectState) -> Command:
     Analiza el requerimiento, investiga el proyecto/internet y genera un plan.
     """
     loop_counter = state.get("loop_counter", 0) + 1
-    if loop_counter > 15:
+    if loop_counter > 10:
         msg_tope = (
-            "Error: Se ha excedido el límite máximo de iteraciones (15) en el Agente "
+            "Error: Se ha excedido el límite máximo de iteraciones (10) en el Agente "
             "Planificador. El proceso se detiene para evitar un bucle infinito."
         )
         return Command(
@@ -188,6 +231,14 @@ def agente_planificador(state: ProjectState) -> Command:
     # (sin bindear herramientas para evitar tool_calls) y se termina el grafo
     # sin pasar por el codificador ni el revisor.
     instruccion = state.get("instruccion_usuario", "")
+    # Instrucción efectiva: si la instrucción es muy extensa, se resume para
+    # evitar saturar la ventana de contexto (causa de bucles de exploración).
+    # La instrucción original permanece intacta en el estado.
+    instruccion_efectiva = (
+        _resumir_instruccion_larga(instruccion)
+        if len(instruccion) > UMBRAL_INSTRUCCION_LARGA
+        else instruccion
+    )
     if _es_peticion_analisis(instruccion):
         directorio = state.get("directorio_proyecto", "./")
         prompt_sistema_analisis = fileSystem.get_file_content(file_name="analisis_prompt.md")
@@ -213,7 +264,7 @@ def agente_planificador(state: ProjectState) -> Command:
         llm_analisis = get_planner_llm(temperature=0.0)
         prompt_invocado = prompt_template_analisis.invoke({
             "directorio": directorio,
-            "instruccion": instruccion,
+            "instruccion": instruccion_efectiva,
         })
         respuesta_analisis = llm_analisis.invoke(prompt_invocado)
         analisis_texto = str(respuesta_analisis.content)
@@ -269,6 +320,42 @@ def agente_planificador(state: ProjectState) -> Command:
     mensajes_contexto = aplicar_resumen_middleware(msgs, llm)
     if mensajes_contexto and isinstance(mensajes_contexto[-1], AIMessage):
         mensajes_contexto = list(mensajes_contexto) + [HumanMessage(content="Continúa con la planificación.")]
+
+    # CA2: si la instrucción original era muy extensa, se sustituye el primer
+    # mensaje humano del contexto por la instrucción efectiva (resumen) para
+    # no saturar la ventana de atención del LLM en cada iteración.
+    if instruccion_efectiva != instruccion and mensajes_contexto:
+        primer_msg = mensajes_contexto[0]
+        if isinstance(primer_msg, HumanMessage):
+            mensajes_contexto = [HumanMessage(content=instruccion_efectiva)] + mensajes_contexto[1:]
+
+    # CA4: detección temprana de instrucción larga. En la primera iteración se
+    # fuerza la salida estructurada (sin exploración previa) para que el
+    # planificador no gaste el presupuesto de iteraciones explorando en exceso
+    # con una instrucción que ya satura el contexto. Ante cualquier fallo se
+    # degrada al flujo normal de tool-calls.
+    if (
+        loop_counter == 1
+        and len(instruccion) > UMBRAL_INSTRUCCION_LARGA
+        and not _es_peticion_analisis(instruccion)
+    ):
+        try:
+            llm_estructurado = llm.with_structured_output(PlanDeAccionInput)
+            plan_input = llm_estructurado.invoke(mensajes_contexto)
+            plan_generado = (
+                plan_input.model_dump() if hasattr(plan_input, "model_dump") else dict(plan_input)
+            )
+            return Command(
+                update={
+                    "plan_de_accion": plan_generado,
+                    "messages": [AIMessage(content="Plan de acción generado mediante salida estructurada (detección temprana de instrucción larga).")],
+                    "loop_counter": 0,
+                    "empty_response_count": 0,
+                },
+                goto="agente_codificador"
+            )
+        except Exception:
+            pass
 
     # Red de seguridad final anti-bucle: en iteraciones muy tardías no se confía
     # en que el modelo emita la tool_call; se extrae el plan con salida

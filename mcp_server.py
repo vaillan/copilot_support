@@ -7,11 +7,6 @@ import hashlib
 import re
 from typing import Optional, Dict, Any, List
 
-# Asegurar que el directorio del script esté en sys.path.
-# Esto evita el error "MCP error -32000: Connection closed" cuando el cliente
-# (Zoo Code / Cursor / CLI) lanza el proceso desde un directorio de trabajo
-# distinto al del proyecto, lo que provocaría que los imports relativos
-# (app.main, app.utils, etc.) fallaran y el proceso se cerrara abruptamente.
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
@@ -291,7 +286,10 @@ async def visualizar_cambios(
                 
             if estado.next:
                 siguiente_nodo = estado.next[0]
-                msg_estado = f"📌 Estado actual del flujo: Pausado antes de '{siguiente_nodo}'"
+                if siguiente_nodo in ("agente_codificador", "agente_revisor"):
+                    msg_estado = f"📌 Estado actual del flujo: Pausado antes de '{siguiente_nodo}'"
+                else:
+                    msg_estado = f"📌 Estado actual del flujo: En ejecución (nodo '{siguiente_nodo}')"
                 partes.append(msg_estado)
             else:
                 partes.append("📌 Estado actual del flujo: Finalizado")
@@ -583,11 +581,19 @@ async def delegar_tarea_a_equipo_ia(
         else:
             msg_fin += "\n\n⚠️ git diff: 0 changes"
         await notificar_progreso(ctx, msg_fin, 100, 100)
-        _log_stderr(f"[MCP] Tarea '{tarea_id}' COMPLETADA")
-        try:
-            task_store.update_status(tarea_id, "completed", detalle=codigo_escrito)
-        except Exception as e:
-            _log_stderr(f"[MCP] ERROR al marcar COMPLETADA la tarea '{tarea_id}': {e}")
+
+        if errores_qa and errores_qa != "-":
+            _log_stderr(f"[MCP] Tarea '{tarea_id}' TERMINÓ CON ERRORES TERMINALES")
+            try:
+                task_store.update_status(tarea_id, "error", detalle=errores_qa)
+            except Exception as e:
+                _log_stderr(f"[MCP] ERROR al marcar ERROR en tarea '{tarea_id}': {e}")
+        else:
+            _log_stderr(f"[MCP] Tarea '{tarea_id}' COMPLETADA")
+            try:
+                task_store.update_status(tarea_id, "completed", detalle=codigo_escrito)
+            except Exception as e:
+                _log_stderr(f"[MCP] ERROR al marcar COMPLETADA la tarea '{tarea_id}': {e}")
         # Si el grafo terminó en un análisis puro (sin programación), el estado
         # contiene 'analisis_final'. Se extrae del estado o del resultado para
         # generar un reporte de análisis dedicado en lugar del reporte de tarea
