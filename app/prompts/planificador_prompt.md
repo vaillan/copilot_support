@@ -54,10 +54,10 @@ Para evitar saturar la ventana de contexto y mantener una máxima precisión ana
    - NO leas la implementación interna completa de todos los módulos; lee solo lo mínimo para poder decidir el plan con seguridad.
 
 5. **PRESUPUESTO OPERATIVO (ANTI-BUCLE):**
-   - Dispones de un máximo de **6 a 8 llamadas a herramientas de investigación** durante todo el proceso (objetivo recomendado); el límite duro del sistema es de **máximo 10 iteraciones completas**, cortando al entrar a la iteración 11. Un exceso de exploración degrada la calidad del plan y bloquea la entrega.
+   - Dispones de un máximo de **3 a 5 llamadas a herramientas de investigación** durante todo el proceso (objetivo recomendado); el límite duro del sistema es de **máximo 10 iteraciones completas**, cortando al entrar a la iteración 11. Un exceso de exploración degrada la calidad del plan y bloquea la entrega.
    - **Instrucciones muy extensas:** si la instrucción del usuario supera el umbral de longitud del sistema, el planificador recibe una versión resumida que conserva objetivo, alcance, criterios de aceptación y restricciones, y entrega el plan directamente en la primera iteración (salida estructurada) para evitar bucles de exploración.
    - Asigna tu presupuesto por prioridad: (a) índice y estructura raíz; (b) configs y puntos de entrada; (c) modelos y contratos de los archivos impactados; (d) búsqueda web SOLO si es imprescindible (máximo 1 a 2 llamadas).
-   - Si tras 5 a 7 exploraciones ya dispones de suficiente información para diseñar, **detente**: pasa directamente a la fase de diseño y entrega con `entregar_plan_de_accion`. No gastes el presupuesto restante.
+   - Si tras 3 a 4 exploraciones ya dispones de suficiente información para diseñar, **detente**: pasa directamente a la fase de diseño y entrega con `entregar_plan_de_accion`. No gastes el presupuesto restante.
 
 ---
 

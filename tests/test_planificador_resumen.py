@@ -11,12 +11,15 @@ Cubren:
 from unittest.mock import patch
 
 import pytest
+from langchain_core.messages import HumanMessage
+from langgraph.types import Command
 
 from app.agents import agente_planificador
 from app.agents.agente_planificador import (
     UMBRAL_FORZAR_PLAN,
     UMBRAL_INSTRUCCION_LARGA,
     UMBRAL_PLAN_ESTRUCTURADO,
+    agente_planificador as nodo_planificador,
     _resumir_instruccion_larga,
 )
 
@@ -31,14 +34,14 @@ class _RespuestaFake:
 class TestConstantesUmbrales:
     """CA3: verificación de los umbrales anti-bucle."""
 
-    def test_umbral_forzar_plan_es_6(self):
-        assert UMBRAL_FORZAR_PLAN == 6
+    def test_umbral_forzar_plan_es_3(self):
+        assert UMBRAL_FORZAR_PLAN == 3
 
-    def test_umbral_plan_estructurado_es_9(self):
-        assert UMBRAL_PLAN_ESTRUCTURADO == 9
+    def test_umbral_plan_estructurado_es_5(self):
+        assert UMBRAL_PLAN_ESTRUCTURADO == 5
 
-    def test_umbral_instruccion_larga_es_2500(self):
-        assert UMBRAL_INSTRUCCION_LARGA == 2500
+    def test_umbral_instruccion_larga_es_1500(self):
+        assert UMBRAL_INSTRUCCION_LARGA == 1500
 
     def test_limite_iteraciones_es_10(self):
         # El tope se valida contra el código fuente (loop_counter > 10).
@@ -107,3 +110,55 @@ class TestRamaTemprana:
         fuente = open(agente_planificador.__file__, encoding="utf-8").read()
         assert "_resumir_instruccion_larga(instruccion)" in fuente
         assert "instruccion_efectiva" in fuente
+
+    def test_fallback_deriva_plan_desde_instruccion(self):
+        """CA4 robusto: si la salida estructurada falla en iteración 1, se
+        deriva un plan desde la instrucción en lugar de degradar al flujo
+        normal de tool-calls (evita agotar las iteraciones)."""
+        with patch(
+            "app.agents.agente_planificador.get_planner_llm"
+        ) as mock_factory, patch(
+            "app.agents.agente_planificador.fileSystem.get_file_content"
+        ) as mock_get_file:
+            mock_llm = mock_factory.return_value
+            mock_get_file.return_value = "system prompt"
+            mock_llm.with_structured_output.side_effect = RuntimeError("fallo structured output")
+
+            estado = {
+                "messages": [HumanMessage(content="x" * 2000)],
+                "directorio_proyecto": "./",
+                "loop_counter": 0,
+                "instruccion_usuario": "implementa " + "x" * 2000,
+            }
+            resultado = nodo_planificador(estado)
+
+            assert isinstance(resultado, Command)
+            assert resultado.goto == "agente_codificador"
+            update = resultado.update or {}
+            assert "plan_de_accion" in update
+            assert update["loop_counter"] == 0
+            plan = update["plan_de_accion"]
+            assert isinstance(plan.get("pasos"), list) and plan["pasos"]
+            assert "fallback" in update["messages"][0].content
+
+
+class TestResumenCacheado:
+    """CA1: el resumen de instrucción larga se cachea para no repetir la
+    llamada LLM en cada iteración del grafo."""
+
+    def test_resumen_es_cacheado(self):
+        with patch(
+            "app.agents.agente_planificador.get_planner_llm"
+        ) as mock_factory:
+            mock_llm = mock_factory.return_value
+            mock_llm.invoke.return_value = _RespuestaFake("Resumen cacheado")
+            _resumir_instruccion_larga.cache_clear()
+
+            primera = _resumir_instruccion_larga("instruccion larga " * 200)
+            segunda = _resumir_instruccion_larga("instruccion larga " * 200)
+
+            assert primera == "Resumen cacheado"
+            assert segunda == "Resumen cacheado"
+            # La llamada LLM se ejecuta una sola vez gracias a la caché.
+            assert mock_llm.invoke.call_count == 1
+            _resumir_instruccion_larga.cache_clear()

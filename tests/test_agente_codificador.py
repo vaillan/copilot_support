@@ -2,7 +2,8 @@ import pytest
 from unittest.mock import MagicMock, patch
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.prompt_values import ChatPromptValue
-from app.agents.agente_codificador import agente_codificador
+from langgraph.graph import END
+from app.agents.agente_codificador import agente_codificador, _hubo_escritura_exitosa
 
 _RESULTADO_SIN_DISPARAR = {
     "disparar": False,
@@ -83,30 +84,30 @@ def test_agente_codificador_aplica_middleware_resumen(mock_aplicar_middleware, m
 @patch('app.agents.agente_codificador.aplicar_resumen_middleware')
 def test_codificador_nunca_avanza_a_revision_sin_escribir_archivos(mock_aplicar_middleware, mock_get_file, mock_get_llm, mock_state):
     """
-    Verifica que cuando el LLM responde texto sin tool_calls (incluso con loop_counter >= 2),
-    el nodo SIEMPRE reintenta (goto agente_codificador) y NUNCA avanza a revisión sin haber
-    escrito archivos en disco.
+    Verifica que cuando el LLM responde texto sin tool_calls (en iteraciones tempranas,
+    antes del umbral de derivación), el nodo SIEMPRE reintenta (goto agente_codificador)
+    y NUNCA avanza a revisión sin haber escrito archivos en disco.
     """
     mock_llm = MagicMock()
     mock_get_llm.return_value = mock_llm
     mock_get_file.return_value = "system prompt system prompt"
     mock_aplicar_middleware.return_value = [HumanMessage(content="contexto")]
 
-    # Respuesta de texto sin tool_calls, con loop_counter alto (el bug original avanzaba a revisión aquí)
+    # Respuesta de texto sin tool_calls, con loop_counter por debajo del umbral de derivación
     mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(
         content="Aquí está el código que debes escribir...",
         tool_calls=[]
     )
 
-    state_con_loop_alto = dict(mock_state)
-    state_con_loop_alto["loop_counter"] = 5
+    state_con_loop_bajo = dict(mock_state)
+    state_con_loop_bajo["loop_counter"] = 2
 
-    result = agente_codificador(state_con_loop_alto)
+    result = agente_codificador(state_con_loop_bajo)
 
     # NUNCA debe ir a agente_revisor sin haber escrito archivos
     assert result.goto == "agente_codificador"
     # Debe incrementar el loop_counter (reintento)
-    assert result.update["loop_counter"] == 6
+    assert result.update["loop_counter"] == 3
     # El mensaje debe indicar que debe llamar a una herramienta de escritura
     mensajes = result.update["messages"]
     assert any("herramienta de escritura" in m.content for m in mensajes if hasattr(m, "content"))
@@ -330,3 +331,183 @@ def test_codificador_hook_regeneracion_dispara(mock_state):
         assert any("Acción requerida" in c and "app/main.py" in c for c in contenidos)
         assert result.update["test_regeneration_count"] == 1
         assert result.update["test_regeneration_hashes"] == {"app/main.py": "abc123"}
+
+
+@patch('app.agents.agente_codificador.get_coder_llm')
+@patch('app.agents.agente_codificador.fileSystem.get_file_content')
+@patch('app.agents.agente_codificador.aplicar_resumen_middleware')
+def test_codificador_deriva_write_file_desde_texto_plano(mock_aplicar_middleware, mock_get_file, mock_get_llm, mock_state):
+    """
+    Anti-bucle: en iteraciones tardías (>= UMBRAL_DERIVAR_ESCRITURA), si el LLM responde
+    texto plano sin tool_calls, el nodo deriva una llamada write_file desde el contenido
+    generado para no agotar el presupuesto en reintentos sin escribir nada en disco.
+    """
+    mock_llm = MagicMock()
+    mock_get_llm.return_value = mock_llm
+    mock_get_file.return_value = "system prompt system prompt"
+    mock_aplicar_middleware.return_value = [HumanMessage(content="contexto")]
+
+    mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(
+        content="def main():\n    print('hola')\n",
+        tool_calls=[]
+    )
+
+    state_con_loop_alto = dict(mock_state)
+    state_con_loop_alto["loop_counter"] = 4
+
+    result = agente_codificador(state_con_loop_alto)
+
+    # Debe redirigir a nodo_herramientas_codificador para ejecutar la escritura
+    assert result.goto == "nodo_herramientas_codificador"
+    mensajes = result.update["messages"]
+    # El último mensaje debe ser un AIMessage con la tool_call write_file derivada
+    ultimo = mensajes[-1]
+    assert isinstance(ultimo, AIMessage)
+    assert ultimo.tool_calls[0]["name"] == "write_file"
+    assert ultimo.tool_calls[0]["args"]["file_path"] == "app/main.py"
+    assert "print('hola')" in ultimo.tool_calls[0]["args"]["text"]
+
+
+@patch('app.agents.agente_codificador.get_coder_llm')
+@patch('app.agents.agente_codificador.fileSystem.get_file_content')
+@patch('app.agents.agente_codificador.aplicar_resumen_middleware')
+def test_codificador_aborta_al_exceder_tope_iteraciones(mock_aplicar_middleware, mock_get_file, mock_get_llm, mock_state):
+    """
+    Anti-bucle: al superar UMBRAL_MAX_ITERACIONES, el codificador aborta con error
+    explícito en errores_terminal en lugar de loopear en silencio.
+    """
+    mock_llm = MagicMock()
+    mock_get_llm.return_value = mock_llm
+    mock_get_file.return_value = "system prompt system prompt"
+    mock_aplicar_middleware.return_value = [HumanMessage(content="contexto")]
+
+    state_con_tope = dict(mock_state)
+    state_con_tope["loop_counter"] = 10
+
+    result = agente_codificador(state_con_tope)
+
+    assert result.goto == END
+    assert "excedió el límite máximo" in result.update["errores_terminal"]
+
+
+# =============================================================================
+# Pruebas del refuerzo de _hubo_escritura_exitosa (escrituras fallidas)
+# =============================================================================
+
+def _respuesta_con_tool_call(tool_call):
+    return AIMessage(content="", tool_calls=[tool_call])
+
+
+def test_hubo_escritura_exitosa_ignora_escritura_con_error():
+    """Una invocación de write_file cuyo ToolMessage devuelve error NO cuenta como escritura exitosa."""
+    tool_call = {
+        "name": "write_file",
+        "args": {"file_path": "app/main.py", "text": "print('hola')"},
+        "id": "call_write_err",
+    }
+    msgs = [
+        AIMessage(content="", tool_calls=[tool_call]),
+        ToolMessage(
+            tool_call_id="call_write_err",
+            content="Error al escribir el archivo 'app/main.py': [Errno 13] Permission denied",
+        ),
+    ]
+    respuesta = _respuesta_con_tool_call({
+        "name": "CodigoCompletado",
+        "args": {"resumen_cambios": "cambios"},
+        "id": "call_cc",
+    })
+
+    assert _hubo_escritura_exitosa(msgs, respuesta) is False
+
+
+def test_hubo_escritura_exitosa_ignora_edit_file_con_error():
+    """Una invocación de edit_file con error (texto no encontrado) NO cuenta como escritura exitosa."""
+    tool_call = {
+        "name": "edit_file",
+        "args": {"file_path": "app/main.py", "old_text": "no existe", "new_text": "x"},
+        "id": "call_edit_err",
+    }
+    msgs = [
+        AIMessage(content="", tool_calls=[tool_call]),
+        ToolMessage(
+            tool_call_id="call_edit_err",
+            content="Error: No se encontró el texto a reemplazar en 'app/main.py'.",
+        ),
+    ]
+    respuesta = _respuesta_con_tool_call({
+        "name": "CodigoCompletado",
+        "args": {"resumen_cambios": "cambios"},
+        "id": "call_cc",
+    })
+
+    assert _hubo_escritura_exitosa(msgs, respuesta) is False
+
+
+def test_hubo_escritura_exitosa_considera_escritura_sin_error():
+    """Una invocación de write_file sin ToolMessage de error SÍ cuenta como escritura exitosa."""
+    tool_call = {
+        "name": "write_file",
+        "args": {"file_path": "app/main.py", "text": "print('hola')"},
+        "id": "call_write_ok",
+    }
+    msgs = [
+        AIMessage(content="", tool_calls=[tool_call]),
+        ToolMessage(
+            tool_call_id="call_write_ok",
+            content="Archivo 'app/main.py' escrito exitosamente en 'C:\\proyecto\\app\\main.py'.",
+        ),
+    ]
+    respuesta = _respuesta_con_tool_call({
+        "name": "CodigoCompletado",
+        "args": {"resumen_cambios": "cambios"},
+        "id": "call_cc",
+    })
+
+    assert _hubo_escritura_exitosa(msgs, respuesta) is True
+
+
+def test_hubo_escritura_exitosa_mezcla_error_y_exito():
+    """Si hay una escritura con error y otra con éxito, la presencia de éxito gana."""
+    tool_call_err = {
+        "name": "write_file",
+        "args": {"file_path": "a.py", "text": "x"},
+        "id": "call_err",
+    }
+    tool_call_ok = {
+        "name": "write_file",
+        "args": {"file_path": "b.py", "text": "y"},
+        "id": "call_ok",
+    }
+    msgs = [
+        AIMessage(content="", tool_calls=[tool_call_err, tool_call_ok]),
+        ToolMessage(tool_call_id="call_err", content="Error al escribir el archivo 'a.py': boom"),
+        ToolMessage(tool_call_id="call_ok", content="Archivo 'b.py' escrito exitosamente en 'C:\\p\\b.py'."),
+    ]
+    respuesta = _respuesta_con_tool_call({
+        "name": "CodigoCompletado",
+        "args": {"resumen_cambios": "cambios"},
+        "id": "call_cc",
+    })
+
+    assert _hubo_escritura_exitosa(msgs, respuesta) is True
+
+
+def test_hubo_escritura_exitosa_solo_error_no_cuenta():
+    """Solo invocaciones fallidas (todas con ToolMessage de error) NO cuentan como escritura exitosa."""
+    tool_call = {
+        "name": "write_file",
+        "args": {"file_path": "app/main.py", "text": "x"},
+        "id": "call_write_err2",
+    }
+    msgs = [
+        AIMessage(content="", tool_calls=[tool_call]),
+        ToolMessage(tool_call_id="call_write_err2", content="Error: Debes proporcionar el contenido del archivo ('text' o 'content')."),
+    ]
+    respuesta = _respuesta_con_tool_call({
+        "name": "CodigoCompletado",
+        "args": {"resumen_cambios": "cambios"},
+        "id": "call_cc",
+    })
+
+    assert _hubo_escritura_exitosa(msgs, respuesta) is False

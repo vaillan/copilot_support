@@ -26,6 +26,18 @@ class CodigoCompletado(BaseModel):
 # Conjunto de herramientas que realizan una escritura física en disco.
 herramientas_modificacion = {"write_file", "edit_file", "copy_file", "move_file", "file_delete"}
 
+# --- Umbrales anti-bucle del Codificador ---
+# Tope máximo de iteraciones completas del Codificador. Se bajó de 15 a 10
+# para converger antes con modelos de tool-calling poco fiables.
+UMBRAL_MAX_ITERACIONES = 10
+# Iteración desde la cual se fuerza tool_choice hacia una herramienta de
+# escritura (write_file) para evitar que el modelo responda solo con texto.
+UMBRAL_FORZAR_ESCRITURA = 3
+# Iteración desde la cual, si el modelo responde texto plano sin tool_calls,
+# se deriva una llamada write_file desde el contenido generado (evita agotar
+# el presupuesto en reintentos sin escribir nada en disco).
+UMBRAL_DERIVAR_ESCRITURA = 4
+
 # Cadenas de confirmación de éxito que devuelven las herramientas de escritura en disco.
 _confirmaciones_exito = (
     "escrito exitosamente",
@@ -42,23 +54,45 @@ def _hubo_escritura_exitosa(msgs, respuesta) -> bool:
 
     Retorna True si:
       (a) algún AIMessage en `msgs` o en `respuesta.tool_calls` invoca una herramienta
-          del conjunto `herramientas_modificacion`; O
+          del conjunto `herramientas_modificacion` Y esa invocación NO tiene un
+          ToolMessage de error asociado (p.ej. 'Error al escribir el archivo'); O
       (b) algún ToolMessage en `msgs` contiene una cadena de confirmación de éxito
           en disco (p.ej. 'escrito exitosamente', 'editado exitosamente', 'Copiado de').
+
+    El criterio (a) se refuerza con la resta de tool_call_ids con error: si el LLM
+    invocó write_file/edit_file pero la herramienta devolvió un error (argumentos
+    inválidos, ruta inexistente, etc.), esa invocación NO cuenta como escritura
+    exitosa y el nodo no debe avanzar a revisión.
     """
-    # (a) Herramienta de modificación invocada en el historial o en la respuesta actual
+    # Recopilar tool_call_ids de herramientas de modificación invocadas.
+    ids_modificacion = set()
     for m in msgs:
         if isinstance(m, AIMessage) and m.tool_calls:
-            if any(tc.get("name") in herramientas_modificacion for tc in m.tool_calls):
-                return True
+            for tc in m.tool_calls:
+                if tc.get("name") in herramientas_modificacion:
+                    ids_modificacion.add(tc.get("id"))
     if respuesta.tool_calls:
-        if any(tc.get("name") in herramientas_modificacion for tc in respuesta.tool_calls):
-            return True
+        for tc in respuesta.tool_calls:
+            if tc.get("name") in herramientas_modificacion:
+                ids_modificacion.add(tc.get("id"))
 
-    # (b) Confirmación de éxito en disco en ToolMessages del historial
+    # Recopilar tool_call_ids de ToolMessages con error (las herramientas de
+    # escritura devuelven mensajes que empiezan por 'Error').
+    ids_error = set()
     for m in msgs:
         if isinstance(m, ToolMessage):
-            content = m.content or ""
+            content = str(m.content or "")
+            if content.lower().startswith("error"):
+                ids_error.add(m.tool_call_id)
+
+    # (a) Herramienta de modificación invocada sin error asociado.
+    if ids_modificacion - ids_error:
+        return True
+
+    # (b) Confirmación de éxito en disco en ToolMessages del historial.
+    for m in msgs:
+        if isinstance(m, ToolMessage):
+            content = str(m.content or "")
             if any(kw in content for kw in _confirmaciones_exito):
                 return True
 
@@ -89,13 +123,13 @@ def agente_codificador(state: ProjectState) -> Command:
         Command: Comando de LangGraph con la actualización de estado y el nodo destino.
     """
     loop_counter = state.get("loop_counter", 0) + 1
-    if loop_counter > 15:
+    if loop_counter > UMBRAL_MAX_ITERACIONES:
         # Registrar el aborto en errores_terminal: sin esto, el reporte final
         # del MCP mostraría "Sin errores" pese a que el flujo abortó por bucle.
         return Command(
             update={
-                "errores_terminal": "Abortado: el Agente Codificador excedió el límite máximo de 15 iteraciones sin completar el plan (posible bucle). Revisar el plan y los errores previos.",
-                "messages": [HumanMessage(content="Error: Se ha excedido el límite máximo de iteraciones (15) en el Agente Codificador. El proceso se detiene para evitar un bucle infinito.")]
+                "errores_terminal": f"Abortado: el Agente Codificador excedió el límite máximo de {UMBRAL_MAX_ITERACIONES} iteraciones sin completar el plan (posible bucle). Revisar el plan y los errores previos.",
+                "messages": [HumanMessage(content=f"Error: Se ha excedido el límite máximo de iteraciones ({UMBRAL_MAX_ITERACIONES}) en el Agente Codificador. El proceso se detiene para evitar un bucle infinito.")]
             },
             goto=END
         )
@@ -105,6 +139,18 @@ def agente_codificador(state: ProjectState) -> Command:
     
     llm = get_coder_llm(temperature=0.0)
     llm_con_herramientas = llm.bind_tools(herramientas_codigo + [CodigoCompletado])
+    if loop_counter >= UMBRAL_FORZAR_ESCRITURA:
+        # Anti-bucle: en iteraciones tardías se fuerza tool_choice hacia una
+        # herramienta de escritura (write_file) para que el modelo no responda
+        # solo con texto plano. Si el proveedor no soporta tool_choice, se
+        # degrada sin error al binding normal.
+        try:
+            llm_con_herramientas = llm.bind_tools(
+                herramientas_codigo + [CodigoCompletado],
+                tool_choice="write_file",
+            )
+        except Exception:
+            pass
     
     errores = state.get("errores_terminal", "")
     revision_count = state.get("revision_count", 0)
@@ -232,8 +278,34 @@ def agente_codificador(state: ProjectState) -> Command:
             goto="nodo_herramientas_codificador"
         )
     else:
-        # Respuesta de texto sin tool_calls: SIEMPRE reintentar. Nunca avanzar a revisión
-        # sin haber escrito archivos en disco (evita el bug de "revisión sin código").
+        # Respuesta de texto sin tool_calls. En iteraciones tempranas se reintenta
+        # (nunca avanzar a revisión sin haber escrito archivos en disco). En
+        # iteraciones tardías (UMBRAL_DERIVAR_ESCRITURA) se deriva una llamada
+        # write_file desde el contenido generado para no agotar el presupuesto
+        # en reintentos sin escribir nada en disco.
+        contenido_texto = str(respuesta.content or "").strip()
+        if loop_counter >= UMBRAL_DERIVAR_ESCRITURA and contenido_texto:
+            # El texto del LLM es el mejor material disponible: se usa como
+            # contenido del archivo principal del plan. Se deriva write_file
+            # para que la escritura se ejecute físicamente en disco.
+            plan_estado = state.get("plan_de_accion") or {}
+            pasos = plan_estado.get("pasos") if isinstance(plan_estado, dict) else None
+            archivo_objetivo = "main.py"
+            if isinstance(pasos, list) and pasos:
+                archivo_objetivo = pasos[0].get("archivo", "main.py") if isinstance(pasos[0], dict) else "main.py"
+            tool_call_derivado = {
+                "name": "write_file",
+                "args": {"file_path": archivo_objetivo, "text": contenido_texto},
+                "id": f"call_derivado_{loop_counter}",
+            }
+            return Command(
+                update={
+                    "messages": [respuesta, AIMessage(content="", tool_calls=[tool_call_derivado])],
+                    "loop_counter": loop_counter
+                },
+                goto="nodo_herramientas_codificador"
+            )
+
         msg = (
             "No has llamado a ninguna herramienta. DEBES llamar a una herramienta de escritura "
             "de archivos (write_file, edit_file, etc.) para implementar el plan, o llamar a "

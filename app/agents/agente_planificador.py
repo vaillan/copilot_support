@@ -66,11 +66,15 @@ _PATRON_CREACION = _construir_patron_palabras(PALABRAS_CREACION)
 # --- Umbrales anti-bucle del Planificador ---
 # Longitud máxima de la instrucción del usuario antes de resumirla para
 # evitar saturar la ventana de contexto y provocar bucles de exploración.
-UMBRAL_INSTRUCCION_LARGA = 2500
+# Se bajó de 2500 a 1500 para que más instrucciones usen la rama temprana
+# de salida estructurada (CA4) y no agoten el presupuesto de iteraciones.
+UMBRAL_INSTRUCCION_LARGA = 1500
 # Iteración desde la cual se fuerza tool_choice hacia la entrega del plan.
-UMBRAL_FORZAR_PLAN = 6
+# Se bajó de 6 a 3 para converger antes con modelos de tool-calling poco fiables.
+UMBRAL_FORZAR_PLAN = 3
 # Iteración desde la cual se usa salida estructurada como red de seguridad.
-UMBRAL_PLAN_ESTRUCTURADO = 9
+# Se bajó de 9 a 5 para evitar agotar las iteraciones (tope duro en 10).
+UMBRAL_PLAN_ESTRUCTURADO = 5
 # Máximo de respuestas vacías consecutivas toleradas antes de abortar.
 MAX_RESPUESTAS_VACIAS = 2
 
@@ -93,6 +97,7 @@ def _es_peticion_analisis(instruccion: str) -> bool:
     return tiene_analisis and not tiene_creacion
 
 
+@lru_cache(maxsize=32)
 def _resumir_instruccion_larga(instruccion: str) -> str:
     """
     Genera un resumen conciso de una instrucción de usuario muy extensa.
@@ -333,7 +338,9 @@ def agente_planificador(state: ProjectState) -> Command:
     # fuerza la salida estructurada (sin exploración previa) para que el
     # planificador no gaste el presupuesto de iteraciones explorando en exceso
     # con una instrucción que ya satura el contexto. Ante cualquier fallo se
-    # degrada al flujo normal de tool-calls.
+    # deriva el plan directamente desde la instrucción (sin exploración) en
+    # lugar de degradar al flujo normal de tool-calls, que con modelos de
+    # tool-calling poco fiables agota las iteraciones del grafo.
     if (
         loop_counter == 1
         and len(instruccion) > UMBRAL_INSTRUCCION_LARGA
@@ -355,7 +362,25 @@ def agente_planificador(state: ProjectState) -> Command:
                 goto="agente_codificador"
             )
         except Exception:
-            pass
+            # Fallback robusto: derivar un plan mínimo desde la instrucción
+            # efectiva para no agotar el presupuesto de iteraciones.
+            plan_fallback = {
+                "explicacion_arquitectura": instruccion_efectiva[:2000],
+                "pasos": [{
+                    "archivo": "main.py",
+                    "tarea": instruccion_efectiva[:2000],
+                    "requiere_test": False,
+                }],
+            }
+            return Command(
+                update={
+                    "plan_de_accion": plan_fallback,
+                    "messages": [AIMessage(content="Plan de acción generado desde la instrucción (fallback de detección temprana de instrucción larga).")],
+                    "loop_counter": 0,
+                    "empty_response_count": 0,
+                },
+                goto="agente_codificador"
+            )
 
     # Red de seguridad final anti-bucle: en iteraciones muy tardías no se confía
     # en que el modelo emita la tool_call; se extrae el plan con salida
@@ -477,11 +502,11 @@ def agente_planificador(state: ProjectState) -> Command:
                 goto="agente_planificador"
             )
 
-        # Si la respuesta es de texto y llevamos 4 o más reintentos sin herramientas, derivamos un plan con el contenido generado.
-        # El umbral de 4 (antes 2) da margen para que el LLM emita la tool_call
-        # 'entregar_plan_de_accion' real; el anti-bucle estructurado actúa en la
-        # iteración 13 y el tope duro en 15, por lo que 4 es seguro.
-        if loop_counter >= 4:
+        # Si la respuesta es de texto y llevamos 2 o más reintentos sin herramientas, derivamos un plan con el contenido generado.
+        # El umbral de 2 (antes 4) acelera la convergencia con modelos de
+        # tool-calling poco fiables; el anti-bucle estructurado actúa en la
+        # iteración 5 y el tope duro en 10, por lo que 2 es seguro.
+        if loop_counter >= 2:
             text_content = str(respuesta.content)
             # El texto del LLM es el mejor material disponible: se usa como
             # explicación y como tarea del paso. NO se usa la instrucción del

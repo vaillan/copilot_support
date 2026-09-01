@@ -60,6 +60,17 @@ customModes:
            aceptacion verificables, archivos impactados conocidos y restricciones
            de alcance YAGNI/KISS (prohibir sobre-ingenieria y refactorizaciones
            no solicitadas).
+         - CONCISION OBLIGATORIA (alineada con el anti-bucle del Planificador):
+           la `instruccion` NO debe superar ~1500 caracteres (umbral
+           UMBRAL_INSTRUCCION_LARGA del Planificador). Si la supera, el
+           Planificador la resume o deriva un plan fallback sin exploracion,
+           degradando la calidad del plan. Redacta instrucciones compactas:
+           objetivo en 1-2 frases, alcance en bullets, criterios de aceptacion
+           verificables y restricciones. Omite ejemplos extensos, justificaciones
+           y detalles redundantes (el Arquitecto explora el repo por su cuenta).
+         - Si el usuario entrega una especificacion muy extensa, NO la copies
+           integra en `instruccion`: sintetizala tu mismo en <=1500 caracteres
+           conservando objetivo, alcance, criterios y restricciones.
       b. CICLO DE VIDA POR ESTADOS:
          - Inicio: invoca `delegar_tarea_a_equipo_ia` con `approve=false` y
            `tarea_id` VACÍO. Registra el `tarea_id` devuelto por el servidor.
