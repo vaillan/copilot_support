@@ -59,7 +59,10 @@ def test_flujo_completo_e2e():
         graph.invoke(None, config)
         estado_actual = graph.get_state(config)
         
-        max_intentos = 5
+        # Margen ampliado: el Codificador ahora puede verificar su código con la
+        # tool `terminal` (pytest, py_compile, imports) antes de entregar, por lo
+        # que el flujo hasta el Revisor puede requerir más iteraciones.
+        max_intentos = 10
         intentos = 0
         while len(estado_actual.next) > 0 and estado_actual.next[0] != "agente_revisor" and intentos < max_intentos:
             graph.invoke(None, config)

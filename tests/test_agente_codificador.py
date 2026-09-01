@@ -511,3 +511,204 @@ def test_hubo_escritura_exitosa_solo_error_no_cuenta():
     })
 
     assert _hubo_escritura_exitosa(msgs, respuesta) is False
+
+
+# =============================================================================
+# Pruebas de la tool terminal() en el Codificador (auto-corrección de errores)
+# =============================================================================
+
+def test_get_tools_codificador_incluye_terminal():
+    """El Codificador debe exponer la tool 'terminal' para ejecutar comandos en el shell."""
+    from app.agents.agente_codificador import _get_tools
+    _get_tools.cache_clear()
+    herramientas = _get_tools("./")
+    nombres = [t.name for t in herramientas]
+    assert "terminal" in nombres
+    assert "write_file" in nombres
+    assert "edit_file" in nombres
+    _get_tools.cache_clear()
+
+
+@patch('app.agents.agente_codificador.get_coder_llm')
+@patch('app.agents.agente_codificador.fileSystem.get_file_content')
+@patch('app.agents.agente_codificador.aplicar_resumen_middleware')
+def test_codificador_no_fuerza_write_file_cuando_hay_errores_qa(mock_aplicar_middleware, mock_get_file, mock_get_llm, mock_state):
+    """
+    Anti-bucle: cuando hay errores de QA pendientes (errores_terminal no vacío),
+    el Codificador NO fuerza tool_choice='write_file' en iteraciones tardías,
+    para poder llamar a 'terminal' y diagnosticar/corregir sus errores.
+    """
+    mock_llm = MagicMock()
+    mock_get_llm.return_value = mock_llm
+    mock_get_file.return_value = "system prompt system prompt"
+    mock_aplicar_middleware.return_value = [HumanMessage(content="contexto")]
+
+    # El LLM llama a terminal para reproducir el error de QA
+    tool_call_terminal = {
+        "name": "terminal",
+        "args": {"commands": ["python -m pytest tests/ -q"]},
+        "id": "call_terminal_1"
+    }
+    mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(
+        content="",
+        tool_calls=[tool_call_terminal]
+    )
+
+    state_con_errores = dict(mock_state)
+    state_con_errores["errores_terminal"] = "FAILED tests/test_main.py::test_suma - AssertionError"
+    state_con_errores["loop_counter"] = 5  # por encima de UMBRAL_FORZAR_ESCRITURA
+
+    result = agente_codificador(state_con_errores)
+
+    # Debe ejecutar la terminal en el nodo de herramientas (no forzar write_file)
+    assert result.goto == "nodo_herramientas_codificador"
+    assert result.update["messages"][0].tool_calls[0]["name"] == "terminal"
+
+    # Verificar que NO se forzó tool_choice='write_file' (se usó el binding normal)
+    llamadas_bind = mock_llm.bind_tools.call_args_list
+    for llamada in llamadas_bind:
+        kwargs = llamada.kwargs or {}
+        assert kwargs.get("tool_choice") != "write_file"
+
+
+@patch('app.agents.agente_codificador.get_coder_llm')
+@patch('app.agents.agente_codificador.fileSystem.get_file_content')
+@patch('app.agents.agente_codificador.aplicar_resumen_middleware')
+def test_codificador_no_fuerza_write_file_cuando_ya_hay_escritura(mock_aplicar_middleware, mock_get_file, mock_get_llm, mock_state):
+    """
+    Anti-bucle: si YA hay una escritura exitosa en el historial, el Codificador
+    NO fuerza tool_choice='write_file' en iteraciones tardías, para que el LLM
+    pueda finalizar con CodigoCompletado en lugar de quedar atrapado reescribiendo.
+    """
+    mock_llm = MagicMock()
+    mock_get_llm.return_value = mock_llm
+    mock_get_file.return_value = "system prompt system prompt"
+    mock_aplicar_middleware.return_value = [HumanMessage(content="contexto")]
+
+    # El LLM finaliza con CodigoCompletado
+    tool_call_cc = {
+        "name": "CodigoCompletado",
+        "args": {"resumen_cambios": "hecho"},
+        "id": "call_cc_ya_escrito"
+    }
+    mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(
+        content="",
+        tool_calls=[tool_call_cc]
+    )
+
+    # Historial con escritura exitosa previa
+    tool_call_write = {
+        "name": "write_file",
+        "args": {"file_path": "app/main.py", "text": "print('hola')"},
+        "id": "call_write_prev2"
+    }
+    state_con_escritura = dict(mock_state)
+    state_con_escritura["loop_counter"] = 5  # por encima de UMBRAL_FORZAR_ESCRITURA
+    state_con_escritura["messages"] = [
+        AIMessage(content="", tool_calls=[tool_call_write]),
+        ToolMessage(
+            tool_call_id="call_write_prev2",
+            content="Archivo 'app/main.py' escrito exitosamente en 'C:\\proyecto\\app\\main.py'."
+        ),
+        HumanMessage(content="contexto")
+    ]
+
+    result = agente_codificador(state_con_escritura)
+
+    # Debe avanzar a revisión (CodigoCompletado aceptado)
+    assert result.goto == "agente_revisor"
+
+    # Verificar que NO se forzó tool_choice='write_file'
+    llamadas_bind = mock_llm.bind_tools.call_args_list
+    for llamada in llamadas_bind:
+        kwargs = llamada.kwargs or {}
+        assert kwargs.get("tool_choice") != "write_file"
+
+
+@patch('app.agents.agente_codificador.get_coder_llm')
+@patch('app.agents.agente_codificador.fileSystem.get_file_content')
+@patch('app.agents.agente_codificador.aplicar_resumen_middleware')
+def test_codificador_ejecuta_terminal_antes_que_codigocompletado(mock_aplicar_middleware, mock_get_file, mock_get_llm, mock_state):
+    """
+    Si el LLM mezcla CodigoCompletado con terminal en la misma respuesta, el nodo
+    debe ejecutar PRIMERO la terminal (goto nodo_herramientas_codificador) y dejar
+    la finalización para la siguiente iteración.
+    """
+    mock_llm = MagicMock()
+    mock_get_llm.return_value = mock_llm
+    mock_get_file.return_value = "system prompt system prompt"
+    mock_aplicar_middleware.return_value = [HumanMessage(content="contexto")]
+
+    tool_call_terminal = {
+        "name": "terminal",
+        "args": {"commands": ["python -m py_compile app/main.py"]},
+        "id": "call_terminal_2"
+    }
+    tool_call_cc = {
+        "name": "CodigoCompletado",
+        "args": {"resumen_cambios": "cambios"},
+        "id": "call_cc_2"
+    }
+    mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(
+        content="",
+        tool_calls=[tool_call_terminal, tool_call_cc]
+    )
+
+    result = agente_codificador(mock_state)
+
+    # Debe ir al nodo de herramientas para ejecutar terminal, no finalizar aún
+    assert result.goto == "nodo_herramientas_codificador"
+    nombres = [tc["name"] for tc in result.update["messages"][0].tool_calls]
+    assert "terminal" in nombres
+    # CodigoCompletado se filtra del AIMessage para que el ToolNode solo ejecute
+    # herramientas reales; la finalización queda para la siguiente iteración.
+    assert "CodigoCompletado" not in nombres
+
+
+@patch('app.agents.agente_codificador.get_coder_llm')
+@patch('app.agents.agente_codificador.fileSystem.get_file_content')
+@patch('app.agents.agente_codificador.aplicar_resumen_middleware')
+def test_codificador_usa_terminal_para_corregir_errores_qa(mock_aplicar_middleware, mock_get_file, mock_get_llm, mock_state):
+    """
+    Flujo completo de auto-corrección: con errores de QA, el Codificador llama a
+    terminal para reproducir el error, luego corrige con edit_file y finalmente
+    entrega con CodigoCompletado (avanzando a revisión).
+    """
+    mock_llm = MagicMock()
+    mock_get_llm.return_value = mock_llm
+    mock_get_file.return_value = "system prompt system prompt"
+    mock_aplicar_middleware.return_value = [HumanMessage(content="contexto")]
+
+    # Historial: ya hubo una escritura exitosa previa (write_file) y el QA falló
+    tool_call_write = {
+        "name": "write_file",
+        "args": {"file_path": "app/main.py", "text": "print('hola')"},
+        "id": "call_write_prev"
+    }
+    state_con_historial = dict(mock_state)
+    state_con_historial["errores_terminal"] = "FAILED tests/test_main.py - AssertionError"
+    state_con_historial["messages"] = [
+        AIMessage(content="", tool_calls=[tool_call_write]),
+        ToolMessage(
+            tool_call_id="call_write_prev",
+            content="Archivo 'app/main.py' escrito exitosamente en 'C:\\proyecto\\app\\main.py'."
+        ),
+        HumanMessage(content="contexto")
+    ]
+
+    # El LLM corrige y entrega
+    tool_call_cc = {
+        "name": "CodigoCompletado",
+        "args": {"resumen_cambios": "corregido"},
+        "id": "call_cc_3"
+    }
+    mock_llm.bind_tools.return_value.invoke.return_value = AIMessage(
+        content="",
+        tool_calls=[tool_call_cc]
+    )
+
+    result = agente_codificador(state_con_historial)
+
+    # Debe avanzar a revisión porque ya hubo escritura exitosa previa
+    assert result.goto == "agente_revisor"
+    assert result.update["codigo_escrito"] == "corregido"
