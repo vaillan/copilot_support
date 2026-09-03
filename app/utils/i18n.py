@@ -441,6 +441,10 @@ MENSAJES: Dict[str, Dict[str, str]] = {
         "es": "Error: El archivo '{ruta}' no existe.",
         "en": "Error: The file '{ruta}' does not exist.",
     },
+    "index.error_lectura": {
+        "es": "[No se pudo leer el archivo]",
+        "en": "The file could not be read.",
+    },
     # ------------------------------------------------------------------ files
     "files.ruta_requerida": {
         "es": "Error: Debes proporcionar una ruta de archivo ('file_path' o 'path').",
@@ -703,6 +707,14 @@ MENSAJES: Dict[str, Dict[str, str]] = {
     "ledger.contexto_paso_actual": {
         "es": "--- PASO ACTUAL ({paso_actual} de {total}) ---",
         "en": "--- CURRENT STEP ({paso_actual} of {total}) ---",
+    },
+    "ledger.sin_pasos_pruebas": {
+        "es": "Ningún paso del plan requiere pruebas.",
+        "en": "No plan steps require tests.",
+    },
+    "ledger.sin_plan": {
+        "es": "Sin plan.",
+        "en": "No plan.",
     },
 }
 

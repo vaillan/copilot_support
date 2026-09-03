@@ -115,7 +115,7 @@ def construir_contexto_compacto(plan: Any, progreso: Optional[Dict[str, Any]], i
     return f"{ledger}\n\n{obtener_mensaje('ledger.contexto_paso_actual', idioma, paso_actual=paso_actual, total=total)}\n{cuerpo}"
 
 
-def construir_plan_pruebas(plan: Any) -> str:
+def construir_plan_pruebas(plan: Any, idioma: str = "es") -> str:
     """Devuelve el plan limitado a los pasos con requiere_test=True (para el revisor), reutilizando parsear_pasos_plan."""
     # try/except defensivo: nunca debe interrumpir el flujo de revisión por un formato inesperado.
     try:
@@ -125,9 +125,9 @@ def construir_plan_pruebas(plan: Any) -> str:
                 if isinstance(p, dict) and p.get("requiere_test") is True
             ]
             if not pasos_test:
-                return "Ningún paso del plan requiere pruebas."
+                return obtener_mensaje("ledger.sin_pasos_pruebas", idioma)
             pasos = parsear_pasos_plan({"pasos": pasos_test})
             return "\n\n".join(p["cuerpo"] for p in pasos)
-        return str(plan) if plan else "Sin plan."
+        return str(plan) if plan else obtener_mensaje("ledger.sin_plan", idioma)
     except Exception:
-        return str(plan) if plan else "Sin plan."
+        return str(plan) if plan else obtener_mensaje("ledger.sin_plan", idioma)
