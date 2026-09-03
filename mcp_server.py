@@ -40,6 +40,35 @@ agentes_app = crear_grafo()
 # Mapa de tareas activas: tarea_id -> asyncio.Task en curso (para cancelación).
 tareas_activas: Dict[str, asyncio.Task] = {}
 
+# Patrones de RECHAZO EXPLICITO en español (el usuario NO quiere el plan actual).
+_PATRONES_RECHAZO_ES: List[str] = [
+    r'\brechaz\w*\b',          # rechazo, rechazar, rechazado
+    r'\bno\s+aprueb\w*\b',    # no apruebo, no aprobado
+    r'\bno\s+acept\w*\b',     # no acepto, no aceptado
+    r'\bcancel\w*\b',         # cancelar, cancela, cancelado
+    r'\bdescart\w*\b',        # descartar, descarta, descartado
+    r'\bno\s+me\s+gusta\b',   # no me gusta
+    r'\bno\s+es\s+lo\s+que\b',  # no es lo que queria
+    r'\bno\s+quiero\b',       # no quiero
+    r'\bno\s+funcion\w*\b',   # no funciona
+    r'\beliminar\w*\b',       # eliminar, eliminado
+    r'\bborrar\w*\b',         # borrar, borrado
+    r'\breset\w*\b',          # reset, resetear
+]
+
+# Patrones de rechazo explícito en inglés (se usan cuando detectar_idioma retorna "en").
+_PATRONES_RECHAZO_EN: List[str] = [
+    r"\bno\b",
+    r"\bcancel\b",
+    r"\bstop\b",
+    r"\babort\b",
+    r"\bdecline\b",
+    r"\bdon'?t\b",
+    r"\bwon'?t\b",
+    r"\bhalt\b",
+    r"\brefuse\b",
+]
+
 
 def _log_stderr(msg: str):
     """Escribe mensaje a stderr de forma segura (fire-and-forget)."""
@@ -158,36 +187,19 @@ def obtener_git_diff(directorio: str, idioma: str = "es") -> str:
     return ""
 
 
-def _detectar_intencion_rechazo(texto_usuario: str) -> bool:
+def _detectar_intencion_rechazo(texto_usuario: Optional[str]) -> bool:
     """
-    Detecta si el usuario esta expresando un RECHAZO EXPLICITO del plan/codigo.
-    
-    Retorna True si es un rechazo claro (el usuario NO quiere continuar con lo propuesto).
-    Retorna False si es feedback constructivo (el usuario SI quiere continuar pero con cambios).
+    Detecta si el usuario expresa un rechazo explícito del plan/código.
+    Retorna True si es un rechazo claro; False si es feedback constructivo o entrada vacía.
     """
+    if texto_usuario is None or not texto_usuario.strip():
+        return False
+
     texto = texto_usuario.strip().lower()
-    
-    # Patrones de RECHAZO EXPLICITO (el usuario NO quiere el plan actual)
-    patrones_rechazo = [
-        r'\brechaz\w*\b',          # rechazo, rechazar, rechazado
-        r'\bno\s+aprueb\w*\b',    # no apruebo, no aprobado
-        r'\bno\s+acept\w*\b',     # no acepto, no aceptado
-        r'\bcancel\w*\b',         # cancelar, cancela, cancelado
-        r'\bdescart\w*\b',        # descartar, descarta, descartado
-        r'\bno\s+me\s+gusta\b',   # no me gusta
-        r'\bno\s+es\s+lo\s+que\b',  # no es lo que queria
-        r'\bno\s+quiero\b',       # no quiero
-        r'\bno\s+funcion\w*\b',   # no funciona
-        r'\beliminar\w*\b',       # eliminar, eliminado
-        r'\bborrar\w*\b',         # borrar, borrado
-        r'\breset\w*\b',          # reset, resetear
-    ]
-    
-    for patron in patrones_rechazo:
-        if re.search(patron, texto):
-            return True
-    
-    return False
+    idioma = detectar_idioma(texto_usuario)
+    patrones = _PATRONES_RECHAZO_EN if idioma == "en" else _PATRONES_RECHAZO_ES
+
+    return any(re.search(p, texto, re.IGNORECASE) for p in patrones)
 
 
 def generar_markdown_pausa(
