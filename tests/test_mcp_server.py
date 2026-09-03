@@ -4,6 +4,7 @@ import pytest
 import asyncio
 import anyio
 from unittest.mock import patch, MagicMock, AsyncMock
+import mcp_server
 from mcp_server import visualizar_cambios, delegar_tarea_a_equipo_ia, obtener_git_diff, notificar_progreso, generar_markdown_pausa, consultar_estado_tarea, listar_tareas, cancelar_tarea
 
 def test_visualizar_cambios_sin_parametros():
@@ -601,4 +602,52 @@ def test_herramientas_registradas():
         "listar_tareas",
         "cancelar_tarea",
     }.issubset(nombres)
+
+
+# =============================================================================
+# Pruebas para _detectar_intencion_rechazo (rechazo explícito en ES/EN)
+# =============================================================================
+
+@pytest.mark.parametrize("texto", [
+    "I decline this task",
+    "please cancel it",
+    "stop everything",
+    "I refuse",
+    "I won't do it",
+    "don't do that",
+    "abort now",
+    "halt",
+    "no, not that plan",
+])
+def test_detectar_intencion_rechazo_rechazo_en(texto: str) -> None:
+    assert mcp_server._detectar_intencion_rechazo(texto) is True
+
+
+@pytest.mark.parametrize("texto", [
+    "no apruebo este plan",
+    "cancelar la tarea",
+    "no me gusta",
+])
+def test_detectar_intencion_rechazo_rechazo_es(texto: str) -> None:
+    assert mcp_server._detectar_intencion_rechazo(texto) is True
+
+
+@pytest.mark.parametrize("texto", [
+    "please improve the error handling",
+    "me gusta pero mejora la validacion",
+])
+def test_detectar_intencion_rechazo_feedback_constructivo(texto: str) -> None:
+    assert mcp_server._detectar_intencion_rechazo(texto) is False
+
+
+def test_detectar_intencion_rechazo_texto_vacio() -> None:
+    assert mcp_server._detectar_intencion_rechazo("") is False
+
+
+def test_detectar_intencion_rechazo_none() -> None:
+    assert mcp_server._detectar_intencion_rechazo(None) is False
+
+
+def test_detectar_intencion_rechazo_case_insensitive() -> None:
+    assert mcp_server._detectar_intencion_rechazo("CANCEL THIS") is True
 
