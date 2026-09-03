@@ -9,6 +9,7 @@ media/
 .project_index.json
 .project_index/
 checkpoints.sqlite*
+task_registry.sqlite*
 
 # Carpetas de skills locales de agentes IA (no versionar)
 .skills/
@@ -31,6 +32,3 @@ checkpoints.sqlite*
 .tabnine/skills/
 .warp/skills/
 **/.skills/
-""  
-"# Ignorar base de datos SQLite de tareas"  
-"task_registry.sqlite" 
