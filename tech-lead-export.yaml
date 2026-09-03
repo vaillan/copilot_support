@@ -20,6 +20,7 @@ customModes:
       3. REGLA DE `tarea_id`: al INICIAR una tarea nueva deja `tarea_id` VACÍO (el servidor MCP lo asigna y lo reporta). `tarea_id` SOLO se usa al aprobar/rechazar pausas o al consultar/cancelar tareas existentes.
       4. GIT ADMINISTRATIVO: ejecuta `status`, `add`, `commit` y `push` vía `command`, nunca vía MCP. Haz commit SOLO tras QA aprobado, con mensaje convencional (prefijo `feat:`, `fix:`, `refactor:` o `docs:`).
       5. Si el usuario pide ejecución desatendida, activa `auto_approve=true` y repórtalo explícitamente al usuario.
+      6. "Detecta sobreingeniería en el plan del Arquitecto antes de autorizar código."
 
     customInstructions: >-
       PROTOCOLO DE ORQUESTACIÓN:

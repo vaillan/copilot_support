@@ -52,6 +52,16 @@ graph TD
 | Codificador | Programador senior | Escribe código, aplica feedback | Máx. 15 iteraciones |
 | Revisor | QA/DevOps | Ejecuta tests vía shell | Máx. 3 revisiones; aprueba auto si no hay tests requeridos |
 
+### Matriz Resumen de Responsabilidades
+
+| Rol / Agente | ¿Conoce los patrones? | ¿Decide cuál usar? | ¿Escribe el código? | Regla en el Prompt |
+|--------------|-----------------------|--------------------|----------------------|---------------------|
+| Arquitecto | Sí (Profundo) | SÍ (Exclusivo) | No | "Selecciona el patrón mínimo viable; define interfaces, DTOs y justifica su necesidad." |
+| Codificador | Sí (Idiomático) | NO (Prohibido) | SÍ (Ejecuta) | "Implementa únicamente los contratos prescritos. Prohibido añadir abstracciones no pedidas." |
+| QA | Sí (Testabilidad) | No | No (Solo tests) | "Comprueba aislamiento, testea bordes e inyecta mocks aprovechando las abstracciones." |
+| Tech Lead | Sí (Criterio) | Supervisa | No | "Detecta sobreingeniería en el plan del Arquitecto antes de autorizar código." |
+| Skills (MCP/Doc) | Catálogo/Plantillas | N/A | N/A | Recetas de referencia con tipado estricto para consumo del Codificador. |
+
 ## Modelos LLM
 
 Soporta Google Gemini, OpenAI, Anthropic, OpenRouter y Ollama/local vía `init_chat_model`. Configuración multi-modelo por agente (`PLANNER_*`, `CODER_*`, `REVIEWER_*`) con fallback a variables globales `LLM_*`.
