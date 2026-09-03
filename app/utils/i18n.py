@@ -659,6 +659,14 @@ MENSAJES: Dict[str, Dict[str, str]] = {
         "es": "cambio de nivel de ejecución del sistema (init 0/6)",
         "en": "system runlevel change (init 0/6)",
     },
+    "shell.permisos_sistema": {
+        "es": "cambio de permisos o propietario sobre rutas raíz del sistema (chmod/chown)",
+        "en": "changing permissions or ownership on system root paths (chmod/chown)",
+    },
+    "shell.formateo_disco": {
+        "es": "formateo de unidades de disco (format)",
+        "en": "disk drive formatting (format)",
+    },
     "shell.comando_vacio": {
         "es": "Comando vacío.",
         "en": "Empty command.",

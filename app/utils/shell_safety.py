@@ -27,13 +27,28 @@ PATRONES_BLOQUEADOS: List[_PatronBloqueado] = [
     # -------------------------------------------------------------
     (
         re.compile(
-            r"\brm\s+(?:-[a-zA-Z]*[rR][a-zA-Z]*[fF][a-zA-Z]*|-[a-zA-Z]*[fF][a-zA-Z]*[rR][a-zA-Z]*)\s+"
-            r"(?:/|/\*|\*|~|\.)", re.IGNORECASE
+            r"\brm\s+(?:-[a-zA-Z]*[rR][a-zA-Z]*[fF][a-zA-Z]*"
+            r"|-[a-zA-Z]*[fF][a-zA-Z]*[rR][a-zA-Z]*)\s+"
+            r"(?:"
+            r"/\s*(?:\||;|&&|$)"
+            r"|/\*\s*(?:\||;|&&|$)"
+            r"|(?<=\s)\*(?:\s|$|\||;|&&)"
+            r"|(?<=\s)~(?:\s|/|\\|$|\||;|&&)"
+            r"|\.\.(?:\s|$|\||;|&&)"
+            r"|\.(?:\s|$|\||;|&&)"
+            r"|\.\s*[/\\]\s*(?:$|\||;|&&)"
+            r"|/etc(?:\s|/|$|\||;|&&)"
+            r")",
+            re.IGNORECASE,
         ),
         "shell.borrado_rm_rf",
     ),
     (
-        re.compile(r"\b(?:rd|rmdir)\s+[/-][sS]\s+[/-][qQ]\b"),
+        re.compile(
+            r"\b(?:rd|rmdir)\s+[/-][sS]\s+[/-][qQ]\s+"
+            r"[A-Za-z]:\s*(?:[\\/]|(?:\s|$|\||;))",
+            re.IGNORECASE,
+        ),
         "shell.borrado_rd_s_q",
     ),
     # Permite espacios entre flags: "del /f /s /q", "del /f/s/q", "del /q /f /s"
@@ -41,8 +56,8 @@ PATRONES_BLOQUEADOS: List[_PatronBloqueado] = [
         re.compile(
             r"\bdel\s+[/-](?:[fF]\s*[/-]?\s*[sS]\s*[/-]?\s*[qQ]"
             r"|[qQ]\s*[/-]?\s*[fF]\s*[/-]?\s*[sS]"
-            r"|[fF][sS][qQ])\b",
-            re.IGNORECASE
+            r"|[fF][sS][qQ])\s+[A-Za-z]:\s*(?:[\\/]|(?:\s|$|\||;))",
+            re.IGNORECASE,
         ),
         "shell.borrado_del_f_s_q",
     ),
@@ -52,7 +67,11 @@ PATRONES_BLOQUEADOS: List[_PatronBloqueado] = [
     ),
     # PowerShell: Remove-Item -Recurse -Force (equivalente a rm -rf en Windows)
     (
-        re.compile(r"\bRemove-Item\b[^;\n]*?-Recurse", re.IGNORECASE),
+        re.compile(
+            r"\bRemove-Item\b(?=[^;\n]*?-Recurse)[^;\n]*?"
+            r"[A-Za-z]:\s*(?:[\\/]|(?:\s|$|\||;))",
+            re.IGNORECASE,
+        ),
         "shell.borrado_remove_item",
     ),
     # ------------------------------------------------------------------
@@ -64,6 +83,22 @@ PATRONES_BLOQUEADOS: List[_PatronBloqueado] = [
         re.compile(
             r"\b(?:curl|wget)\b[^|&;\n]*\|\s*(?:sudo\s+)?(?:(?:ba)?sh|zsh|fish|cmd|pwsh)\b",
             re.IGNORECASE
+        ),
+        "shell.descarga_ejecucion_remota",
+    ),
+    # Descarga + ejecución encadenada con && o ; ("curl URL && sh x.sh")
+    (
+        re.compile(
+            r"\b(?:curl|wget)\b[^\n;]*?(?:&&|;)\s*(?:sudo\s+)?(?:(?:ba)?sh|zsh|fish|cmd|pwsh)\s+\S+",
+            re.IGNORECASE,
+        ),
+        "shell.descarga_ejecucion_remota",
+    ),
+    # Process substitution de bash/zsh/fish ("bash <(curl -s URL)")
+    (
+        re.compile(
+            r"\b(?:(?:ba)?sh|zsh|fish)\s*<\s*\(\s*(?:curl|wget)\b",
+            re.IGNORECASE,
         ),
         "shell.descarga_ejecucion_remota",
     ),
@@ -80,7 +115,10 @@ PATRONES_BLOQUEADOS: List[_PatronBloqueado] = [
     # 3. Manipulación destructiva de git
     # ------------------------------------------------------------------
     (
-        re.compile(r"\bgit\s+push\b[^;\n]*(?:--force|-f)\b"),
+        re.compile(
+            r"\bgit\s+push\b[^;\n]*(?:--force(?=\s|$)|-f(?=\s|$))",
+            re.IGNORECASE,
+        ),
         "shell.git_push_force",
     ),
     (
@@ -88,7 +126,10 @@ PATRONES_BLOQUEADOS: List[_PatronBloqueado] = [
         "shell.git_reset_hard",
     ),
     (
-        re.compile(r"\bgit\s+clean\s+[^\n;]*(?:-f|x|d)+(?:\s|$)"),
+        re.compile(
+            r"\bgit\s+clean\s+[^\n;]*(?:(?<=\s)-(?=[a-zA-Z])[^\s;]*f|--force\b)",
+            re.IGNORECASE,
+        ),
         "shell.git_clean_fdx",
     ),
     (
@@ -126,7 +167,10 @@ PATRONES_BLOQUEADOS: List[_PatronBloqueado] = [
         "shell.credenciales_api",
     ),
     (
-        re.compile(r"\b(?:cat|type|tail|head|more|less|grep)[^\n|&;]*\.env\b"),
+        re.compile(
+            r"\b(?:cat|type|tail|head|more|less|grep)[^\n|&;]*\.env(?!\.)",
+            re.IGNORECASE,
+        ),
         "shell.lectura_env",
     ),
     # ------------------------------------------------------------------
@@ -146,6 +190,23 @@ PATRONES_BLOQUEADOS: List[_PatronBloqueado] = [
     (
         re.compile(r"\binit\s+(?:0|6)\b|\btelinit\s+(?:0|6)\b"),
         "shell.init_nivel",
+    ),
+    # ------------------------------------------------------------------
+    # 8. Permisos recursivos sobre raíz y formateo de unidades
+    # ------------------------------------------------------------------
+    (
+        re.compile(
+            r"\b(?:sudo\s+)?(?:chmod|chown)\s+[^\n;/|&]*?(?:-R\b|-r\b|--recursive\b)[^\n;/|&]*?(?:/|\*|~)\s*(?:$|[\s;|&])",
+            re.IGNORECASE,
+        ),
+        "shell.permisos_sistema",
+    ),
+    (
+        re.compile(
+            r"\bformat\s+[^\n;/|&]*?[A-Za-z]:\s*(?:[/\\]|(?:\s|$|;|\\|&))",
+            re.IGNORECASE,
+        ),
+        "shell.formateo_disco",
     ),
 ]
 
