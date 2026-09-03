@@ -195,6 +195,26 @@ def test_construir_plan_pruebas_con_pasos_mezclados() -> None:
     assert "paso suelto" not in salida
 
 
+def test_construir_plan_pruebas_idioma_en() -> None:
+    assert construir_plan_pruebas(None, "en") == "No plan."
+    plan: Dict[str, Any] = {
+        "pasos": [
+            {"archivo": "a.md", "tarea": "**Paso 1: Docs**\nDetalle DOCS", "requiere_test": False},
+        ]
+    }
+    assert construir_plan_pruebas(plan, "en") == "No plan steps require tests."
+
+
+def test_construir_plan_pruebas_default_es_preservado() -> None:
+    assert construir_plan_pruebas(None) == "Sin plan."
+    plan: Dict[str, Any] = {
+        "pasos": [
+            {"archivo": "a.md", "tarea": "**Paso 1: Docs**", "requiere_test": False},
+        ]
+    }
+    assert construir_plan_pruebas(plan) == "Ningún paso del plan requiere pruebas."
+
+
 def test_construir_ledger_idioma_en() -> None:
     ledger = construir_ledger({"pasos_completados": [1, 2], "paso_actual": 3, "total_pasos": 5}, idioma="en")
 

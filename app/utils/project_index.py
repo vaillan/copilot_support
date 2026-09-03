@@ -329,7 +329,7 @@ def resumir_archivo(ruta: Path, max_tokens: int = 400, contenido: Optional[str] 
         try:
             contenido = ruta.read_text(encoding="utf-8", errors="replace")
         except Exception:
-            return {"resumen": "[No se pudo leer el archivo]", "error": True}
+            return {"resumen": obtener_mensaje("index.error_lectura"), "error": True}
 
     if ext == ".py":
         return _resumir_python(contenido, max_tokens)
