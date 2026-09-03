@@ -31,3 +31,6 @@ checkpoints.sqlite*
 .tabnine/skills/
 .warp/skills/
 **/.skills/
+""  
+"# Ignorar base de datos SQLite de tareas"  
+"task_registry.sqlite" 
