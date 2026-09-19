@@ -1,5 +1,22 @@
 # AIDevTeam
 
+> [!WARNING]
+> **DEPRECATED / OBSOLETO** — Este repositorio ya no recibirá actualizaciones y está deprecado.
+
+## Estado del proyecto
+
+| Campo | Valor |
+|-------|-------|
+| Estado | Deprecado (no mantenido) |
+| Última actualización | <fecha> |
+| Soporte | Ninguno: no se aceptan issues, PRs ni parches |
+| Recomendación | <alternativa> (o "sin reemplazo oficial") |
+
+> [!NOTE]
+> El repositorio puede pasar a solo lectura o archivarse. El contenido se conserva únicamente como referencia histórica.
+
+---
+
 **AIDevTeam** es una plataforma de agentes autónomos de IA para automatizar el SDLC, orquestada con **LangGraph** y expuesta como servidor MCP (**FastMCP**).
 
 ## Arquitectura
